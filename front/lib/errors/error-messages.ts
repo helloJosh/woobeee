@@ -1,0 +1,36 @@
+
+export const errorMessageMap = {
+    ko: {
+        "comment_needAuthentication": "댓글을 작성,삭제하려면 로그인해야 합니다.",
+        "like_needAuthentication": "좋아요를 누르려면 로그인해주세요.",
+        "post_imageUploadError" : "게시글 이미지가 업로드가 안되었습니다.",
+        "post_notFound": "해당 게시글을 찾을 수 없습니다.",
+        "signIn_GoogleTokenNotValid": "유효하지 않은 Google 토큰입니다.",
+        "signIn_userConflict": "이미 가입된 사용자입니다.",
+        "login_userNotFound": "존재하지 않는 사용자입니다.",
+        "login_passwordNotMatch": "비밀번호가 일치하지 않습니다.",
+        "Product is locked by another cart": "다른 구매자가 예약 중인 상품입니다.",
+        "Product is not available": "현재 담을 수 없는 상품입니다.",
+        "Buyer not found": "구매자 정보를 찾을 수 없습니다. 다시 로그인해 주세요.",
+        "Cart not found": "장바구니를 찾을 수 없습니다.",
+        "Product not found": "상품을 찾을 수 없습니다.",
+        "Cart has been deleted": "이미 삭제된 장바구니입니다.",
+
+    },
+    en: {
+        "comment_needAuthentication": "You must be logged in to post or delete a comment.",
+        "like_needAuthentication": "Please log in to like this post.",
+        "post_imageUploadError" : "The requested image was not uploaded in post",
+        "post_notFound": "The requested post was not found.",
+        "signIn_GoogleTokenNotValid": "Invalid Google token.",
+        "signIn_userConflict": "User already registered.",
+        "login_userNotFound": "User not found.",
+        "login_passwordNotMatch": "Password does not match.",
+        "Product is locked by another cart": "This item is reserved by another buyer.",
+        "Product is not available": "This item cannot be added right now.",
+        "Buyer not found": "Buyer not found. Please sign in again.",
+        "Cart not found": "Cart not found.",
+        "Product not found": "Product not found.",
+        "Cart has been deleted": "This cart has already been deleted.",
+    },
+} as const
