@@ -1,0 +1,67 @@
+# OS
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+out/
+
+# Build outputs
+target/
+**/target/
+
+# Maven wrapper temp files
+.mvn/wrapper/maven-wrapper.jar
+
+# Runtime files
+**/logs/*
+logs/
+*.log
+
+# Environment files
+.env
+.env.*
+
+# Local AI/MCP config
+.ai/mcp/mcp.json
+
+# Docker local data
+.docker-compose/.docker-volumes/
+
+#python 제외 파일
+scripts/__pycache__/
+*.pyc
+
+
+# Node 의존성
+front/node_modules/
+
+# 빌드 결과물
+front/.next/
+front/.next*/
+front/out/
+
+# 환경변수 파일
+front/.env
+front/.env.local
+front/.env.development.local
+front/.env.test.local
+front/.env.production.local
+
+# OS/IDE 생성 파일
+front/.DS_Store
+front/*.log
+front/.idea/
+front/.vscode/
+front/node_modules
+
+# 패키지 매니저 캐시
+front/npm-debug.log*
+front/yarn-debug.log*
+front/yarn-error.log*
+front/pnpm-debug.log*
+
+# 멀티모듈 로컬 산출물
+*/logs/
+front/tsconfig.tsbuildinfo
+front/pnpm-lock.yaml
