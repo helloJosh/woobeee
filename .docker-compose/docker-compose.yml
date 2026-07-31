@@ -23,6 +23,62 @@ services:
       - .docker-volumes/redis/data:/data
     command: [ "redis-server", "--appendonly", "yes", "--requirepass", "root!23" ]
 
+  # 로컬 인프라로만 제공한다. 현재 어떤 앱도 Kafka에 연동하지 않는다(ADR-003 참고).
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: woobeee-kafka
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+      - "8011:8011"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_KRAFT_MODE: "true"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://woobeee-kafka:29092,SASL_PLAINTEXT://0.0.0.0:8010,SASL_PLAINTEXT_LOCALHOST://0.0.0.0:8011,CONTROLLER://woobeee-kafka:9093"
+      # 원본(art-market-place)은 SASL_PLAINTEXT advertised host 에 공개 IP 를 박아두어
+      # 로컬에서는 8010 리스너로 접속할 수 없었다. localhost 로 교정했다.
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://woobeee-kafka:29092,SASL_PLAINTEXT://localhost:8010,SASL_PLAINTEXT_LOCALHOST://localhost:8011"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_PLAINTEXT_LOCALHOST:SASL_PLAINTEXT"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@woobeee-kafka:9093"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_SASL_ENABLED_MECHANISMS: "PLAIN"
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: "PLAIN"
+
+      # KRaft 모드에서 AclAuthorizer 대신 StandardAuthorizer 사용
+      KAFKA_AUTHORIZER_CLASS_NAME: "org.apache.kafka.metadata.authorizer.StandardAuthorizer"
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+      KAFKA_SUPER_USERS: "User:admin"
+      KAFKA_LOG_DIRS: "/tmp/kraft-combined-logs"
+      KAFKA_LISTENER_NAME_SASL_PLAINTEXT_PLAIN_SASL_JAAS_CONFIG: "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"admin\" password=\"admin!23\" user_admin=\"admin!23\";"
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/kafka_server_jaas.conf"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+    volumes:
+      - ./config/kafka_server_jaas.conf:/etc/kafka/kafka_server_jaas.conf
+      - .docker-volumes/kafka:/tmp/kraft-combined-logs
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: woobeee-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: kraft-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: woobeee-kafka:29092
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: PLAINTEXT
+
+      AUTH_TYPE: "LOGIN_FORM"
+      SPRING_SECURITY_USER_NAME: admin
+      SPRING_SECURITY_USER_PASSWORD: admin!23
+      SERVER_SERVLET_CONTEXT_PATH: "/kafka-ui"
+    depends_on:
+      - kafka
+
   minio:
     image: minio/minio:latest
     container_name: woobeee-minio

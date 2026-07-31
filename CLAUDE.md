@@ -7,7 +7,7 @@
 - **구조**: Maven 멀티모듈 (`core` / `app-mvc` / `app-webflux` / `front`), Java 25, Spring Boot 4.0.5
 - **두 표면**: `blog`+`auth` = Spring MVC + JPA (`app-mvc` :8000) / `game` = Spring WebFlux + R2DBC (`app-webflux` :8001)
 - **프론트엔드**: `front/` Next.js 14 + React 18 + TypeScript + Tailwind (shadcn/ui, Radix). rewrites로 두 백엔드를 단일 오리진화
-- **데이터/인프라**: PostgreSQL :9432(공유), Redis :9379(공유 토큰), MinIO :9000, Google OAuth
+- **데이터/인프라**: PostgreSQL :9432(공유), Redis :9379(공유 토큰), MinIO :9000, Kafka :8010/8011 + UI :8090(코드 미연동), Google OAuth
 - **전신**: `art-market-place` 단일 모듈 모놀리스. product/cart 도메인은 폐기했다.
 
 ### 모듈 경계
@@ -57,8 +57,12 @@
 ### 로컬 인프라
 
 ```bash
-docker compose -f .docker-compose/docker-compose.yml up -d   # postgres 9432 · redis 9379 · minio 9000
+docker compose -f .docker-compose/docker-compose.yml up -d   # postgres 9432 · redis 9379 · minio 9000 · kafka 8010/8011 · kafka-ui 8090
 ```
+
+Kafka는 인프라로만 떠 있고 **어떤 앱도 연동하지 않는다**(ADR-003). 게임 도메인에서 쓰려면 먼저
+ADR을 갱신한다. 백엔드 개발에 Kafka가 필요 없으면 `up -d postgres-management redis minio` 로
+필요한 것만 띄워도 된다.
 
 ### 기본 검증 명령
 
@@ -115,5 +119,6 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | front 취약점 | 이관한 `package-lock.json` 기준 `npm audit` 17건(high 13, moderate 4). 전신 리포에서 그대로 넘어온 것 |
 | QueryDSL 잔존 | `blog/repository/PostQueryRepositoryImpl` 을 네이티브 SQL로 전환 |
 | blog AC 미작성 | `docs/blog/PRD.md` 의 인수 기준 표가 비어 있어 blog 테스트가 없다 |
-| 이관 문서 잔여 언급 | `docs/` 의 이관 문서 일부에 product/cart·Kafka 언급이 남아 있다. 도메인 문서를 손댈 때 함께 정리 |
+| 이관 문서 잔여 언급 | `docs/` 의 이관 문서 일부에 product/cart 언급이 남아 있다. 도메인 문서를 손댈 때 함께 정리 |
+| Kafka 미연동 | 로컬 compose에만 있고 코드 연동은 없다(ADR-003). 실제로 쓰려면 토픽 설계부터 |
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 game/blog 기준으로 새로 구성 |
