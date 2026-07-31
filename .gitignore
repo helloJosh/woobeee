@@ -4,13 +4,24 @@
 # IDE
 .idea/
 *.iml
+*.iws
+*.ipr
+.idea_modules/
 out/
+.vscode/
 
 # Build outputs
 target/
 **/target/
 
-# Maven wrapper temp files
+# JVM 크래시/attach 산출물
+hs_err_pid*
+replay_pid*
+.attach_pid*
+
+# Maven wrapper
+# 래퍼는 only-script 타입이라 jar가 없다(mvnw + maven-wrapper.properties만 커밋).
+# type=bin 으로 재생성하면 이 줄을 지우고 jar를 커밋해야 한다.
 .mvn/wrapper/maven-wrapper.jar
 
 # Runtime files
