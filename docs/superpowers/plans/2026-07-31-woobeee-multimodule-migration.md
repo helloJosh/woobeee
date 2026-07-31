@@ -186,10 +186,11 @@ front/pnpm-lock.yaml
     <description>Multimodule app: game(WebFlux) + blog(MVC)</description>
     <packaging>pom</packaging>
 
+    <!-- 모듈은 생기는 순서대로 추가한다. 존재하지 않는 디렉토리를 선언하면
+         Maven이 "Child module ... does not exist" 로 리액터 전체를 거부하므로,
+         app-mvc는 Task 2, app-webflux는 Task 4에서 각각 추가한다. -->
     <modules>
         <module>core</module>
-        <module>app-mvc</module>
-        <module>app-webflux</module>
     </modules>
 
     <properties>
@@ -695,10 +696,15 @@ Expected: `AuthTokenTypeTest` 2건 + `ApiResponseTest` 4건 PASS, `BUILD SUCCESS
 
 ```bash
 cd /Users/administrator/Documents/projects/woobeee
-./mvnw -q -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat|netty" || echo "OK: no web stack in core"
+./mvnw -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat-embed|reactor-netty" && echo "FAIL: web stack leaked into core" || echo "OK: no web stack in core"
 ```
 
 Expected: `OK: no web stack in core`.
+
+> `-q` 를 쓰면 `dependency:tree` 출력 자체가 억제되어 grep이 항상 빈 입력을 받는다 — 통과가 아니라
+> 무의미한 검사가 된다. 반드시 `-q` 없이 실행한다. `tomcat`/`netty` 대신
+> `tomcat-embed`/`reactor-netty` 로 좁힌 이유는 Lettuce가 순수 `netty` 코어를 정당하게
+> 끌어오기 때문이다(웹 스택이 아니다).
 
 - [ ] **Step 11: 커밋**
 
@@ -859,6 +865,17 @@ git commit -m "feat(core): add parent POM and web-stack-agnostic core module
     </build>
 </project>
 ```
+
+그리고 **루트 `pom.xml` 의 `<modules>` 에 `app-mvc` 를 등록**한다(Task 1은 `core` 만 선언해 두었다).
+
+```xml
+    <modules>
+        <module>core</module>
+        <module>app-mvc</module>
+    </modules>
+```
+
+`app-webflux` 는 아직 존재하지 않으므로 추가하지 않는다 — Task 4가 등록한다.
 
 - [ ] **Step 2: auth / blog / _common 소스 복사 후 패키지 일괄 치환**
 
@@ -1703,6 +1720,16 @@ R2DBC 드라이버는 런타임용, JDBC 드라이버는 넣지 않는다 — �
 
 > `core`가 `spring-boot-starter-data-redis` 를 전이로 가져오므로 Lettuce의 reactive API(`ReactiveStringRedisTemplate`)를 그대로 쓸 수 있다. 별도 redis 의존을 추가하지 않는다.
 
+그리고 **루트 `pom.xml` 의 `<modules>` 에 `app-webflux` 를 등록**한다(Task 1이 `core`, Task 2가 `app-mvc` 를 등록했다). 이로써 세 모듈이 모두 선언된 최종 형태가 된다:
+
+```xml
+    <modules>
+        <module>core</module>
+        <module>app-mvc</module>
+        <module>app-webflux</module>
+    </modules>
+```
+
 - [ ] **Step 2: 실패 테스트 작성 — 게임 API 계약**
 
 `app-webflux/src/test/java/com/woobeee/game/api/GameControllerTest.java`:
@@ -2318,7 +2345,7 @@ Expected: `ARCHITECTURE.md DESIGN.md FRONTEND.md _common _global auth blog front
 `core`가 웹 스타터를 끌어오면 두 앱 중 하나가 깨진다. 다음으로 검증한다:
 
 ```bash
-./mvnw -q -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat|netty" || echo "OK"
+./mvnw -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat-embed|reactor-netty" && echo "FAIL: web stack leaked into core" || echo "OK"
 ```
 
 ## 문서 읽기 순서
@@ -2367,7 +2394,7 @@ cd front && npm run build
 `core`의 웹 스택 무의존 확인:
 
 ```bash
-./mvnw -q -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat|netty" || echo "OK"
+./mvnw -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat-embed|reactor-netty" && echo "FAIL: web stack leaked into core" || echo "OK"
 ```
 
 ### 개발 서버
@@ -2478,10 +2505,10 @@ Expected: `BUILD SUCCESS`, 3개 모듈 리액터 전부 성공. 테스트 총 15
 
 ```bash
 cd /Users/administrator/Documents/projects/woobeee
-./mvnw -q -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat|netty" || echo "OK: core has no web stack"
+./mvnw -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat-embed|reactor-netty" && echo "FAIL: web stack leaked into core" || echo "OK: core has no web stack"
 ```
 
-Expected: `OK: core has no web stack`
+Expected: `OK: core has no web stack` (`-q` 를 붙이면 grep 입력이 비어 검사가 무의미해진다)
 
 - [ ] **Step 9: 프론트 빌드 검증**
 
