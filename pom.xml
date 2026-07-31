@@ -23,6 +23,7 @@
          app-mvc는 Task 2, app-webflux는 Task 4에서 각각 추가한다. -->
     <modules>
         <module>core</module>
+        <module>app-mvc</module>
     </modules>
 
     <properties>

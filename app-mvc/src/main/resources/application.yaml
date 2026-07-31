@@ -1,0 +1,70 @@
+server:
+  shutdown: graceful
+  port: 8000
+  ssl:
+    enabled: false
+
+oauth:
+  google:
+    client-id: 985212099499-uel8drlne8o4et7e3u1gbnjjvdi0k11l.apps.googleusercontent.com
+    client-secret: ${GOOGLE_CLIENT_SECRET:change-me}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:3000/auth/google/callback}
+    authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+    token-uri: https://oauth2.googleapis.com/token
+    scope: openid email profile
+    authorization-state-ttl-seconds: 600
+    connect-timeout-seconds: 5
+    read-timeout-seconds: 10
+
+storage:
+  s3:
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:ap-northeast-2}
+    bucket: ${S3_BUCKET:woobeee}
+    access-key: ${S3_ACCESS_KEY:admin}
+    secret-key: ${S3_SECRET_KEY:admin!23}
+    presigned-url-expiration-seconds: 600
+    path-style-access-enabled: true
+
+spring:
+  application:
+    name: woobeee-app-mvc
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:9379}
+      password: ${REDIS_PASSWORD:root!23}
+  jpa:
+    open-in-view: false
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        use_sql_comments: true
+        highlight_sql: true
+        auto_quote_keyword: true
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:9432/market}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456789}
+    driver-class-name: org.postgresql.Driver
+    type: org.apache.commons.dbcp2.BasicDataSource
+    dbcp2:
+      initial-size: 5
+      max-total: 30
+      max-idle: 15
+      min-idle: 5
+      max-wait-millis: 10000
+      validation-query: SELECT 1
+      test-on-borrow: true
+      test-while-idle: true
+      time-between-eviction-runs-millis: 5000
+      min-evictable-idle-time-millis: 60000
+
+logging:
+  level:
+    org.hibernate.orm.jdbc.bind: trace
+    org.springframework.transaction.interceptor: trace
+  file:
+    name: logs/app-mvc.log
