@@ -24,6 +24,7 @@
     <modules>
         <module>core</module>
         <module>app-mvc</module>
+        <module>app-webflux</module>
     </modules>
 
     <properties>

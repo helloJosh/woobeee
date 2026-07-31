@@ -1920,13 +1920,15 @@ public class GameAuthWebFilter implements WebFilter {
             return chain.filter(exchange);
         }
 
+        // then() 은 검증이 비어서 완료돼도(= 토큰 무효) 체인을 한 번 실행한다.
+        // switchIfEmpty 를 덧붙이면 Mono<Void> 는 값을 절대 emit 하지 않으므로
+        // 항상 발동해 체인이 두 번 구독된다 — 그래서 쓰지 않는다.
         return reactiveTokenVerifier.verify(accessToken)
                 .doOnNext(metadata -> exchange.getAttributes().put(
                         PRINCIPAL_ATTRIBUTE,
                         new GamePrincipal(metadata.memberId(), metadata.role(), metadata.device())
                 ))
-                .then(chain.filter(exchange))
-                .switchIfEmpty(chain.filter(exchange));
+                .then(Mono.defer(() -> chain.filter(exchange)));
     }
 
     private String resolveAccessToken(ServerWebExchange exchange) {

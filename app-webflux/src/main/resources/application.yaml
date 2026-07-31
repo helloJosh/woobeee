@@ -1,0 +1,25 @@
+server:
+  shutdown: graceful
+  port: 8001
+
+spring:
+  application:
+    name: woobeee-app-webflux
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:9379}
+      password: ${REDIS_PASSWORD:root!23}
+  r2dbc:
+    url: ${R2DBC_URL:r2dbc:postgresql://localhost:9432/market}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456789}
+    pool:
+      initial-size: 5
+      max-size: 30
+  flyway:
+    enabled: false
+
+logging:
+  file:
+    name: logs/app-webflux.log
