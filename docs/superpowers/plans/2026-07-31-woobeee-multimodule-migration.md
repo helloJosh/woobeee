@@ -787,12 +787,26 @@ git commit -m "feat(core): add parent POM and web-stack-agnostic core module
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <!-- core 를 통해 전이로도 들어오지만, 이 모듈이 StringRedisTemplate 을 직접
+             구성하므로(_common/config/RedisConfig, blog/support/RedisSupport) 명시 선언한다. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.querydsl</groupId>
             <artifactId>querydsl-jpa</artifactId>
             <classifier>jakarta</classifier>
         </dependency>
 
+        <!-- Boot 4는 FlywayAutoConfiguration 을 spring-boot-autoconfigure 에서 떼어내
+             별도 모듈 spring-boot-flyway 로 옮겼다. 이것이 없으면 flyway-core 가 classpath
+             에 있어도 자동설정이 로드되지 않아 `spring.flyway.*` 가 조용히 무시되고
+             마이그레이션이 아예 실행되지 않는다 (에러도 나지 않는다). 반드시 함께 선언한다. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>
