@@ -1,0 +1,59 @@
+services:
+  postgres-management:
+    image: postgres:18
+    container_name: woobeee-db
+    restart: always
+    ports:
+      - 9432:5432
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: 123456789
+      POSTGRES_DB: market
+      TZ: Asia/Seoul
+    volumes:
+      - .docker-volumes/postgres/market:/var/lib/postgresql
+
+  redis:
+    image: redis:latest
+    container_name: woobeee-redis
+    restart: always
+    ports:
+      - 9379:6379
+    volumes:
+      - .docker-volumes/redis/data:/data
+    command: [ "redis-server", "--appendonly", "yes", "--requirepass", "root!23" ]
+
+  minio:
+    image: minio/minio:latest
+    container_name: woobeee-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - .docker-volumes/minio:/data
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin!23
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  createbuckets:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set myminio http://minio:9000 admin admin!23; do
+        echo 'waiting for minio...';
+        sleep 3;
+      done;
+      mc mb myminio/woobeee || true;
+      mc anonymous set public myminio/woobeee || true
+      "
