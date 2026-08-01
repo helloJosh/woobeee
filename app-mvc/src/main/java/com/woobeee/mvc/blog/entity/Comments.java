@@ -41,7 +41,6 @@ public class Comments {
     private Long parentId;
 
     private Long memberId;
-    private String memberRole;
 
 //    @ManyToOne(fetch = FetchType.LAZY)
 //    @JoinColumn(name = "parent_id")
@@ -50,11 +49,10 @@ public class Comments {
 //    @OneToMany(mappedBy = "parent", cascade = CascadeType.ALL)
 //    private List<Comments> children = new ArrayList<>();
 
-    public Comments(String content, Long postId, Long parentId, Long memberId, String memberRole) {
+    public Comments(String content, Long postId, Long parentId, Long memberId) {
         this.content = content;
         this.postId = postId;
         this.parentId = parentId;
         this.memberId = memberId;
-        this.memberRole = memberRole;
     }
 }

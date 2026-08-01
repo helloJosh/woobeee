@@ -37,7 +37,7 @@ class GameControllerTest {
     @Test
     void meResolvesPrincipalFromSharedRedisToken() {
         when(reactiveTokenVerifier.verify(eq("tok-1")))
-                .thenReturn(Mono.just(new TokenMetadata(7L, "ROLE_BUYER", "ios", "127.0.0.1")));
+                .thenReturn(Mono.just(new TokenMetadata(7L, "ROLE_MEMBER", "ios", "127.0.0.1")));
 
         webTestClient.get().uri("/api/game/me")
                 .header("Authorization", "Bearer tok-1")
@@ -45,7 +45,7 @@ class GameControllerTest {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.data.memberId").isEqualTo(7)
-                .jsonPath("$.data.role").isEqualTo("ROLE_BUYER")
+                .jsonPath("$.data.role").isEqualTo("ROLE_MEMBER")
                 .jsonPath("$.data.device").isEqualTo("ios");
     }
 

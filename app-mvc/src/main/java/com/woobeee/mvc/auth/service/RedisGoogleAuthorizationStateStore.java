@@ -4,7 +4,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import com.woobeee.mvc.auth.config.GoogleOauthProperties;
-import com.woobeee.mvc.auth.entity.MemberType;
 import com.woobeee.mvc.auth.service.dto.GoogleAuthorizationAction;
 import com.woobeee.mvc.auth.service.dto.GoogleAuthorizationContext;
 import lombok.RequiredArgsConstructor;
@@ -24,13 +23,9 @@ public class RedisGoogleAuthorizationStateStore implements GoogleAuthorizationSt
                 "action", context.action().name(),
                 "codeVerifier", context.codeVerifier(),
                 "device", context.device(),
-                "memberType", context.memberType() == null ? "" : context.memberType().name(),
                 "nickname", context.nickname() == null ? "" : context.nickname(),
                 "termsAgreed", String.valueOf(context.termsAgreed()),
-                "privacyPolicyAgreed", String.valueOf(context.privacyPolicyAgreed()),
-                "businessRegistrationCertificateUrl", context.businessRegistrationCertificateUrl() == null
-                        ? ""
-                        : context.businessRegistrationCertificateUrl()
+                "privacyPolicyAgreed", String.valueOf(context.privacyPolicyAgreed())
         ));
         redisTemplate.expire(key, java.time.Duration.ofSeconds(googleOauthProperties.getAuthorizationStateTtlSeconds()));
     }
@@ -49,16 +44,13 @@ public class RedisGoogleAuthorizationStateStore implements GoogleAuthorizationSt
             return Optional.empty();
         }
 
-        String memberTypeValue = readString(values, "memberType");
         return Optional.of(new GoogleAuthorizationContext(
                 GoogleAuthorizationAction.valueOf(action),
                 codeVerifier,
                 device,
-                memberTypeValue == null || memberTypeValue.isBlank() ? null : MemberType.valueOf(memberTypeValue),
-                readString(values, "nickname"),
+                normalizeBlank(readString(values, "nickname")),
                 Boolean.parseBoolean(readString(values, "termsAgreed")),
-                Boolean.parseBoolean(readString(values, "privacyPolicyAgreed")),
-                normalizeBlank(readString(values, "businessRegistrationCertificateUrl"))
+                Boolean.parseBoolean(readString(values, "privacyPolicyAgreed"))
         ));
     }
 

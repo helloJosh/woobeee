@@ -7,12 +7,10 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import GoogleAuthButton from "@/components/auth/google-auth-button"
 import { useAuth } from "@/hooks/use-auth"
-import { useState } from "react"
 
 export default function LoginPage() {
     const { user, loading, isAuthenticated } = useAuth()
     const router = useRouter()
-    const [memberType, setMemberType] = useState<"BUYER" | "SELLER">("BUYER")
 
     useEffect(() => {
         if ((user || isAuthenticated) && !loading) {
@@ -56,24 +54,7 @@ export default function LoginPage() {
 
                 {/* Google 로그인 */}
 
-                <div className="grid grid-cols-2 gap-2">
-                    <Button
-                        type="button"
-                        variant={memberType === "BUYER" ? "default" : "outline"}
-                        onClick={() => setMemberType("BUYER")}
-                    >
-                        구매자
-                    </Button>
-                    <Button
-                        type="button"
-                        variant={memberType === "SELLER" ? "default" : "outline"}
-                        onClick={() => setMemberType("SELLER")}
-                    >
-                        판매자
-                    </Button>
-                </div>
-
-                <GoogleAuthButton mode="login" memberType={memberType} className="w-full" />
+                <GoogleAuthButton mode="login" className="w-full" />
                 <div className="text-center text-sm text-muted-foreground">
                     계정이 없으신가요?{" "}
                     <Link href="/signup" className="text-primary hover:underline">

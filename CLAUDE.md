@@ -100,7 +100,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 
 | 앱 | 도메인 | 베이스 경로 | 비고 |
 | --- | --- | --- | --- |
-| app-mvc | auth | `/api/auth` | `signup/buyers`, `signup/sellers`, `login`, `callback-google`, `access-tokens`, `refresh-tokens` |
+| app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/댓글/좋아요/카테고리 |
 | app-webflux | game | `/api/game` | `health`(공개), `me`(인증) — 나머지는 후속 spec |
 
@@ -116,6 +116,9 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | --- | --- |
 | 게임 도메인 설계 | 실시간 통신 방식(WebSocket/SSE/폴링), 게임 규칙, `V2__game.sql` → 별도 spec |
 | front 잔존 페이지 | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 삭제 또는 게임 화면으로 대체 |
+| 프로필 이미지 front UI | 백엔드 계약만 있고 업로드·표시 화면이 없다 |
+| 고아 오브젝트 정리 | 발급받고 등록하지 않은 `profiles/` 업로드에 대한 lifecycle 정책 |
+| 게임 머니 증감 | `members.game_money` 는 항상 0이다. 증감 계약은 game spec에서 설계 |
 | front 취약점 | 이관한 `package-lock.json` 기준 `npm audit` 17건(high 13, moderate 4). 전신 리포에서 그대로 넘어온 것 |
 | QueryDSL 잔존 | `blog/repository/PostQueryRepositoryImpl` 을 네이티브 SQL로 전환 |
 | blog AC 미작성 | `docs/blog/PRD.md` 의 인수 기준 표가 비어 있어 blog 테스트가 없다 |

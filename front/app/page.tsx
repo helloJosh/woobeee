@@ -11,7 +11,6 @@ import {
   LogIn,
   LogOut,
   Moon,
-  PackagePlus,
   Search,
   ShoppingCart,
   Newspaper,
@@ -35,7 +34,7 @@ const formatPrice = (price: number) =>
   }).format(price)
 
 export default function HomePage() {
-  const { loading: authLoading, isAuthenticated, isSeller } = useAuth()
+  const { loading: authLoading, isAuthenticated } = useAuth()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [products, setProducts] = useState<ProductSummary[]>([])
@@ -158,14 +157,6 @@ export default function HomePage() {
                 <span className="hidden sm:inline">장바구니</span>
               </Link>
             </Button>
-            {isSeller ? (
-              <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
-                <Link href="/products/new">
-                  <PackagePlus className="h-4 w-4" />
-                  <span className="hidden sm:inline">상품등록</span>
-                </Link>
-              </Button>
-            ) : null}
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/blog">
                 <Newspaper className="h-4 w-4" />
@@ -325,11 +316,11 @@ export default function HomePage() {
 
 function ProductCard({ product }: { product: ProductSummary }) {
   const src = product.thumbnailImageUrls[0] ?? product.mainImageUrl
-  const { isAuthenticated, isSeller, memberId } = useAuth()
+  const { isAuthenticated, memberId } = useAuth()
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
 
-  const canAddToCart = isAuthenticated && !isSeller && memberId != null
+  const canAddToCart = isAuthenticated && memberId != null
 
   const handleAddToCart = async () => {
     if (memberId == null || adding) {

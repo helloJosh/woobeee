@@ -15,9 +15,9 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "sellers")
+@Table(name = "members")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Seller {
+public class Member {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -38,7 +38,10 @@ public class Seller {
     private boolean privacyPolicyAgreed;
 
     @Column(length = 1000)
-    private String businessRegistrationCertificateUrl;
+    private String profileImageKey;
+
+    @Column(nullable = false)
+    private long gameMoney;
 
     @Column(nullable = false)
     private boolean active;
@@ -47,13 +50,14 @@ public class Seller {
     private LocalDateTime createdAt;
 
     @Builder
-    private Seller(
+    private Member(
             String googleSubject,
             String email,
             String nickname,
             boolean termsAgreed,
             boolean privacyPolicyAgreed,
-            String businessRegistrationCertificateUrl,
+            String profileImageKey,
+            long gameMoney,
             boolean active,
             LocalDateTime createdAt
     ) {
@@ -62,28 +66,37 @@ public class Seller {
         this.nickname = nickname;
         this.termsAgreed = termsAgreed;
         this.privacyPolicyAgreed = privacyPolicyAgreed;
-        this.businessRegistrationCertificateUrl = businessRegistrationCertificateUrl;
+        this.profileImageKey = profileImageKey;
+        this.gameMoney = gameMoney;
         this.active = active;
         this.createdAt = createdAt;
     }
 
-    public static Seller create(
+    public static Member create(
             String googleSubject,
             String email,
             String nickname,
             boolean termsAgreed,
-            boolean privacyPolicyAgreed,
-            String businessRegistrationCertificateUrl
+            boolean privacyPolicyAgreed
     ) {
-        return Seller.builder()
+        return Member.builder()
                 .googleSubject(googleSubject)
                 .email(email)
                 .nickname(nickname)
                 .termsAgreed(termsAgreed)
                 .privacyPolicyAgreed(privacyPolicyAgreed)
-                .businessRegistrationCertificateUrl(businessRegistrationCertificateUrl)
+                .profileImageKey(null)
+                .gameMoney(0L)
                 .active(true)
                 .createdAt(LocalDateTime.now())
                 .build();
+    }
+
+    public void changeProfileImageKey(String profileImageKey) {
+        this.profileImageKey = profileImageKey;
+    }
+
+    public void removeProfileImageKey() {
+        this.profileImageKey = null;
     }
 }

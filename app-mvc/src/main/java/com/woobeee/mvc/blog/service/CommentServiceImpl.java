@@ -40,8 +40,7 @@ public class CommentServiceImpl implements CommentService {
                 request.content(),
                 request.postId(),
                 request.parentId(),
-                memberIdentity.memberId(),
-                memberIdentity.role()
+                memberIdentity.memberId()
         );
 
         commentRepository.save(comment);
@@ -61,8 +60,7 @@ public class CommentServiceImpl implements CommentService {
         Comments comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new RuntimeException("댓글이 존재하지 않습니다."));
 
-        if (!comment.getMemberId().equals(memberIdentity.memberId())
-                || !comment.getMemberRole().equals(memberIdentity.role())) {
+        if (!comment.getMemberId().equals(memberIdentity.memberId())) {
             throw new RuntimeException("댓글을 삭제할 권한이 없습니다.");
         }
 
@@ -82,7 +80,7 @@ public class CommentServiceImpl implements CommentService {
         List<GetCommentResponse> roots = new ArrayList<>();
 
         for (Comments comment : comments) {
-            String authorLoginId = authMemberResolver.resolveLoginId(comment.getMemberId(), comment.getMemberRole());
+            String authorLoginId = authMemberResolver.resolveLoginId(comment.getMemberId());
 
             map.put(comment.getId(), new GetCommentResponse(
                     comment.getId(),

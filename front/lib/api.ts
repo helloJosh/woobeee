@@ -194,8 +194,7 @@ const refreshAccessToken = async (): Promise<boolean> => {
 const shouldTryRefresh = (endpoint: string) => {
     return ![
         "/api/auth/login",
-        "/api/auth/signup/buyers",
-        "/api/auth/signup/sellers",
+        "/api/auth/signup",
         "/api/auth/callback-google",
         "/api/auth/logout",
         REFRESH_ENDPOINT,
@@ -271,11 +270,10 @@ export const apiRequest = async (
 
 // 인증 API
 export const authAPI = {
-    startGoogleLogin: async (memberType: "BUYER" | "SELLER"): Promise<GoogleAuthorizationResponse> => {
+    startGoogleLogin: async (): Promise<GoogleAuthorizationResponse> => {
         const response = await apiRequest("/api/auth/login", {
             method: "POST",
             body: JSON.stringify({
-                memberType,
                 device: getDevice(),
             }),
         })
@@ -287,35 +285,13 @@ export const authAPI = {
         return json.data
     },
 
-    startBuyerSignup: async (nickname: string): Promise<GoogleAuthorizationResponse> => {
-        const response = await apiRequest("/api/auth/signup/buyers", {
+    startSignup: async (nickname: string): Promise<GoogleAuthorizationResponse> => {
+        const response = await apiRequest("/api/auth/signup", {
             method: "POST",
             body: JSON.stringify({
                 nickname,
                 termsAgreed: true,
                 privacyPolicyAgreed: true,
-                device: getDevice(),
-            }),
-        })
-        const json: ApiResponse<GoogleAuthorizationResponse> = await response.json()
-        if (!isApiSuccessful(json)) {
-            throw new Error(json.header.message || "Google 회원가입 시작에 실패했습니다.")
-        }
-
-        return json.data
-    },
-
-    startSellerSignup: async (
-        nickname: string,
-        businessRegistrationCertificateUrl?: string
-    ): Promise<GoogleAuthorizationResponse> => {
-        const response = await apiRequest("/api/auth/signup/sellers", {
-            method: "POST",
-            body: JSON.stringify({
-                nickname,
-                termsAgreed: true,
-                privacyPolicyAgreed: true,
-                businessRegistrationCertificateUrl: businessRegistrationCertificateUrl?.trim() || null,
                 device: getDevice(),
             }),
         })

@@ -3,7 +3,7 @@
 `blog` 도메인은 게시글, 카테고리, 댓글, 좋아요 기능을 담당한다.
 
 - 베이스 경로: `/api/back/posts`, `/api/back/categories`, `/api/back/comments`, `/api/back/likes`
-- 코드: `com.woobeee.artmarketplace.blog`
+- 코드: `com.woobeee.mvc.blog`
 - 전역 맥락: [`../_global/PRD.md`](../_global/PRD.md)
 
 ## 목표
@@ -39,7 +39,10 @@
 - **상세 조회**: locale과 로그인 정보를 반영한다.
 - **댓글**: 댓글/대댓글(parent) 구조를 지원한다.
 - **좋아요**: 로그인 사용자 기준으로 등록/취소한다.
-- 로그인 사용자 식별은 `AuthMemberResolver`로 해석한다.
+- **작성자 식별**: `posts` / `comments` / `likes` 는 `member_id` 단독으로 작성자를 가리킨다. 회원이 단일
+  `Member`로 통합돼 역할 구분이 없어졌으므로 `member_role` 컬럼은 제거했다. 작성자 동일성 검사도
+  `memberId` 비교만 한다.
+- 로그인 사용자 식별은 `AuthMemberResolver`로 해석한다(`MemberIdentity(memberId, loginId)`).
 
 ## 인수 기준 (Acceptance Criteria)
 

@@ -36,7 +36,7 @@ export interface TokenResponse {
   refreshToken: string
   refreshTokenExpiresInSeconds: number
   memberId?: number
-  role?: "ROLE_BUYER" | "ROLE_SELLER" | string
+  role?: string
 }
 
 export interface GoogleAuthorizationResponse {

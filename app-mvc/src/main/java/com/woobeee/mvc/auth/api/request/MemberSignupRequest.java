@@ -4,7 +4,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record BuyerSignupRequest(
+public record MemberSignupRequest(
         @NotBlank(message = "Nickname is required")
         @Size(max = 60, message = "Nickname must be 60 characters or fewer")
         String nickname,

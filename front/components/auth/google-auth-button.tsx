@@ -7,17 +7,13 @@ import { useAuth } from "@/hooks/use-auth"
 
 interface GoogleAuthButtonProps {
     mode: "signin" | "login"
-    memberType?: "BUYER" | "SELLER"
     nickname?: string
-    businessRegistrationCertificateUrl?: string
     className?: string
 }
 
 export default function GoogleAuthButton({
     mode,
-    memberType = "BUYER",
     nickname = "Google 사용자",
-    businessRegistrationCertificateUrl,
     className,
 }: GoogleAuthButtonProps) {
     const [loading, setLoading] = useState(false)
@@ -27,13 +23,9 @@ export default function GoogleAuthButton({
         setLoading(true)
         try {
             if (mode === "signin") {
-                await startGoogleSignup(
-                    memberType,
-                    nickname.trim() || "Google 사용자",
-                    businessRegistrationCertificateUrl
-                )
+                await startGoogleSignup(nickname.trim() || "Google 사용자")
             } else {
-                await startGoogleLogin(memberType)
+                await startGoogleLogin()
             }
         } catch (error) {
             console.error("Google OAuth start failed:", error)

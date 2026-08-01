@@ -1,10 +1,9 @@
 package com.woobeee.mvc.auth.controller;
 
 import com.woobeee.core.api.ApiResponse;
-import com.woobeee.mvc.auth.api.request.BuyerSignupRequest;
 import com.woobeee.mvc.auth.api.request.GoogleAuthorizationCallbackRequest;
 import com.woobeee.mvc.auth.api.request.LoginRequest;
-import com.woobeee.mvc.auth.api.request.SellerSignupRequest;
+import com.woobeee.mvc.auth.api.request.MemberSignupRequest;
 import com.woobeee.mvc.auth.api.response.GoogleAuthorizationResponse;
 import com.woobeee.mvc.auth.api.response.TokenResponse;
 import com.woobeee.mvc.auth.service.AuthService;
@@ -25,22 +24,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService authService;
 
-    @PostMapping("/signup/buyers")
-    @Operation(summary = "구매자 회원가입 authorization 시작", description = "Authorization Code + PKCE용 Google authorization URL을 발급합니다.")
-    public ApiResponse<GoogleAuthorizationResponse> signupBuyer(
-            @Valid @RequestBody BuyerSignupRequest request
+    @PostMapping("/signup")
+    @Operation(summary = "회원가입 authorization 시작", description = "Authorization Code + PKCE용 Google authorization URL을 발급합니다.")
+    public ApiResponse<GoogleAuthorizationResponse> signup(
+            @Valid @RequestBody MemberSignupRequest request
     ) {
-        GoogleAuthorizationResponse response = authService.signupBuyer(request);
-        return ApiResponse.success(response, "Buyer signup authorization created");
-    }
-
-    @PostMapping("/signup/sellers")
-    @Operation(summary = "판매자 회원가입 authorization 시작", description = "Authorization Code + PKCE용 Google authorization URL을 발급합니다.")
-    public ApiResponse<GoogleAuthorizationResponse> signupSeller(
-            @Valid @RequestBody SellerSignupRequest request
-    ) {
-        GoogleAuthorizationResponse response = authService.signupSeller(request);
-        return ApiResponse.success(response, "Seller signup authorization created");
+        GoogleAuthorizationResponse response = authService.signup(request);
+        return ApiResponse.success(response, "Member signup authorization created");
     }
 
     @PostMapping("/login")

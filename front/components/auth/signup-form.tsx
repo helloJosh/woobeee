@@ -9,16 +9,10 @@ import { Input } from "@/components/ui/input"
 import GoogleAuthButton from "@/components/auth/google-auth-button"
 import { useAuth } from "@/hooks/use-auth"
 
-interface SignupFormProps {
-    memberType: "BUYER" | "SELLER"
-}
-
-export default function SignupForm({ memberType }: SignupFormProps) {
+export default function SignupForm() {
     const { user, loading, isAuthenticated } = useAuth()
     const router = useRouter()
     const [nickname, setNickname] = useState("")
-    const [businessRegistrationCertificateUrl, setBusinessRegistrationCertificateUrl] = useState("")
-    const isSeller = memberType === "SELLER"
 
     const goBack = () => {
         if (window.history.length > 1) {
@@ -26,7 +20,7 @@ export default function SignupForm({ memberType }: SignupFormProps) {
             return
         }
 
-        router.push("/signup")
+        router.push("/")
     }
 
     useEffect(() => {
@@ -56,9 +50,7 @@ export default function SignupForm({ memberType }: SignupFormProps) {
                 </Button>
 
                 <div className="space-y-2">
-                    <h1 className="text-2xl font-semibold">
-                        {isSeller ? "판매자 회원가입" : "구매자 회원가입"}
-                    </h1>
+                    <h1 className="text-2xl font-semibold">회원가입</h1>
                     <p className="text-sm text-muted-foreground">
                         Google 인증으로 계정을 생성합니다.
                     </p>
@@ -71,22 +63,7 @@ export default function SignupForm({ memberType }: SignupFormProps) {
                     maxLength={60}
                 />
 
-                {isSeller ? (
-                    <Input
-                        value={businessRegistrationCertificateUrl}
-                        onChange={(event) => setBusinessRegistrationCertificateUrl(event.target.value)}
-                        placeholder="사업자등록증 URL"
-                        maxLength={1000}
-                    />
-                ) : null}
-
-                <GoogleAuthButton
-                    mode="signin"
-                    memberType={memberType}
-                    nickname={nickname}
-                    businessRegistrationCertificateUrl={businessRegistrationCertificateUrl}
-                    className="w-full"
-                />
+                <GoogleAuthButton mode="signin" nickname={nickname} className="w-full" />
 
                 <div className="text-center text-sm text-muted-foreground">
                     이미 계정이 있으신가요?{" "}

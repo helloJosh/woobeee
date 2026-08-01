@@ -1,40 +1,62 @@
 # PRD — auth (인증/회원)
 
-`auth` 도메인은 구매자/판매자 회원, Google OAuth 기반 로그인, access/refresh token 발급·재발급을 담당한다.
+`auth` 도메인은 회원, Google OAuth 기반 로그인, access/refresh token 발급·재발급, 회원 프로필(프로필 이미지 포함)을 담당한다.
 
 - 베이스 경로: `/api/auth`
-- 코드: `com.woobeee.artmarketplace.auth`
+- 코드: `com.woobeee.mvc.auth`
 - 전역 맥락: [`../_global/PRD.md`](../_global/PRD.md)
 
 ## 목표
 
-- 구매자(Buyer)와 판매자(Seller)가 Google OAuth로 가입·로그인한다.
+- 회원이 Google OAuth로 가입·로그인한다.
 - 로그인 후 access/refresh token으로 인증 상태를 유지하고, refresh로 재발급한다.
 - 토큰은 발급 시점의 디바이스/IP 정보와 함께 관리한다.
+- 회원이 프로필 이미지를 등록·교체·삭제한다.
 
 ## 회원 모델
 
-- `Buyer`, `Seller` 엔티티와 공통 `Address`, 회원 구분 `MemberType`.
+- 단일 `Member` 엔티티(`members` 테이블)와 공통 `Address`. 구매자/판매자 구분은 없다.
+- 필드: `id`, `googleSubject`, `email`, `nickname`, `termsAgreed`, `privacyPolicyAgreed`,
+  `profileImageKey`(nullable), `gameMoney`(long, 기본 0), `active`, `createdAt`.
 - 활성 상태 여부(`isActive`)로 가입 완료/이용 가능 회원을 구분한다.
-- 저장소: `BuyerRepository`, `SellerRepository` (Spring Data JPA).
+- 역할은 `ROLE_MEMBER` 하나다. Redis 토큰의 `role` 값에만 실려 있고 분기에 쓰이지 않는다.
+- `gameMoney`는 가입 시 0으로 생성하고 조회만 한다. 증감 경로는 게임 spec에서 정한다.
+- 저장소: `MemberRepository` (Spring Data JPA).
 
 ## 핵심 기능 (엔드포인트)
 
 | 기능 | 메서드 · 경로 |
 | --- | --- |
-| 구매자 회원가입 authorization 시작 | `POST /api/auth/signup/buyers` |
-| 판매자 회원가입 authorization 시작 | `POST /api/auth/signup/sellers` |
+| 회원가입 authorization 시작 | `POST /api/auth/signup` |
 | 로그인 authorization 시작 | `POST /api/auth/login` |
 | Google callback 처리 | `POST /api/auth/callback-google` |
 | access token 발급 | `POST /api/auth/access-tokens` |
 | refresh token 재발급 | `POST /api/auth/refresh-tokens` |
+| 내 프로필 조회 | `GET /api/auth/me` |
+| 프로필 이미지 업로드 URL 발급 | `POST /api/auth/me/profile-image/presigned-url` |
+| 프로필 이미지 등록/교체 | `PUT /api/auth/me/profile-image` |
+| 프로필 이미지 삭제 | `DELETE /api/auth/me/profile-image` |
+
+## 프로필 이미지
+
+- 업로드는 presigned PUT 2-step이다. 파일 바이트는 앱을 경유하지 않는다.
+- 키 규칙은 `profiles/{memberId}/{uuid}/{sanitized-filename}` 이고, `memberId`는 요청 본문이 아니라
+  **서버가 토큰에서** 결정한다. temp 경유는 없다.
+- 발급은 contentType 화이트리스트(`image/png`, `image/jpeg`, `image/webp`, `image/gif`)를 강제한다.
+  그 밖은 `400`.
+- 등록은 fileKey가 `profiles/{요청자 memberId}/`로 시작하는지 검증한다. 그 밖은 `403`.
+- 등록/교체는 컬럼을 먼저 커밋하고 그다음 이전 오브젝트를 삭제한다. 삭제가 실패해도 프로필은
+  정상이며 고아 오브젝트만 남는다(로그 경고).
+- 조회는 presigned GET URL이며, 프로필 미설정이면 `null`이다.
+- 인증은 `AccessTokenLoginIdHeaderFilter`가 주입하는 `loginId` 헤더로 하고, 없으면 `401`이다.
 
 ## 인증 흐름
 
 1. 클라이언트가 회원가입 또는 로그인 authorization 생성을 요청한다.
 2. 서버가 Google authorization URL과 state를 발급한다. state는 Redis에 TTL(기본 600초)과 함께 저장된다(`RedisGoogleAuthorizationStateStore`).
 3. Google callback에서 code/state를 검증한다(`GoogleOauthClient`, `GoogleIdentityVerifier`).
-4. 회원 정보를 확인/생성하고 access/refresh token을 발급한다(`TokenService`).
+4. 회원 정보를 확인/생성하고 access/refresh token을 발급한다(`TokenService`). 로그인은 google subject로
+   회원을 찾고, 미등록이면 `404`다.
 5. 토큰은 `TokenMetadata`(memberId, role, device, ip)와 함께 Redis(`RedisTokenStore`)에 저장된다.
 
 ## 토큰 정책
@@ -57,12 +79,19 @@
 | AUTH-AC-05 | 재발급에 성공하면 새 access/refresh를 발급하고 사용한 refresh token을 삭제(rotation)한다 | `TokenServiceTest` |
 | AUTH-AC-06 | `ip`가 달라도 device가 일치하면 재발급은 거절하지 않고 진행한다(현재 정책, IP 경고는 TODO) | `TokenServiceTest` |
 | AUTH-AC-07 | Google callback에서 state/code 검증에 실패하면 인증을 거절한다 | `AuthServiceTest` |
-| AUTH-AC-08 | 구매자/판매자 회원가입이 성공하면 해당 엔티티를 `active=true`로 생성한다 | `AuthServiceTest` |
+| AUTH-AC-08 | 회원가입이 성공하면 `members`에 `active=true`, `gameMoney=0`으로 생성한다 | `AuthServiceTest` |
+| AUTH-AC-09 | 로그인은 memberType 없이 google subject로 회원을 찾고, 미등록이면 `404`를 반환한다 | `AuthServiceTest` |
+| AUTH-AC-10 | presigned 발급은 `profiles/{요청자 memberId}/` prefix 키와 TTL을 반환한다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-11 | 허용 목록 밖 contentType으로 발급을 요청하면 `400`을 반환한다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-12 | 다른 회원 prefix의 fileKey를 등록하면 `403`을 반환한다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-13 | 교체가 성공하면 컬럼을 갱신하고 이전 오브젝트를 삭제한다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-14 | `GET /me`는 presigned GET URL을 반환하고, 프로필 미설정이면 `null`을 반환한다 | `MemberProfileImageControllerTest` |
 
 ## 설정
 
 - `oauth.google.*` (`application.yaml`): client-id/secret, redirect-uri, authorization-uri, token-uri, scope, state TTL, 타임아웃. (`GoogleOauthProperties`)
-- 시크릿은 환경변수(`GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`)로 주입한다.
+- `storage.s3.*` (`application.yaml`): 프로필 이미지 presign에 쓰는 버킷·엔드포인트·자격증명·TTL. (`StorageProperties`)
+- 시크릿은 환경변수(`GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`)로 주입한다.
 
 ## 비기능 요구사항
 

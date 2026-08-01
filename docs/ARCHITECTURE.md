@@ -55,12 +55,14 @@ art-market-place
 
 ### `auth`
 
-회원가입, 로그인, Google OAuth callback, 토큰 발급/재발급을 담당한다.
+회원가입, 로그인, Google OAuth callback, 토큰 발급/재발급, 회원 프로필과 프로필 이미지를 담당한다.
 
-- Controller: `AuthController`, `TokenGenerateController`
-- Service: `AuthService`, `TokenService`, Google OAuth 관련 client/store
-- Entity: `Buyer`, `Seller`, `Address`, `MemberType`
-- Token: `TokenGenerator`, `TokenStore`, Redis 기반 구현
+- Controller: `AuthController`, `TokenGenerateController`, `MemberProfileImageController`
+- Service: `AuthService`, `TokenService`, `MemberProfileImageService`, Google OAuth 관련 client/store
+- Entity: `Member`(단일 회원, `members`), `Address`
+- Repository: `MemberRepository`
+- Token: `TokenGenerator`, `TokenStore`, Redis 기반 구현. 역할은 `ROLE_MEMBER` 하나다.
+- Storage: 프로필 이미지는 `_common/storage`의 `S3Client`/`S3Presigner`를 주입받아 presigned PUT/GET으로 다룬다.
 
 ### `product`
 

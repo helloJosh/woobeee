@@ -1,9 +1,7 @@
 package com.woobeee.mvc._common.filter;
 
-import com.woobeee.mvc.auth.entity.Buyer;
-import com.woobeee.mvc.auth.entity.Seller;
-import com.woobeee.mvc.auth.repository.BuyerRepository;
-import com.woobeee.mvc.auth.repository.SellerRepository;
+import com.woobeee.mvc.auth.entity.Member;
+import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.core.token.TokenStore;
 import com.woobeee.core.token.dto.AuthTokenType;
 import com.woobeee.core.token.dto.TokenMetadata;
@@ -25,12 +23,9 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String LOGIN_ID_HEADER = "loginId";
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String ROLE_BUYER = "ROLE_BUYER";
-    private static final String ROLE_SELLER = "ROLE_SELLER";
 
     private final TokenStore tokenStore;
-    private final BuyerRepository buyerRepository;
-    private final SellerRepository sellerRepository;
+    private final MemberRepository memberRepository;
 
     @Override
     protected void doFilterInternal(
@@ -78,18 +73,12 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
     }
 
     private String resolveLoginId(TokenMetadata metadata) {
-        if (ROLE_BUYER.equals(metadata.role())) {
-            return buyerRepository.findById(metadata.memberId())
-                    .map(Buyer::getEmail)
-                    .orElse(null);
+        if (metadata.memberId() == null) {
+            return null;
         }
 
-        if (ROLE_SELLER.equals(metadata.role())) {
-            return sellerRepository.findById(metadata.memberId())
-                    .map(Seller::getEmail)
-                    .orElse(null);
-        }
-
-        return null;
+        return memberRepository.findById(metadata.memberId())
+                .map(Member::getEmail)
+                .orElse(null);
     }
 }

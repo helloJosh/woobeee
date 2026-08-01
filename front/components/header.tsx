@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, PackagePlus, Newspaper} from "lucide-react"
+import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -52,7 +52,7 @@ export default function Header({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
-  const { user, loading, isAuthenticated, isSeller } = useAuth() // Updated usage
+  const { user, loading, isAuthenticated } = useAuth()
 
   // ▼ 언어 상태 추가 (ko-KR / en-US)
   const [lang, setLang] = useState<"ko-KR" | "en-US">("ko-KR")
@@ -176,15 +176,6 @@ export default function Header({
                 <Mail className="h-5 w-5" />
               </a>
             </Button>
-
-            {isSeller ? (
-                <Button variant="outline" asChild className="flex items-center gap-2">
-                  <Link href="/products/new">
-                    <PackagePlus className="h-4 w-4" />
-                    <span className="hidden sm:inline">상품등록</span>
-                  </Link>
-                </Button>
-            ) : null}
 
             {/* 로그인/사용자 메뉴 */}
             {loading ? (

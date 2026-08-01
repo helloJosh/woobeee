@@ -30,7 +30,7 @@ type ProductDraft = {
 
 export default function NewProductPage() {
     const router = useRouter()
-    const { loading, isAuthenticated, isSeller, memberId } = useAuth()
+    const { loading, isAuthenticated, memberId } = useAuth()
     const draftRestoredRef = useRef(false)
     const [name, setName] = useState("")
     const [description, setDescription] = useState("")
@@ -54,10 +54,10 @@ export default function NewProductPage() {
     }, [tagsText])
 
     useEffect(() => {
-        if (!loading && (!isAuthenticated || !isSeller)) {
+        if (!loading && !isAuthenticated) {
             router.replace("/login")
         }
-    }, [isAuthenticated, isSeller, loading, router])
+    }, [isAuthenticated, loading, router])
 
     useEffect(() => {
         if (draftRestoredRef.current) {
@@ -173,7 +173,7 @@ export default function NewProductPage() {
         }
     }
 
-    if (loading || (!isAuthenticated || !isSeller)) {
+    if (loading || !isAuthenticated) {
         return (
             <main className="flex min-h-screen items-center justify-center gap-3 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />

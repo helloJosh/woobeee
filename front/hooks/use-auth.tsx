@@ -8,18 +8,13 @@ import type { User } from "@/lib/types"
 interface AuthContextType {
     user: User | null
     loading: boolean
-    startGoogleLogin: (memberType: "BUYER" | "SELLER") => Promise<void>
-    startGoogleSignup: (
-        memberType: "BUYER" | "SELLER",
-        nickname: string,
-        businessRegistrationCertificateUrl?: string
-    ) => Promise<void>
+    startGoogleLogin: () => Promise<void>
+    startGoogleSignup: (nickname: string) => Promise<void>
     completeGoogleAuthorization: (code: string, state: string) => Promise<void>
     logout: () => Promise<void>
     isAuthenticated: boolean
     memberId: number | null
     role: string | null
-    isSeller: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -51,9 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         initAuth()
     }, [])
 
-    const startGoogleLogin = async (memberType: "BUYER" | "SELLER") => {
+    const startGoogleLogin = async () => {
         try {
-            const response = await authAPI.startGoogleLogin(memberType)
+            const response = await authAPI.startGoogleLogin()
             window.location.assign(response.authorizationUrl)
         } catch (error) {
             console.error("Google login start failed:", error)
@@ -61,15 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    const startGoogleSignup = async (
-        memberType: "BUYER" | "SELLER",
-        nickname: string,
-        businessRegistrationCertificateUrl?: string
-    ) => {
+    const startGoogleSignup = async (nickname: string) => {
         try {
-            const response = memberType === "SELLER"
-                ? await authAPI.startSellerSignup(nickname, businessRegistrationCertificateUrl)
-                : await authAPI.startBuyerSignup(nickname)
+            const response = await authAPI.startSignup(nickname)
             window.location.assign(response.authorizationUrl)
         } catch (error) {
             console.error("Google signup start failed:", error)
@@ -118,7 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         memberId,
         role,
-        isSeller: role === "ROLE_SELLER",
     }
 
     return <AuthContext.Provider value={value}>

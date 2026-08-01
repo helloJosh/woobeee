@@ -86,8 +86,7 @@ public class PostServiceImpl implements PostService {
                 markdownKrString,
                 markdownEnString,
                 request.categoryId(),
-                memberIdentity.memberId(),
-                memberIdentity.role()
+                memberIdentity.memberId()
         );
 
         post = postRepository.save(post);
@@ -155,8 +154,7 @@ public class PostServiceImpl implements PostService {
         Posts post = postRepository.findById(postId)
                 .orElseThrow(() -> new CustomNotFoundException(ErrorCode.post_notFound));
 
-        if (!post.getMemberId().equals(memberIdentity.memberId())
-                || !post.getMemberRole().equals(memberIdentity.role())) {
+        if (!post.getMemberId().equals(memberIdentity.memberId())) {
             throw new CustomAuthenticationException(ErrorCode.comment_needAuthentication);
         }
 
@@ -185,9 +183,8 @@ public class PostServiceImpl implements PostService {
         Boolean isLiked = false;
         if (loginId != null) {
             isLiked = authMemberResolver.findByLoginId(loginId)
-                    .map(memberIdentity -> likeRepository.existsByMemberIdAndMemberRoleAndPostId(
+                    .map(memberIdentity -> likeRepository.existsByMemberIdAndPostId(
                             memberIdentity.memberId(),
-                            memberIdentity.role(),
                             post.getId()
                     ))
                     .orElse(false);
