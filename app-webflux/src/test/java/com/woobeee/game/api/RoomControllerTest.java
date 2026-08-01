@@ -109,6 +109,16 @@ class RoomControllerTest {
                 .jsonPath("$.data.gameType").isEqualTo("OMOK");
     }
 
+    @Test
+    void createRoomRejectsAMissingGameType() {
+        webTestClient.post().uri("/api/game/rooms")
+                .header("Authorization", "Bearer tok-1")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{}")
+                .exchange()
+                .expectStatus().isBadRequest();
+    }
+
     /** GAME-AC-01 */
     @Test
     void createRoomRequiresAMemberToken() {
@@ -159,5 +169,16 @@ class RoomControllerTest {
                 .jsonPath("$.data.token").isEqualTo("tok-guest")
                 .jsonPath("$.data.participantId").isEqualTo("g:guest-1")
                 .jsonPath("$.data.displayName").isEqualTo("손님");
+    }
+
+    @Test
+    void guestTokenEndpointRejectsABlankNickname() {
+        roomService.create(GameType.DODGE, GameParticipant.member(11L, "host"));
+
+        webTestClient.post().uri("/api/game/rooms/room-1/guest-tokens")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"inviteCode\":\"code\",\"nickname\":\"\"}")
+                .exchange()
+                .expectStatus().isBadRequest();
     }
 }
