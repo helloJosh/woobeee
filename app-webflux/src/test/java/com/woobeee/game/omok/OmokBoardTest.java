@@ -20,11 +20,12 @@ class OmokBoardTest {
     void placeAndClearRoundTrip() {
         OmokBoard board = new OmokBoard();
 
-        board.place(7, 7, Stone.BLACK);
-        assertThat(board.at(7, 7)).isEqualTo(Stone.BLACK);
+        board.place(3, 1, Stone.BLACK);
+        assertThat(board.at(3, 1)).isEqualTo(Stone.BLACK);
+        assertThat(board.at(1, 3)).isEqualTo(Stone.EMPTY); // Asymmetric: catches x/y transposition
 
-        board.clear(7, 7);
-        assertThat(board.at(7, 7)).isEqualTo(Stone.EMPTY);
+        board.clear(3, 1);
+        assertThat(board.at(3, 1)).isEqualTo(Stone.EMPTY);
     }
 
     @Test
@@ -42,13 +43,16 @@ class OmokBoardTest {
     @Test
     void copyIsIndependent() {
         OmokBoard board = new OmokBoard();
-        board.place(7, 7, Stone.BLACK);
+        board.place(3, 1, Stone.BLACK);
 
         OmokBoard copy = board.copy();
-        copy.place(8, 8, Stone.WHITE);
+        copy.place(5, 2, Stone.WHITE);
 
-        assertThat(board.at(8, 8)).isEqualTo(Stone.EMPTY);
-        assertThat(copy.at(7, 7)).isEqualTo(Stone.BLACK);
+        assertThat(board.at(5, 2)).isEqualTo(Stone.EMPTY); // Asymmetric: original unaffected
+        assertThat(board.at(2, 5)).isEqualTo(Stone.EMPTY); // Additional asymmetric check
+        assertThat(copy.at(3, 1)).isEqualTo(Stone.BLACK);
+        assertThat(copy.at(5, 2)).isEqualTo(Stone.WHITE);
+        assertThat(copy.at(2, 5)).isEqualTo(Stone.EMPTY); // Catches x/y transposition in place
     }
 
     @Test
