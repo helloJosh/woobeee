@@ -416,9 +416,16 @@ cd front && npm run build && npx tsc --noEmit
 `app-webflux` 가 블로킹 의존을 들이지 않았는지도 본다.
 
 ```bash
-./mvnw -pl app-webflux dependency:tree | grep -E "software.amazon.awssdk:s3:|spring-boot-starter-data-redis$|postgresql:postgresql" \
+./mvnw -pl app-webflux dependency:tree \
+  | grep -E "spring-boot-starter-jdbc|spring-boot-starter-data-jpa|org\.postgresql:postgresql:|awssdk:apache-client" \
   && echo "FAIL: blocking client leaked into app-webflux" || echo "OK"
 ```
+
+아티팩트 이름으로 잡으면 안 되는 것 둘을 짚어 둔다. `spring-boot-starter-data-redis` 는 `core` 가
+가져오는 의존이고 `ReactiveStringRedisTemplate` 이 거기서 나오므로 누출이 아니다. `S3Client` 와
+`S3AsyncClient` 는 **같은 `awssdk:s3` 아티팩트**에 들어 있어 아티팩트로는 구분되지 않는다 —
+실제로 갈라지는 것은 HTTP 클라이언트이므로 `apache-client` 의 부재로 판정한다. 그래서
+`app-webflux` 의 `s3` 의존은 `apache-client` 를 **exclusion 으로 끊고** `netty-nio-client` 만 남긴다.
 
 ## 미해결 / 후속
 
