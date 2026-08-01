@@ -46,6 +46,43 @@
 - 명시적 `LEAVE` 는 유예 없이 즉시 이탈.
 - 게임 시작 후 새 참가자는 받지 않는다. 재접속은 새 참가가 아니므로 허용된다.
 - 방장이 빠지면 참가 순서상 다음 사람이 방장이 된다.
+- TTL 로 방이 만료되면 `RoomSweeper` 가 `RoomCommandDispatcher.settle` 을 거치지 않고 바로
+  치운다. 그래서 진행 중이던 게임의 sink(`OmokGameSink`)는 그 사실을 알지 못하고, 그 방의
+  진행 중 게임 상태가 메모리에 남는다(알려진 미비점 — 이탈로 인한 즉시 소멸/기권 경로와 다르다).
+
+## 오목 규칙
+
+- 15×15, 렌주룰. 방장이 흑, 나중에 들어온 사람이 백. 흑 선.
+- 흑 금수: 삼삼, 사사, 장목(6목 이상). 백은 금수가 없다.
+- 흑은 **정확히 5목**일 때만 승리한다. 백은 5목 이상이면 승리한다.
+- **사는 완성점이 아니라 네 개 돌의 집합으로 센다.** `.XXXX.` 는 양끝 어디에 놓아도 5가 되지만
+  완성되는 돌 집합이 같으므로 사 하나다. 완성점을 세면 사사로 오판한다.
+- **그 집합이 실제로 정확히 5목을 만드는지까지 확인해야 한다.** 모양만 보면 안 된다 —
+  `...XXXX.X......` 에서 창 `4..8`은 흑 넷과 빈칸 하나로 사 모양을 갖췄지만, 그 빈칸을 채우면
+  8번 칸의 흑과 이어져 6목(장목)이 된다. 이런 창을 사로 세면 합법수를 사사로 잘못 거절한다.
+  그래서 후보 빈칸에 흑을 임시로 놓아 완성된 길이가 정확히 5인 창만 사로 센다.
+- **열린삼도 완성점이 아니라 세 개 돌의 집합으로 센다.** 한 축 위에 열린삼이 두 개 있을 수
+  있어서 축마다 참/거짓 하나로 세면 삼삼을 놓친다. 또한 그 완성점이 만드는 열린사가 지금
+  판정 중인 자리를 포함하지 않으면 세지 않는다 — 그렇지 않으면 이번 수와 무관하게 판 어딘가에
+  이미 있던 삼이 삼삼 판정에 끼어들어 합법수를 거절하게 된다.
+- 열린삼 판정은 금수 판정을 재귀 호출한다 — 삼이 "열려" 있으려면 그것을 열린사로 바꾸는 수가
+  실제로 둘 수 있어야 하기 때문이다. 재귀 깊이는 5에서 끊는다.
+- 금수 착수는 `OMOK_REJECTED` 로 거절하고 판 상태를 바꾸지 않는다(정통 렌주룰의 즉시 패배와 다르다).
+- 수당 제한시간 60초. `turnDeadline` 으로 클라이언트에 알린다. **다만 강제되지는 않는다** —
+  `OmokGame.timeout(...)` 을 호출하는 배선이 없어서 제한시간을 넘겨도 서버가 자동으로 패배
+  처리하지 않는다(알려진 미비점).
+- 게임 중 이탈이 확정되면 기권으로 처리해 상대가 이긴다.
+
+## 영속화
+
+- 종료된 게임만 남긴다. `game_results` 1행 + `game_result_participants` N행 (`V2__game.sql`).
+- 기보는 MinIO 에 `games/{gameType}/{gameResultId}.ndjson` 으로 종료 시 한 번에 올린다.
+- 순서는 결과 행 → 참가자 행 → 업로드 → key 부착. 업로드가 실패하면 `replay_object_key` 가
+  `null` 로 남을 뿐 전적은 그대로다.
+- `GAME_END` 는 이 저장을 기다리지 않고 즉시 나간다 — 승자를 알리는 데 DB/스토리지 왕복을
+  강요하지 않기 위해서다. 그래서 `GAME_END` 페이로드에는 `gameResultId` 가 없다. 참가자는
+  나중에 `GET /api/game/me/results` 로 결과를 찾는다.
+- `app-webflux` 는 `S3AsyncClient` 를 쓴다. `app-mvc` 의 `S3Client` 는 블로킹이라 쓸 수 없다.
 
 ## WebSocket 프로토콜
 
@@ -74,19 +111,19 @@
 | GAME-AC-07 | `JOIN` 없이 10초가 지난 WebSocket 세션은 서버가 닫는다 | `GameWebSocketHandlerTest` |
 | GAME-AC-08 | 연결이 끊기면 `DISCONNECTED` 로 두고 30초 안에 재접속하면 자리를 잇는다. 유예를 넘기면 이탈이 확정된다 | `RoomServiceTest`, `GameWebSocketHandlerTest` |
 | GAME-AC-09 | 명시적 `LEAVE` 는 유예 없이 즉시 이탈로 처리한다 | `RoomServiceTest`, `GameWebSocketHandlerTest` |
-| GAME-AC-10 | 흑의 삼삼·사사·장목 착수는 `OMOK_REJECTED` 로 거절하고 판 상태를 바꾸지 않는다 | 미작성 — Plan 2 |
-| GAME-AC-11 | 백은 금수가 없고 6목 이상으로도 승리한다 | 미작성 — Plan 2 |
-| GAME-AC-12 | 흑은 정확히 5목일 때만 승리한다 | 미작성 — Plan 2 |
-| GAME-AC-13 | 열린 삼 판정은 열린 사를 만드는 자리가 금수면 열린 삼으로 보지 않는다 | 미작성 — Plan 2 |
-| GAME-AC-14 | 차례가 아닌 참가자의 착수와 이미 놓인 자리 착수는 거절한다 | 미작성 — Plan 2 |
-| GAME-AC-15 | 수당 제한시간을 넘기면 그 참가자가 패한다 | 미작성 — Plan 2 |
+| GAME-AC-10 | 흑의 삼삼·사사·장목 착수는 `OMOK_REJECTED` 로 거절하고 판 상태를 바꾸지 않는다 | `RenjuRuleTest`, `OmokGameTest`, `OmokGameSinkTest` |
+| GAME-AC-11 | 백은 금수가 없고 6목 이상으로도 승리한다 | `WinRuleTest`, `OmokGameTest` |
+| GAME-AC-12 | 흑은 정확히 5목일 때만 승리한다 | `WinRuleTest` |
+| GAME-AC-13 | 열린 삼 판정은 열린 사를 만드는 자리가 금수면 열린 삼으로 보지 않는다 | `RenjuRuleTest` |
+| GAME-AC-14 | 차례가 아닌 참가자의 착수와 이미 놓인 자리 착수는 거절한다 | `OmokGameTest`, `OmokGameSinkTest` |
+| GAME-AC-15 | 수당 제한시간을 넘기면 그 참가자가 패한다 | `OmokGameTest`(`OmokGame.timeout` 단위 테스트만 있다 — 아무 곳에서도 호출하지 않아 실제로는 강제되지 않는다. 알려진 미비점) |
 | GAME-AC-16 | 틱당 입력은 참가자별 1회만 반영하고, 격자 밖 이동은 무시한다 | 미작성 — Plan 3 |
 | GAME-AC-17 | 참가자와 장애물이 서로 지나친 경우(스왑)도 충돌로 판정한다 | 미작성 — Plan 3 |
 | GAME-AC-18 | 탈락 역순이 순위이고, 같은 틱 탈락은 공동 순위다 | 미작성 — Plan 3 |
 | GAME-AC-19 | 같은 시드와 같은 입력 로그로 재생하면 원본과 같은 결과가 나온다 | 미작성 — Plan 3 |
-| GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | 미작성 — Plan 2 |
-| GAME-AC-21 | 기보 업로드가 실패해도 결과는 남고 `replay_object_key` 는 `null` 이다 | 미작성 — Plan 2 |
-| GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다 | 미작성 — Plan 2 |
+| GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest`, `OmokGameSinkTest` |
+| GAME-AC-21 | 기보 업로드가 실패해도 결과는 남고 `replay_object_key` 는 `null` 이다 | `GameResultServiceTest`, `ReplayUploaderTest` |
+| GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다 | `GameResultControllerTest` |
 
 ## 비기능 요구사항
 

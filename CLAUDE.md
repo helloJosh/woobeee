@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | `core` | 두 앱이 공유하는 계약: `ApiResponse`, 토큰 계약, `RedisTokenStore` | `spring-boot-starter-webmvc` / `-webflux` 의존, 도메인 로직 |
 | `app-mvc` | auth, blog, 블로킹 I/O, JPA 엔티티, Flyway 마이그레이션 | 게임 로직 |
-| `app-webflux` | game, 논블로킹 I/O, R2DBC | 블로킹 호출(JPA/JDBC/`StringRedisTemplate`), Flyway 실행 |
+| `app-webflux` | game, 논블로킹 I/O, R2DBC, `S3AsyncClient`(비동기 스토리지) | 블로킹 호출(JPA/JDBC/`StringRedisTemplate`), Flyway 실행, `S3Client`(블로킹) |
 
 `core`가 웹 스타터를 끌어오면 두 앱 중 하나가 깨진다. 다음으로 검증한다:
 
@@ -102,7 +102,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | --- | --- | --- | --- |
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/댓글/좋아요/카테고리 |
-| app-webflux | game | `/api/game`, `/ws/game` | `health`(공개), `me`, `rooms*`(방 생성·요약·게스트 토큰), WebSocket 실시간 |
+| app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
 ## 안전 수칙
 
@@ -114,7 +114,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 
 | 항목 | 내용 |
 | --- | --- |
-| 게임 규칙 구현 | 방·실시간 기반은 완료. 오목/장애물피하기 로직과 `V2__game.sql` 은 Plan 2·3 |
+| 장애물피하기 구현 | 오목·영속화는 완료. 격자 틱 루프와 결정론적 재생은 Plan 3 |
 | front 잔존 페이지 | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 삭제 또는 게임 화면으로 대체 |
 | 프로필 이미지 front UI | 백엔드 계약만 있고 업로드·표시 화면이 없다 |
 | 고아 오브젝트 정리 | 발급받고 등록하지 않은 `profiles/` 업로드에 대한 lifecycle 정책 |
