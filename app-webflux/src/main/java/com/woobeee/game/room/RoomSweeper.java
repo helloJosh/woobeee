@@ -11,6 +11,7 @@ import reactor.core.publisher.Flux;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 @Component
@@ -33,8 +34,22 @@ public class RoomSweeper {
     @PostConstruct
     void start() {
         subscription = Flux.interval(INTERVAL, INTERVAL)
-                .doOnNext(tick -> sweep())
-                .subscribe();
+                .subscribe(
+                        tick -> onTick(),
+                        error -> log.error("Room sweeper interval terminated unexpectedly", error));
+    }
+
+    /**
+     * Called on every interval tick. A throwing sweep must not reach the {@code Flux.interval}
+     * subscription -- an {@code onError} there ends the sequence for good, and nothing
+     * resubscribes, so TTL reclamation would be silently dead until the process restarts.
+     */
+    void onTick() {
+        try {
+            sweep();
+        } catch (Exception e) {
+            log.error("Room sweep failed; will retry on the next interval", e);
+        }
     }
 
     @PreDestroy
@@ -45,9 +60,10 @@ public class RoomSweeper {
     }
 
     public void sweep() {
-        List<String> expired = roomRegistry.expiredRoomIds(clock.instant());
+        Instant now = clock.instant();
+        List<String> expired = roomRegistry.expiredRoomIds(now);
         expired.forEach(roomHub::close);
-        int removed = roomRegistry.sweepExpired(clock.instant());
+        int removed = roomRegistry.sweepExpired(now);
         if (removed > 0) {
             log.info("Swept {} expired game rooms", removed);
         }
