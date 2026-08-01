@@ -115,7 +115,10 @@ class GuestIdentityServiceTest {
     /** GAME-AC-02 — the invite code is checked before anything is issued. */
     @Test
     void rejectsAWrongInviteCode() {
-        assertThatThrownBy(() -> service.issue("room-1", "wrong", "손님").block())
+        // "host" is already taken in this room. If the duplicate-nickname check ran before
+        // the invite-code check, this would return 409 instead of 403 — which would leak to
+        // the caller that the nickname is taken despite the wrong invite code.
+        assertThatThrownBy(() -> service.issue("room-1", "wrong", "host").block())
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(e -> ((ResponseStatusException) e).getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
