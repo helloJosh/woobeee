@@ -3,6 +3,7 @@ package com.woobeee.game.result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -20,8 +21,16 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * <p>The mocked {@link TransactionalOperator} below is stubbed as an identity pass-through
+ * ({@code transactional(Mono) -> the same Mono, unchanged}). That proves {@link GameResultService}
+ * wires the operator around the right two calls (ordering, argument routing) — it does
+ * <strong>not</strong> prove rollback semantics. A real transaction abort on participant-insert
+ * failure can only be verified against a live database (integration test), not this unit test.
+ */
 class GameResultServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-08-01T00:10:00Z");
@@ -29,6 +38,7 @@ class GameResultServiceTest {
 
     private GameResultRepository repository;
     private ReplayUploader uploader;
+    private TransactionalOperator transactionalOperator;
     private GameResultService service;
 
     private FinishedGame game() {
@@ -46,10 +56,15 @@ class GameResultServiceTest {
     }
 
     @BeforeEach
+    @SuppressWarnings("unchecked")
     void setUp() {
         repository = mock(GameResultRepository.class);
         uploader = mock(ReplayUploader.class);
-        service = new GameResultService(repository, uploader, Clock.fixed(NOW, ZoneOffset.UTC));
+        transactionalOperator = mock(TransactionalOperator.class);
+        // Identity pass-through: proves wiring/ordering only, not real commit/rollback semantics.
+        when(transactionalOperator.transactional(any(Mono.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        service = new GameResultService(repository, uploader, Clock.fixed(NOW, ZoneOffset.UTC), transactionalOperator);
 
         when(repository.insertResult(any(FinishedGame.class), eq(NOW))).thenReturn(Mono.just(77L));
         when(repository.insertParticipants(eq(77L), any())).thenReturn(Mono.empty());
@@ -85,6 +100,38 @@ class GameResultServiceTest {
 
         verify(repository).insertResult(any(FinishedGame.class), eq(NOW));
         verify(repository).insertParticipants(eq(77L), any());
+        verify(repository, never()).attachReplayKey(anyLong(), anyString());
+    }
+
+    /** F2: a failure inserting the result row must propagate, not be swallowed. */
+    @Test
+    void insertResultFailurePropagatesAndSkipsUploadAndAttach() {
+        RuntimeException failure = new RuntimeException("insertResult boom");
+        when(repository.insertResult(any(FinishedGame.class), eq(NOW))).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.record(game(), "{}"))
+                .expectErrorMatches(error -> error == failure)
+                .verify(VERIFY_TIMEOUT);
+
+        verify(repository).insertResult(any(FinishedGame.class), eq(NOW));
+        verify(repository, never()).insertParticipants(anyLong(), any());
+        verifyNoInteractions(uploader);
+        verify(repository, never()).attachReplayKey(anyLong(), anyString());
+    }
+
+    /** F2: a failure inserting participants must propagate, not be swallowed. */
+    @Test
+    void insertParticipantsFailurePropagatesAndSkipsUploadAndAttach() {
+        RuntimeException failure = new RuntimeException("insertParticipants boom");
+        when(repository.insertParticipants(eq(77L), any())).thenReturn(Mono.error(failure));
+
+        StepVerifier.create(service.record(game(), "{}"))
+                .expectErrorMatches(error -> error == failure)
+                .verify(VERIFY_TIMEOUT);
+
+        verify(repository).insertResult(any(FinishedGame.class), eq(NOW));
+        verify(repository).insertParticipants(eq(77L), any());
+        verifyNoInteractions(uploader);
         verify(repository, never()).attachReplayKey(anyLong(), anyString());
     }
 }
