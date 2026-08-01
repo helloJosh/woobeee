@@ -59,12 +59,24 @@ class OmokGameTest {
 
     @Test
     void placingAdvancesTheTurnAndExtendsTheDeadline() {
-        PlaceOutcome outcome = game.place(BLACK, 7, 7, START);
+        Instant firstMoveAt = START.plusSeconds(20);
+        PlaceOutcome outcome = game.place(BLACK, 7, 7, firstMoveAt);
 
         assertThat(outcome.status()).isEqualTo(PlaceOutcome.Status.PLACED);
         assertThat(outcome.stone()).isEqualTo(Stone.BLACK);
         assertThat(game.currentTurnParticipantId()).isEqualTo(WHITE);
-        assertThat(outcome.turnDeadline()).isEqualTo(START.plus(LIMIT));
+        // now(=firstMoveAt) 기준으로 재계산된 값이어야 한다 — START 기준 값과는 다르다.
+        assertThat(outcome.turnDeadline()).isEqualTo(firstMoveAt.plus(LIMIT));
+        assertThat(game.turnDeadline()).isEqualTo(firstMoveAt.plus(LIMIT));
+
+        // 두 번째 수도 그 자신의(더 늦은) now 기준으로 다시 연장되는지 본다 — 한 번만이 아니라
+        // 매 수마다 갱신됨을 증명한다.
+        Instant secondMoveAt = firstMoveAt.plusSeconds(15);
+        PlaceOutcome secondOutcome = game.place(WHITE, 8, 8, secondMoveAt);
+
+        assertThat(secondOutcome.status()).isEqualTo(PlaceOutcome.Status.PLACED);
+        assertThat(secondOutcome.turnDeadline()).isEqualTo(secondMoveAt.plus(LIMIT));
+        assertThat(game.turnDeadline()).isEqualTo(secondMoveAt.plus(LIMIT));
     }
 
     /** GAME-AC-10 — 금수는 거절되고 판이 바뀌지 않는다 */
@@ -89,19 +101,26 @@ class OmokGameTest {
         assertThat(game.currentTurnParticipantId()).isEqualTo(BLACK);
     }
 
+    /**
+     * 색깔 가드가 실제로 하는 일을 증명하는 테스트다. 흑이 (5,7)(6,7)(7,5)(7,6) 에 실제로
+     * 돌을 놓아 (7,7) 을 완성점으로 하는 삼삼 모양을 만든다 — 이는
+     * aForbiddenBlackMoveIsRejectedAndLeavesTheBoardUnchanged 에서 흑이 그 자리에 두면
+     * 거절됨을 이미 확인한 바로 그 모양이다. 다만 이번엔 그 자리를 두는 사람이 백이다.
+     *
+     * <p>{@code place} 의 {@code turn == Stone.BLACK} 가드를 지우면 {@code RenjuRule.judge}
+     * 가 백의 차례에도 호출되고, judge 는 누가 두는지와 무관하게 항상 흑돌을 가정하고 판을
+     * 검사하므로 실제로 판에 있는 이 흑 삼삼을 발견해 DOUBLE_THREE 로 (부당하게) 거절한다.
+     * 가드가 있어야만 이 테스트가 PLACED 로 통과한다.
+     */
     @Test
     void whiteMayPlayShapesThatWouldBeForbiddenForBlack() {
-        // 흑의 메꿈수는 서로 떨어뜨려 둔다: 붙여 놓으면 (0,0)..(0,4) 가 그대로 흑의 5목이 되어
-        // 백의 차례가 오기 전에 흑이 이겨버린다.
-        game.place(BLACK, 0, 0, START);
-        game.place(WHITE, 5, 7, START);
-        game.place(BLACK, 0, 2, START);
-        game.place(WHITE, 6, 7, START);
-        game.place(BLACK, 0, 4, START);
-        game.place(WHITE, 7, 5, START);
-        game.place(BLACK, 0, 6, START);
-        game.place(WHITE, 7, 6, START);
-        game.place(BLACK, 0, 8, START);
+        game.place(BLACK, 5, 7, START);
+        game.place(WHITE, 0, 0, START);
+        game.place(BLACK, 6, 7, START);
+        game.place(WHITE, 0, 1, START);
+        game.place(BLACK, 7, 5, START);
+        game.place(WHITE, 0, 2, START);
+        game.place(BLACK, 7, 6, START);
 
         PlaceOutcome outcome = game.place(WHITE, 7, 7, START);
 
