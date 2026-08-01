@@ -4,7 +4,9 @@
 
 **Goal:** Two people — one member, one guest — open an invite link, connect over WebSocket, and see each other's nickname and READY state update live.
 
-**Architecture:** All game state lives in memory inside the single `app-webflux` process. Redis holds only the room registry (so an invite link can be validated before the socket opens) and guest tokens. A single `/ws/game` WebSocket carries join/leave/ready/start. Room mutation is serialised per room through one command queue so eight concurrent inputs need no locks.
+**Architecture:** All game state lives in memory inside the single `app-webflux` process — including the room registry, which is a `ConcurrentHashMap`, not Redis. Redis holds only guest tokens. A single `/ws/game` WebSocket carries join/leave/ready/start. Room mutation is serialised per room by synchronising on the `Room` aggregate, so concurrent inputs from different event loops cannot interleave.
+
+> Two claims in the original version of this line were wrong and are corrected above: Redis never held the room registry, and the "per-room command queue" it promised was never built. The final whole-branch review caught both — the missing serialisation was a live data race, fixed by synchronising `Room`.
 
 **Tech Stack:** Java 25, Spring Boot 4.0.5, Spring WebFlux (Netty), Reactor, `ReactiveStringRedisTemplate` (from `core`), R2DBC (read-only against `members`), JUnit 5 + Mockito + reactor-test.
 
