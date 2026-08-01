@@ -67,6 +67,13 @@ class GameResultControllerTest {
                 .expectStatus().isUnauthorized();
     }
 
+    @Test
+    void replayRequiresAMemberToken() {
+        webTestClient.get().uri("/api/game/results/77/replay")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
     /** GAME-AC-22 */
     @Test
     void replayIsIssuedToAParticipant() {

@@ -12,32 +12,24 @@ import reactor.core.publisher.Mono;
  */
 @Repository
 public class GameResultQueryRepository {
-    private static final String FIND_BY_MEMBER = """
-            SELECT r.id                AS game_result_id,
-                   r.game_type         AS game_type,
-                   r.ended_at          AS ended_at,
-                   mine.finish_rank    AS finish_rank,
-                   COALESCE(winner.display_name, '') AS winner_display_name,
-                   (r.replay_object_key IS NOT NULL) AS replay_available
-              FROM game_result_participants mine
-              JOIN game_results r
-                ON r.id = mine.game_result_id
-              LEFT JOIN game_result_participants winner
-                ON winner.game_result_id = r.id
-               AND winner.participant_id = r.winner_participant_id
-             WHERE mine.member_id = :memberId
-             ORDER BY r.ended_at DESC, r.id DESC
-             LIMIT :limit OFFSET :offset
-            """;
+    private static final String FIND_BY_MEMBER =
+            "SELECT r.id AS game_result_id, r.game_type AS game_type, r.ended_at AS ended_at, "
+                    + "mine.finish_rank AS finish_rank, COALESCE(winner.display_name, '') AS winner_display_name, "
+                    + "(r.replay_object_key IS NOT NULL) AS replay_available "
+                    + "FROM game_result_participants mine "
+                    + "JOIN game_results r ON r.id = mine.game_result_id "
+                    + "LEFT JOIN game_result_participants winner "
+                    + "ON winner.game_result_id = r.id AND winner.participant_id = r.winner_participant_id "
+                    + "WHERE mine.member_id = :memberId "
+                    + "ORDER BY r.ended_at DESC, r.id DESC "
+                    + "LIMIT :limit OFFSET :offset";
 
-    private static final String FIND_REPLAY_ACCESS = """
-            SELECT r.replay_object_key AS replay_object_key
-              FROM game_results r
-              JOIN game_result_participants p
-                ON p.game_result_id = r.id
-             WHERE r.id = :gameResultId
-               AND p.member_id = :memberId
-            """;
+    // GAME-AC-22: 참가자 확인은 이 쿼리 안(:memberId 조인 조건)에서 끝난다 — 조회 후 필터링이 아니다.
+    private static final String FIND_REPLAY_ACCESS =
+            "SELECT r.replay_object_key AS replay_object_key "
+                    + "FROM game_results r "
+                    + "JOIN game_result_participants p ON p.game_result_id = r.id "
+                    + "WHERE r.id = :gameResultId AND p.member_id = :memberId";
 
     private final DatabaseClient databaseClient;
 

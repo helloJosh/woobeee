@@ -53,6 +53,7 @@ final class RecordingDatabaseClient implements DatabaseClient {
     private final List<Statement> executed = new ArrayList<>();
     private final Map<String, Deque<Object>> oneResults = new LinkedHashMap<>();
     private final Map<String, Deque<Long>> rowsUpdatedResults = new LinkedHashMap<>();
+    private final Map<String, List<Object>> allResults = new LinkedHashMap<>();
 
     void stubOne(String sql, Object result) {
         oneResults.computeIfAbsent(sql, key -> new ArrayDeque<>()).add(result);
@@ -60,6 +61,11 @@ final class RecordingDatabaseClient implements DatabaseClient {
 
     void stubRowsUpdated(String sql, long result) {
         rowsUpdatedResults.computeIfAbsent(sql, key -> new ArrayDeque<>()).add(result);
+    }
+
+    /** Stubs the rows returned by {@code .map(...).all()} — used by read-side {@code Flux} queries. */
+    void stubAll(String sql, List<Object> results) {
+        allResults.put(sql, results);
     }
 
     List<Statement> executedStatements() {
@@ -186,8 +192,13 @@ final class RecordingDatabaseClient implements DatabaseClient {
                 }
 
                 @Override
+                @SuppressWarnings("unchecked")
                 public Flux<R> all() {
-                    throw new UnsupportedOperationException("not used by GameResultRepository");
+                    List<Object> rows = allResults.get(sql);
+                    if (rows == null) {
+                        throw new UnsupportedOperationException("no stubbed .all() rows for SQL: " + sql);
+                    }
+                    return Flux.fromIterable(rows).map(row -> (R) row);
                 }
             };
         }
