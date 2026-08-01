@@ -65,13 +65,23 @@ public class RoomCommandDispatcher {
     }
 
     public void confirmLeave(String roomId, String participantId) {
-        settle(roomId, participantId, () -> roomService.confirmLeave(roomId, participantId));
+        guard(roomId, null, () -> settle(roomId, participantId, () -> roomService.confirmLeave(roomId, participantId)));
     }
 
     public void leaveNow(String roomId, String participantId) {
-        settle(roomId, participantId, () -> roomService.leaveNow(roomId, participantId));
+        guard(roomId, null, () -> settle(roomId, participantId, () -> roomService.leaveNow(roomId, participantId)));
     }
 
+    /**
+     * 참가자 이탈 뒤처리. 방이 없어졌든(마지막 멤버) 아니든 실제로 자리를 비운 것이면
+     * 싱크에 반드시 알린다 — 싱크는 방 id로 게임 상태를 들고 있다가 이 신호로 정리하므로,
+     * 마지막 이탈에서 이걸 건너뛰면 그 게임 상태가 영영 안 지워진다.
+     *
+     * <p>싱크 통지는 허브를 닫기 전에 한다(마지막 메시지를 보낼 기회를 준다), 하지만 싱크가
+     * 던지더라도 허브는 finally 에서 반드시 닫는다 — 그래야 이 경로가 실패해도 방 하나가
+     * 영원히 sink/버퍼를 붙든 채로 새지 않는다. 예외는 그대로 다시 던져 guard가 ERROR로
+     * 바꿔 내보내게 한다.
+     */
     private void settle(String roomId, String participantId, Runnable removal) {
         Optional<Room> before = roomService.findRoom(roomId);
         boolean wasMember = before.flatMap(room -> room.member(participantId)).isPresent();
@@ -79,17 +89,22 @@ public class RoomCommandDispatcher {
         removal.run();
 
         Optional<Room> after = roomService.findRoom(roomId);
-        if (after.isEmpty()) {
-            roomHub.close(roomId);
-            return;
+        boolean participantGone = wasMember
+                && after.map(room -> room.member(participantId).isEmpty()).orElse(true);
+
+        try {
+            if (participantGone) {
+                Room departedFrom = after.orElseGet(before::get);
+                Optional.ofNullable(sinks.get(departedFrom.gameType()))
+                        .ifPresent(sink -> sink.onParticipantGone(departedFrom, participantId));
+            }
+        } finally {
+            if (after.isEmpty()) {
+                roomHub.close(roomId);
+            }
         }
 
-        Room room = after.get();
-        if (wasMember && room.member(participantId).isEmpty()) {
-            Optional.ofNullable(sinks.get(room.gameType()))
-                    .ifPresent(sink -> sink.onParticipantGone(room, participantId));
-        }
-        broadcastRoomState(room);
+        after.ifPresent(this::broadcastRoomState);
     }
 
     private void broadcastRoomState(Room room) {

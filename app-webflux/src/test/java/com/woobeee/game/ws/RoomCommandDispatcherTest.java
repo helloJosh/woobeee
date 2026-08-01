@@ -15,6 +15,7 @@ import reactor.test.StepVerifier;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -127,5 +128,105 @@ class RoomCommandDispatcherTest {
                 .then(() -> dispatcher.start("room-1", HOST.participantId()))
                 .assertNext(message -> assertThat(message.type()).isEqualTo("ERROR"))
                 .verifyComplete();
+    }
+
+    @Test
+    void onParticipantGoneFiresOnceWhenAMemberLeavesAndOthersRemain() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+
+        dispatcher.leaveNow("room-1", GUEST.participantId());
+
+        assertThat(log).containsExactly("onParticipantGone:" + GUEST.participantId());
+    }
+
+    /** F1 regression: the terminal departure must notify the sink too, before the hub closes. */
+    @Test
+    void onParticipantGoneFiresForTheLastMemberToo() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+
+        dispatcher.leaveNow("room-1", HOST.participantId());
+
+        assertThat(log).containsExactly("onParticipantGone:" + HOST.participantId());
+    }
+
+    @Test
+    void onParticipantGoneIsNotFiredForANonMember() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+
+        dispatcher.leaveNow("room-1", "nobody");
+
+        assertThat(log).isEmpty();
+    }
+
+    @Test
+    void onStartRunsAfterRoomStateBroadcastAndBeforeGameStart() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.ready("room-1", HOST.participantId(), true);
+        dispatcher.ready("room-1", GUEST.participantId(), true);
+
+        hub.subscribe("room-1").take(2).subscribe(message -> log.add(message.type()));
+
+        dispatcher.start("room-1", HOST.participantId());
+
+        assertThat(log).containsExactly("ROOM_STATE", "onStart", "GAME_START");
+    }
+
+    /** F2 regression: a throwing sink must degrade to an ERROR broadcast, not escape the dispatcher. */
+    @Test
+    void aThrowingSinkOnParticipantGoneProducesAnErrorInsteadOfPropagating() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        sink.throwOnParticipantGone = true;
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> dispatcher.leaveNow("room-1", GUEST.participantId()))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("ERROR"))
+                .verifyComplete();
+    }
+
+    private static final class RecordingSink implements GameCommandSink {
+        private final GameType gameType;
+        private final List<String> log;
+        boolean throwOnParticipantGone = false;
+
+        RecordingSink(GameType gameType, List<String> log) {
+            this.gameType = gameType;
+            this.log = log;
+        }
+
+        @Override
+        public GameType gameType() {
+            return gameType;
+        }
+
+        @Override
+        public void onStart(Room room) {
+            log.add("onStart");
+        }
+
+        @Override
+        public void onGameCommand(Room room, String participantId, ClientMessage message) {
+            log.add("onGameCommand:" + participantId);
+        }
+
+        @Override
+        public void onParticipantGone(Room room, String participantId) {
+            log.add("onParticipantGone:" + participantId);
+            if (throwOnParticipantGone) {
+                throw new IllegalStateException("boom");
+            }
+        }
     }
 }
