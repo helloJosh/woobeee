@@ -163,6 +163,11 @@ public final class RenjuRule {
             }
 
             distinctGroups.add(threeKey(three));
+            if (distinctGroups.size() >= 2) {
+                // 호출부(judge)는 축마다 이 값을 더해 2 이상인지만 본다 — 이 축 하나에서 이미
+                // 서로 다른 열린삼 둘을 찾았으면 더 찾아봐야 사삼 판정에는 영향이 없다.
+                break;
+            }
         }
 
         return distinctGroups.size();

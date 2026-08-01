@@ -6,9 +6,11 @@
 
 ## 배경
 
-`docs/game/PRD.md` 는 "미작성 — 기능 설계는 후속 spec에서 다룬다" 상태이고, `app-webflux` 에는
-`GET /api/game/health` 와 `GET /api/game/me` 골격만 있다. `CLAUDE.md` 의 후속 과제 표도 실시간 통신
-방식·게임 규칙·`V2__game.sql` 세 가지를 이 spec으로 미뤄 두었다. 이 문서가 그 셋을 모두 정한다.
+이 spec을 작성할 당시 `docs/game/PRD.md` 는 "미작성 — 기능 설계는 후속 spec에서 다룬다" 상태였고,
+`app-webflux` 에는 `GET /api/game/health` 와 `GET /api/game/me` 골격만 있었다. `CLAUDE.md` 의 후속
+과제 표도 실시간 통신 방식·게임 규칙·`V2__game.sql` 세 가지를 이 spec으로 미뤄 두었다. 이 문서가
+그 셋을 모두 정했다. (지금은 구현이 끝나 `docs/game/PRD.md` 의 AC 표가 채워져 있다 — 그 표가
+단일 출처다. 아래 "테스트" 절 참고.)
 
 동시에 front는 폐기된 art-marketplace 화면(`app/products`, `app/cart`, `app/chat`)이 남아 있고
 전역 내비게이션이 그 구조를 따르고 있다. 게임으로 전환하면서 상단탭을 다시 잡는다.
@@ -187,7 +189,7 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 | --- | --- | --- |
 | `ROOM_STATE` | `gameType`, `hostParticipantId`, `participants[]`, `status` | 입퇴장·READY·연결상태 변화 때마다 방 전체에 |
 | `GAME_START` | `startedAt`, 게임별 초기 상태 | 시작 시 |
-| `OMOK_MOVED` | `participantId`, `x`, `y`, `color`, `nextTurn`, `turnDeadline` | 착수 성공 |
+| `OMOK_MOVED` | `participantId`, `x`, `y`, `color`, `nextTurn`, `turnDeadline` | 착수 성공. **승리 착수는 예외** — 다음 차례가 없으므로 `nextTurn`/`turnDeadline` 없이 네 필드(`participantId`, `x`, `y`, `color`)만 싣고, 뒤이어 `GAME_END` 가 나간다 |
 | `OMOK_REJECTED` | `ackSeq`, `reason` | 금수·차례아님·이미 놓인 자리 |
 | `DODGE_TICK` | `tick`, `positions[]`, `obstacles[]`, `eliminated[]` | 매 틱, 방 전체에 |
 | `GAME_END` | `winnerParticipantId`, `ranks[]` | 종료 시 |
@@ -388,32 +390,10 @@ front rewrites가 두 백엔드를 이미 프록시하므로 모두 단일 오�
 
 ## 테스트
 
-`docs/game/PRD.md` 의 AC 표를 먼저 채우고 테스트를 맞춘다. 현재 그 표는 "미작성"이다.
-
-| ID | 인수 기준 (Given–When–Then) | 커버 테스트 |
-| --- | --- | --- |
-| GAME-AC-01 | 방 생성은 회원만 가능하고 `roomId` 와 `inviteCode` 를 발급한다 | `RoomServiceTest` |
-| GAME-AC-02 | `inviteCode` 가 틀리면 방 요약과 게스트 토큰 발급이 `403` 을 반환한다 | `RoomServiceTest` |
-| GAME-AC-03 | 게스트 토큰 발급은 닉네임을 요구하고, 같은 방에 중복 닉네임이면 `409` 를 반환한다 | `GuestIdentityServiceTest` |
-| GAME-AC-04 | 정원이 찬 방에 `JOIN` 하면 거절한다 (오목 2, 장애물 8) | `RoomServiceTest` |
-| GAME-AC-05 | 게임이 `IN_PROGRESS` 면 새 참가자의 `JOIN` 은 거절하고, 기존 참가자의 재접속은 허용한다 | `RoomServiceTest` |
-| GAME-AC-06 | 방장이 이탈하면 다음 참가자가 방장이 되고, 참가자가 0이면 방이 소멸한다 | `RoomServiceTest` |
-| GAME-AC-07 | `JOIN` 없이 10초가 지난 WebSocket 세션은 서버가 닫는다 | `GameWebSocketHandlerTest` |
-| GAME-AC-08 | 연결이 끊기면 `DISCONNECTED` 로 두고 30초 안에 재접속하면 자리를 잇는다. 유예를 넘기면 이탈이 확정된다 | `RoomServiceTest` |
-| GAME-AC-09 | 명시적 `LEAVE` 는 유예 없이 즉시 이탈로 처리한다 | `RoomServiceTest` |
-| GAME-AC-10 | 흑의 삼삼·사사·장목 착수는 `OMOK_REJECTED` 로 거절하고 판 상태를 바꾸지 않는다 | `RenjuRuleTest` |
-| GAME-AC-11 | 백은 금수가 없고 6목 이상으로도 승리한다 | `RenjuRuleTest` |
-| GAME-AC-12 | 흑은 정확히 5목일 때만 승리한다 | `RenjuRuleTest` |
-| GAME-AC-13 | 열린 삼 판정은 열린 사를 만드는 자리가 금수면 열린 삼으로 보지 않는다 | `RenjuRuleTest` |
-| GAME-AC-14 | 차례가 아닌 참가자의 착수와 이미 놓인 자리 착수는 거절한다 | `OmokGameTest` |
-| GAME-AC-15 | 수당 제한시간을 넘기면 그 참가자가 패한다 | `OmokGameTest` |
-| GAME-AC-16 | 틱당 입력은 참가자별 1회만 반영하고, 격자 밖 이동은 무시한다 | `DodgeGameTest` |
-| GAME-AC-17 | 참가자와 장애물이 서로 지나친 경우(스왑)도 충돌로 판정한다 | `DodgeGameTest` |
-| GAME-AC-18 | 탈락 역순이 순위이고, 같은 틱 탈락은 공동 순위다 | `DodgeGameTest` |
-| GAME-AC-19 | 같은 시드와 같은 입력 로그로 재생하면 원본과 같은 결과가 나온다 | `DodgeReplayTest` |
-| GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest` |
-| GAME-AC-21 | 기보 업로드가 실패해도 결과는 남고 `replay_object_key` 는 `null` 이다 | `GameResultServiceTest` |
-| GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다 | `GameResultControllerTest` |
+인수 기준(AC)의 단일 출처는 `docs/game/PRD.md` 의 `## 인수 기준 (Acceptance Criteria)` 표다
+(`CLAUDE.md` 규칙). 이 spec은 그 표를 되풀이해 적지 않는다 — 여기 별도 테이블을 두면 둘이
+갈라졌을 때 어느 쪽이 맞는지 알 수 없어진다. 계획 단계에서 이 spec이 초안으로 삼았던 GAME-AC-01
+~ GAME-AC-22 항목과 그 커버 테스트는 전부 `docs/game/PRD.md` 로 옮겨 갱신했다.
 
 - 게임 로직(`omok`, `dodge`)은 WebSocket·Redis·DB 없이 순수 단위 테스트로 검증한다. 이 둘이
   프레임워크에 의존하지 않게 설계하는 것이 테스트 용이성의 핵심이다.

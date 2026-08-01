@@ -96,4 +96,20 @@ class FourRuleTest {
 
         assertThat(FourRule.makesStraightFour(board, 5, 7, Axis.HORIZONTAL)).isFalse();
     }
+
+    /**
+     * 모양만으로는 부족하다 — makesStraightFour 도 countFours 와 같은 완성점 검증이 필요하다.
+     * ..X.XXXX.X..... 에서 흑 넷(4..7)의 양끝(3, 8)이 모두 판 안의 빈칸이라 모양은
+     * 열린사처럼 보이지만, 왼쪽(3)을 채우면 2번 칸의 흑과 이어져 2..7 = 6(장목)이고 오른쪽(8)을
+     * 채워도 9번 칸의 흑과 이어져 4..9 = 6(장목)이다. 양끝 어디로도 정확히 5를 만들 수 없으므로
+     * 이 사는 승리점이 하나도 없다 — 열린사가 아니다. 이 검증이 없으면 RenjuRule.countOpenThrees
+     * 가 이것을 열린사로 오인해 합법적인 삼을 열린삼으로, 나아가 합법수를 DOUBLE_THREE 로
+     * 잘못 거절한다.
+     */
+    @Test
+    void bothFlanksCompletingToOverlineIsNotAStraightFour() {
+        OmokBoard board = rowBoard("..X.XXXX.X.....");
+
+        assertThat(FourRule.makesStraightFour(board, 6, 7, Axis.HORIZONTAL)).isFalse();
+    }
 }

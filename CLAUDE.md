@@ -125,3 +125,5 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 이관 문서 잔여 언급 | `docs/` 의 이관 문서 일부에 product/cart 언급이 남아 있다. 도메인 문서를 손댈 때 함께 정리 |
 | Kafka 미연동 | 로컬 compose에만 있고 코드 연동은 없다(ADR-003). 실제로 쓰려면 토픽 설계부터 |
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 game/blog 기준으로 새로 구성 |
+| 오목 제한시간 미강제 | `turnDeadline` 을 `OMOK_MOVED` 로 클라이언트에 알리지만 `OmokGame.timeout(...)` 을 호출하는 배선이 없다. 60초를 넘겨도 서버가 자동으로 패배 처리하지 않는다 |
+| `RoomSweeper` 가 진행 중 게임을 정리하지 않음 | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 진행 중이던 오목 게임의 sink 상태(`OmokGameSink`)가 그 사실을 모른 채 메모리에 남는다 |

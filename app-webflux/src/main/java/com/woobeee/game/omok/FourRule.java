@@ -81,7 +81,17 @@ public final class FourRule {
         return distinctGroups.size();
     }
 
-    /** 열린사: axis 방향으로 흑 4개가 연속이고 양쪽 바깥이 모두 판 안의 빈칸. */
+    /**
+     * 열린사: axis 방향으로 흑 4개가 연속이고 양쪽 바깥이 모두 판 안의 빈칸.
+     *
+     * <p>모양만으로는 부족하다 — {@link #countFours} 와 같은 이유로, 양쪽 빈칸이 각각 실제로
+     * 정확히 5를 완성하는지까지 확인해야 한다. 예를 들어 {@code ..X.XXXX.X.....} 는 흑 넷(4..7)의
+     * 양끝(3, 8)이 모두 판 안의 빈칸이라 모양은 열린사처럼 보이지만, 왼쪽(3)을 채우면 2번 칸의
+     * 흑과 이어져 2..7 = 6(장목)이고 오른쪽(8)을 채워도 9번 칸의 흑과 이어져 4..9 = 6(장목)이다.
+     * 양끝 어디로도 정확히 5를 만들 수 없으니 승리점이 하나도 없는 죽은 사이고, 열린사가 아니다.
+     * 그래서 각 후보 빈칸에 흑을 임시로 놓고 {@link LineScanner#runLength} 로 실제 길이가 5인지
+     * 확인한 뒤 반드시 원상복구한다 — 두 빈칸 중 적어도 하나가 5를 완성해야 열린사다.
+     */
     public static boolean makesStraightFour(OmokBoard board, int x, int y, Axis axis) {
         if (LineScanner.runLength(board, x, y, axis, Stone.BLACK) != 4) {
             return false;
@@ -100,7 +110,24 @@ public final class FourRule {
         int afterX = headX + 4 * axis.dx();
         int afterY = headY + 4 * axis.dy();
 
-        return board.isEmpty(beforeX, beforeY) && board.isEmpty(afterX, afterY);
+        if (!board.isEmpty(beforeX, beforeY) || !board.isEmpty(afterX, afterY)) {
+            return false;
+        }
+
+        return completesToFive(board, beforeX, beforeY, axis)
+                || completesToFive(board, afterX, afterY, axis);
+    }
+
+    /** 후보 빈칸에 흑을 임시로 놓고 실제 완성 길이가 정확히 5인지 확인한 뒤 반드시 원상복구한다. */
+    private static boolean completesToFive(OmokBoard board, int ex, int ey, Axis axis) {
+        int completedLength;
+        board.place(ex, ey, Stone.BLACK);
+        try {
+            completedLength = LineScanner.runLength(board, ex, ey, axis, Stone.BLACK);
+        } finally {
+            board.clear(ex, ey);
+        }
+        return completedLength == FIVE;
     }
 
     private static String groupKey(List<int[]> blacks) {

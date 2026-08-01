@@ -32,6 +32,8 @@
 | 방 생성 | `POST /api/game/rooms` | 회원 |
 | 방 요약 | `GET /api/game/rooms/{roomId}?invite=` | 공개 |
 | 게스트 토큰 발급 | `POST /api/game/rooms/{roomId}/guest-tokens` | 공개 |
+| 내 전적 목록 | `GET /api/game/me/results` | 회원 |
+| 기보 다시보기 URL | `GET /api/game/results/{gameResultId}/replay` | 회원(그 게임 참가자 본인만) |
 | 실시간 | `WS /ws/game` | 첫 JOIN 메시지의 토큰 |
 
 ## 방 규칙
@@ -123,7 +125,7 @@
 | GAME-AC-19 | 같은 시드와 같은 입력 로그로 재생하면 원본과 같은 결과가 나온다 | 미작성 — Plan 3 |
 | GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest`, `OmokGameSinkTest` |
 | GAME-AC-21 | 기보 업로드가 실패해도 결과는 남고 `replay_object_key` 는 `null` 이다 | `GameResultServiceTest`, `ReplayUploaderTest` |
-| GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다 | `GameResultControllerTest` |
+| GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다. 게스트(`member_id` 없음)는 애초에 `member_id` 로 참가자를 확인하는 이 조회의 대상이 될 수 없으므로 기보를 절대 조회할 수 없다 | `GameResultControllerTest`, `GameResultQueryRepositoryTest`(`FIND_REPLAY_ACCESS` 의 `p.member_id = :memberId` SQL 고정) |
 
 ## 비기능 요구사항
 
