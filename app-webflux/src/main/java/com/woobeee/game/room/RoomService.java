@@ -5,6 +5,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Optional;
+
 @Service
 public class RoomService {
     private static final int MIN_PLAYERS = 2;
@@ -127,6 +129,15 @@ public class RoomService {
         }
 
         room.promoteNextHost();
+    }
+
+    public Optional<Room> findRoom(String roomId) {
+        return roomRegistry.find(roomId);
+    }
+
+    public Room requireRoomById(String roomId) {
+        return roomRegistry.find(roomId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
     }
 
     private Room requireMember(String roomId, String participantId) {
