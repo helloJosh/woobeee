@@ -46,7 +46,20 @@ class FourRuleTest {
         // X X X . X . X X X  -> 가운데 빈칸을 채우는 서로 다른 4개-집합이 둘 있다
         OmokBoard board = rowBoard("...XXX.X.XXX...");
 
-        assertThat(FourRule.countFours(board, 7, 7, Axis.HORIZONTAL)).isGreaterThanOrEqualTo(2);
+        assertThat(FourRule.countFours(board, 7, 7, Axis.HORIZONTAL)).isEqualTo(2);
+    }
+
+    /**
+     * 창의 모양만으로는 부족하다 — 빈칸을 채웠을 때 정확히 5가 되는지까지 확인해야 한다.
+     * ...XXXX.X...... 에서 (5,7) 판정 시: 창 3..7 은 채우면 정확히 5(진짜 사)이지만,
+     * 창 4..8 은 채우면 6(장목)이 되어 사가 아니다. 모양만 보면 둘 다 4흑+1빈으로 보여
+     * 오답(2)을 낸다.
+     */
+    @Test
+    void windowMustCompleteToExactlyFiveNotOverline() {
+        OmokBoard board = rowBoard("...XXXX.X......");
+
+        assertThat(FourRule.countFours(board, 5, 7, Axis.HORIZONTAL)).isEqualTo(1);
     }
 
     @Test
