@@ -182,8 +182,12 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 | `OMOK_MOVED` | `participantId`, `x`, `y`, `color`, `nextTurn`, `turnDeadline` | 착수 성공 |
 | `OMOK_REJECTED` | `ackSeq`, `reason` | 금수·차례아님·이미 놓인 자리 |
 | `DODGE_TICK` | `tick`, `positions[]`, `obstacles[]`, `eliminated[]` | 매 틱, 방 전체에 |
-| `GAME_END` | `winnerParticipantId`, `ranks[]`, `gameResultId` | 종료 시 |
+| `GAME_END` | `winnerParticipantId`, `ranks[]` | 종료 시 |
 | `ERROR` | `ackSeq`, `code`, `message` | 처리 실패 |
+
+`GAME_END` 에 `gameResultId` 를 싣지 않는다. 결과 id 는 DB 기록과 기보 업로드가 끝나야 나오는데,
+업로드가 느리거나 타임아웃 나는 동안 플레이어가 승패를 못 보는 편이 훨씬 나쁘다. 종료는 즉시
+알리고, 결과 id 가 필요한 화면은 전적 목록 API 로 따로 받는다.
 
 **연결 종료** — 세션이 끊기면 그 참가자를 `DISCONNECTED` 로 바꿔 `ROOM_STATE` 를 브로드캐스트하고
 30초 유예 타이머를 건다. 유예가 만료되면 방에서 빼고 다시 `ROOM_STATE` 를 브로드캐스트한다.
