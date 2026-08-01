@@ -117,10 +117,23 @@ public class OmokGameSink implements GameCommandSink {
                             "turnDeadline", outcome.turnDeadline().toString()
                     )
             ));
-            // 승리 착수는 별도 OMOK_MOVED 를 먼저 쏘지 않는다 — finish() 가 보내는 GAME_END
-            // 하나만 이 수의 결과로 나간다. take(1) 로 다음 신호를 기다리는 구독자가 있을 때
-            // OMOK_MOVED 를 먼저 흘리면 그 신호가 GAME_END 보다 먼저 소비돼 버린다.
-            case WIN -> finish(room, game, outcome.winnerParticipantId());
+            // 승리 착수도 착수 성공이다 — 돌은 이미 놓였고 moves 에도 기록됐다. OMOK_MOVED 로
+            // 마지막 돌의 좌표를 먼저 알리고, 그다음 finish() 가 GAME_END 를 보낸다. GAME_END
+            // 페이로드에는 좌표가 없으므로 이 순서를 지키지 않으면 클라이언트 판에 승리한 돌이
+            // 영영 그려지지 않는다.
+            case WIN -> {
+                roomHub.broadcast(room.roomId(), ServerMessage.ack(
+                        "OMOK_MOVED",
+                        message.seq(),
+                        Map.of(
+                                "participantId", participantId,
+                                "x", x,
+                                "y", y,
+                                "color", outcome.stone().name()
+                        )
+                ));
+                finish(room, game, outcome.winnerParticipantId());
+            }
         }
     }
 
