@@ -149,7 +149,7 @@ class RoomServiceTest {
         Room room = service.create(GameType.DODGE, HOST);
         service.join(room.roomId(), "code", GUEST);
 
-        service.confirmLeave(room.roomId(), HOST.participantId());
+        service.leaveNow(room.roomId(), HOST.participantId());
 
         assertThat(room.hostParticipantId()).isEqualTo(GUEST.participantId());
     }
@@ -159,7 +159,7 @@ class RoomServiceTest {
     void lastMemberLeavingDestroysTheRoom() {
         Room room = service.create(GameType.OMOK, HOST);
 
-        service.confirmLeave(room.roomId(), HOST.participantId());
+        service.leaveNow(room.roomId(), HOST.participantId());
 
         assertThat(registry.find(room.roomId())).isEmpty();
     }

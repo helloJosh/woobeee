@@ -5,17 +5,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-
 @Service
 public class RoomService {
     private static final int MIN_PLAYERS = 2;
 
     private final RoomRegistry roomRegistry;
-    private final Map<String, Set<String>> recentlyDisconnected = new HashMap<>();
 
     public RoomService(RoomRegistry roomRegistry) {
         this.roomRegistry = roomRegistry;
@@ -69,28 +63,21 @@ public class RoomService {
     /** 소켓이 끊겼을 때. 자리는 남기고 연결만 끊긴 것으로 표시한다. */
     public void markDisconnected(String roomId, String participantId) {
         roomRegistry.find(roomId)
-                .ifPresent(room -> {
-                    room.setConnection(participantId, ConnectionState.DISCONNECTED);
-                    recentlyDisconnected.computeIfAbsent(roomId, k -> new HashSet<>()).add(participantId);
-                });
+                .ifPresent(room -> room.setConnection(participantId, ConnectionState.DISCONNECTED));
     }
 
     /**
-     * 이탈 확정. 유예 만료 타이머와 명시적 LEAVE 가 같이 부른다.
+     * 이탈 확정. 유예 만료 타이머가 부른다.
      *
      * <p>유예 중에 재접속했다면 연결 상태가 CONNECTED 로 돌아와 있다. 그 경우 만료 타이머가
      * 뒤늦게 도착한 것이므로 아무것도 하지 않는다.
      */
     public void confirmLeave(String roomId, String participantId) {
         roomRegistry.find(roomId).ifPresent(room -> {
-            Set<String> disconnected = recentlyDisconnected.getOrDefault(roomId, Set.of());
-            boolean wasEverDisconnected = disconnected.contains(participantId);
-            boolean isNowConnected = room.member(participantId)
+            boolean reconnected = room.member(participantId)
                     .map(member -> member.connection() == ConnectionState.CONNECTED)
                     .orElse(false);
-
-            // Only skip removal if this participant was disconnected before and is now reconnected.
-            if (wasEverDisconnected && isNowConnected) {
+            if (reconnected) {
                 return;
             }
 
@@ -136,7 +123,6 @@ public class RoomService {
 
         if (room.members().isEmpty()) {
             roomRegistry.remove(room.roomId());
-            recentlyDisconnected.remove(room.roomId());
             return;
         }
 
