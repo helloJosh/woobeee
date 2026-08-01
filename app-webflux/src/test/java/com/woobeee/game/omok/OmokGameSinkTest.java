@@ -110,8 +110,11 @@ class OmokGameSinkTest {
             sink.onGameCommand(room, "g:a", placeMessage(3 + i, 9, i * 2 + 2L));
         }
 
-        StepVerifier.create(hub.subscribe("room-1").take(1))
+        // A winning placement is still a successful placement: OMOK_MOVED carries the
+        // coordinates of the last stone (GAME_END never does), then GAME_END follows.
+        StepVerifier.create(hub.subscribe("room-1").take(2))
                 .then(() -> sink.onGameCommand(room, "m:11", placeMessage(7, 7, 99L)))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("OMOK_MOVED"))
                 .assertNext(message -> assertThat(message.type()).isEqualTo("GAME_END"))
                 .expectComplete()
                 .verify(VERIFY_TIMEOUT);
@@ -145,6 +148,32 @@ class OmokGameSinkTest {
         ArgumentCaptor<FinishedGame> captor = ArgumentCaptor.forClass(FinishedGame.class);
         verify(resultService).record(captor.capture(), anyString());
         assertThat(captor.getValue().winnerParticipantId()).isEqualTo("m:11");
+    }
+
+    /**
+     * RoomCommandDispatcher.settle removes the member from the room before notifying the
+     * sink (see its javadoc), so by the time onParticipantGone runs, room.member(...) can
+     * no longer resolve the departed participant's memberId. A logged-in member who
+     * resigns by leaving must still show up in match history with their memberId, not a
+     * null one that would drop the game from their history and block their replay access.
+     */
+    @Test
+    void aDepartedMemberIsStillRecordedWithTheirMemberId() {
+        sink.onStart(room);
+        room.removeMember("m:11");
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> sink.onParticipantGone(room, "m:11"))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("GAME_END"))
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+
+        ArgumentCaptor<FinishedGame> captor = ArgumentCaptor.forClass(FinishedGame.class);
+        verify(resultService).record(captor.capture(), anyString());
+
+        assertThat(captor.getValue().participants().stream()
+                .filter(p -> p.participantId().equals("m:11"))
+                .findFirst().orElseThrow().memberId()).isEqualTo(11L);
     }
 
     @Test

@@ -1,6 +1,5 @@
 package com.woobeee.game.omok;
 
-import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.result.FinishedGame;
 import com.woobeee.game.result.FinishedParticipant;
 import com.woobeee.game.result.GameResultService;
@@ -11,6 +10,8 @@ import com.woobeee.game.ws.ClientMessage;
 import com.woobeee.game.ws.GameCommandSink;
 import com.woobeee.game.ws.RoomHub;
 import com.woobeee.game.ws.ServerMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -24,15 +25,23 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 순수한 OmokGame 을 방과 이어 붙이는 유일한 지점.
  *
- * <p>모든 메서드는 방 명령 큐 안에서 불리므로 같은 방에 대해 동시에 실행되지 않는다.
+ * <p>{@link GameCommandSink} 의 메서드들은 방 명령을 직렬화하는 큐 없이 호출된다 — 같은 방에
+ * 여러 세션이 동시에 명령을 보내면 이 클래스의 메서드들도 서로 다른 스레드에서 동시에 불릴 수
+ * 있다. {@link Room} 자체는 스레드 안전하지만(그 자신을 모니터로 동기화한다), 방마다 이 클래스가
+ * 따로 들고 있는 {@link OmokGame} 은 그렇지 않다. 그래서 한 게임의 상태를 읽거나 바꾸는 모든
+ * 코드({@code place}/{@code resign} 호출과 그 결과로 읽는 필드들)는 그 게임 인스턴스 자체를
+ * 모니터로 동기화해 직렬화한다 — 같은 방에 대해 동시에 도착한 두 착수가 판을 동시에 건드리거나,
+ * 자진 기권과 착수가 동시에 승리 판정을 통과해 결과를 두 번 남기는 일을 막는다.
  */
 @Component
 public class OmokGameSink implements GameCommandSink {
+    private static final Logger log = LoggerFactory.getLogger(OmokGameSink.class);
     public static final Duration MOVE_LIMIT = Duration.ofSeconds(60);
 
     private final Map<String, OmokGame> games = new ConcurrentHashMap<>();
     private final Map<String, Instant> startedAt = new ConcurrentHashMap<>();
     private final Map<String, Map<String, String>> displayNames = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Long>> memberIds = new ConcurrentHashMap<>();
 
     private final RoomHub roomHub;
     private final GameResultService gameResultService;
@@ -76,11 +85,18 @@ public class OmokGameSink implements GameCommandSink {
         startedAt.put(room.roomId(), now);
 
         Map<String, String> names = new LinkedHashMap<>();
-        members.forEach(member -> names.put(
-                member.participant().participantId(),
-                member.participant().displayName()
-        ));
+        Map<String, Long> ids = new LinkedHashMap<>();
+        members.forEach(member -> {
+            names.put(member.participant().participantId(), member.participant().displayName());
+            // RoomCommandDispatcher.settle removes a departed participant from the room
+            // before calling onParticipantGone, so by finish() time room.member(...) can
+            // no longer resolve their memberId. Snapshot it here, while everyone is still
+            // present, so a member who resigns by leaving still keeps their memberId on
+            // their result row (and therefore their match history / replay access).
+            ids.put(member.participant().participantId(), member.participant().memberId());
+        });
         displayNames.put(room.roomId(), names);
+        memberIds.put(room.roomId(), ids);
     }
 
     @Override
@@ -97,7 +113,14 @@ public class OmokGameSink implements GameCommandSink {
         int x = message.payload() == null ? -1 : message.payload().path("x").asInt(-1);
         int y = message.payload() == null ? -1 : message.payload().path("y").asInt(-1);
 
-        PlaceOutcome outcome = game.place(participantId, x, y, clock.instant());
+        PlaceOutcome outcome;
+        String nextTurn = null;
+        synchronized (game) {
+            outcome = game.place(participantId, x, y, clock.instant());
+            if (outcome.status() == PlaceOutcome.Status.PLACED) {
+                nextTurn = game.currentTurnParticipantId();
+            }
+        }
 
         switch (outcome.status()) {
             case REJECTED -> roomHub.broadcast(room.roomId(), ServerMessage.ack(
@@ -113,14 +136,14 @@ public class OmokGameSink implements GameCommandSink {
                             "x", x,
                             "y", y,
                             "color", outcome.stone().name(),
-                            "nextTurn", game.currentTurnParticipantId(),
+                            "nextTurn", nextTurn,
                             "turnDeadline", outcome.turnDeadline().toString()
                     )
             ));
             // 승리 착수도 착수 성공이다 — 돌은 이미 놓였고 moves 에도 기록됐다. OMOK_MOVED 로
             // 마지막 돌의 좌표를 먼저 알리고, 그다음 finish() 가 GAME_END 를 보낸다. GAME_END
-            // 페이로드에는 좌표가 없으므로 이 순서를 지키지 않으면 클라이언트 판에 승리한 돌이
-            // 영영 그려지지 않는다.
+            // 페이로드에는 좌표가 없으므로(승자·순위만 싣는다) 이 순서를 지키지 않으면 클라이언트
+            // 판에 승리한 돌이 영영 그려지지 않는다.
             case WIN -> {
                 roomHub.broadcast(room.roomId(), ServerMessage.ack(
                         "OMOK_MOVED",
@@ -140,23 +163,46 @@ public class OmokGameSink implements GameCommandSink {
     @Override
     public void onParticipantGone(Room room, String participantId) {
         OmokGame game = games.get(room.roomId());
-        if (game == null || game.finished()) {
+        if (game == null) {
             return;
         }
 
-        PlaceOutcome outcome = game.resign(participantId);
+        PlaceOutcome outcome;
+        synchronized (game) {
+            if (game.finished()) {
+                return;
+            }
+            outcome = game.resign(participantId);
+        }
+
         if (outcome.status() == PlaceOutcome.Status.WIN) {
             finish(room, game, outcome.winnerParticipantId());
         }
     }
 
+    /**
+     * GAME_END 는 즉시, 저장과 무관하게 나간다 — {@link GameResultService#record} 는 DB 기록에
+     * 이어 기보를 S3 에 올린 뒤에야 완료되므로, 그 결과(예: gameResultId)를 기다렸다가 방송하면
+     * 참가자들이 승자를 알기까지 스토리지 왕복(및 타임아웃 가능성)을 떠안게 된다. 그래서 GAME_END
+     * 페이로드는 winnerParticipantId 와 ranks 만 싣고, record 호출은 방송 뒤에 구독만 해 둔다.
+     */
     private void finish(Room room, OmokGame game, String winnerParticipantId) {
         Map<String, String> names = displayNames.getOrDefault(room.roomId(), Map.of());
+        Map<String, Long> ids = memberIds.getOrDefault(room.roomId(), Map.of());
         Instant start = startedAt.getOrDefault(room.roomId(), clock.instant());
+
+        List<Map<String, Object>> ranks;
+        List<FinishedParticipant> participants;
+        String ndjson;
+        synchronized (game) {
+            ranks = ranksOf(game, winnerParticipantId, names);
+            participants = participantsOf(game, winnerParticipantId, names, ids);
+            ndjson = replayWriter.toNdjson(game, names);
+        }
 
         roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_END", Map.of(
                 "winnerParticipantId", winnerParticipantId == null ? "" : winnerParticipantId,
-                "ranks", ranksOf(game, winnerParticipantId, names)
+                "ranks", ranks
         )));
 
         FinishedGame finished = new FinishedGame(
@@ -165,15 +211,18 @@ public class OmokGameSink implements GameCommandSink {
                 start,
                 clock.instant(),
                 winnerParticipantId,
-                participantsOf(room, game, winnerParticipantId, names)
+                participants
         );
 
-        String ndjson = replayWriter.toNdjson(game, names);
-        gameResultService.record(finished, ndjson).subscribe();
+        gameResultService.record(finished, ndjson).subscribe(
+                gameResultId -> { },
+                error -> log.error("Failed to record omok result for room {}", room.roomId(), error)
+        );
 
-        games.remove(room.roomId());
+        games.remove(room.roomId(), game);
         startedAt.remove(room.roomId());
         displayNames.remove(room.roomId());
+        memberIds.remove(room.roomId());
     }
 
     private List<Map<String, Object>> ranksOf(OmokGame game, String winner, Map<String, String> names) {
@@ -185,25 +234,18 @@ public class OmokGameSink implements GameCommandSink {
     }
 
     private List<FinishedParticipant> participantsOf(
-            Room room,
             OmokGame game,
             String winner,
-            Map<String, String> names
+            Map<String, String> names,
+            Map<String, Long> memberIds
     ) {
         return List.of(game.blackParticipantId(), game.whiteParticipantId()).stream()
                 .map(id -> new FinishedParticipant(
                         id,
                         names.getOrDefault(id, id),
-                        memberIdOf(room, id),
+                        memberIds.get(id),
                         id.equals(winner) ? 1 : 2
                 ))
                 .toList();
-    }
-
-    private Long memberIdOf(Room room, String participantId) {
-        return room.member(participantId)
-                .map(RoomMember::participant)
-                .map(GameParticipant::memberId)
-                .orElse(null);
     }
 }
