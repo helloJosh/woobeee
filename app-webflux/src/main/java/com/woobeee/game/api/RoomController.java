@@ -11,8 +11,8 @@ import com.woobeee.game.identity.GuestIdentityService;
 import com.woobeee.game.identity.MemberReader;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomService;
-import com.woobeee.game.security.GameAuthWebFilter;
 import com.woobeee.game.security.GamePrincipal;
+import com.woobeee.game.security.GamePrincipals;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -48,7 +48,7 @@ public class RoomController {
             @Valid @RequestBody CreateRoomRequest request,
             ServerWebExchange exchange
     ) {
-        GamePrincipal principal = requirePrincipal(exchange);
+        GamePrincipal principal = GamePrincipals.require(exchange);
 
         return memberReader.findNickname(principal.memberId())
                 .switchIfEmpty(Mono.error(
@@ -93,13 +93,5 @@ public class RoomController {
                         new GuestTokenResponse(token.token(), token.participantId(), token.displayName()),
                         "Guest token issued"
                 ));
-    }
-
-    private GamePrincipal requirePrincipal(ServerWebExchange exchange) {
-        Object principal = exchange.getAttribute(GameAuthWebFilter.PRINCIPAL_ATTRIBUTE);
-        if (!(principal instanceof GamePrincipal gamePrincipal)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Access token is required");
-        }
-        return gamePrincipal;
     }
 }

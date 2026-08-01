@@ -49,7 +49,9 @@
 
 ## WebSocket 프로토콜
 
-봉투는 `{type, seq, payload}`. 서버 응답에는 `ackSeq` 가 실린다.
+봉투는 `{type, seq, payload}`. `ackSeq` 는 `ERROR` 에만 실린다(실패한 명령의 `seq` 를 그대로
+돌려준다) — `ROOM_STATE`, `GAME_START` 등 방 전체에 뿌리는 메시지는 특정 명령의 응답이 아니므로
+`ackSeq` 가 없다.
 
 - 클라이언트 → 서버: `JOIN` `LEAVE` `READY` `START` `OMOK_PLACE` `DODGE_MOVE`
 - 서버 → 클라이언트: `ROOM_STATE` `GAME_START` `OMOK_MOVED` `OMOK_REJECTED` `DODGE_TICK`

@@ -4,6 +4,7 @@ import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomService;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -28,9 +29,28 @@ public class RoomCommandDispatcher {
         gameCommandSinks.forEach(sink -> this.sinks.put(sink.gameType(), sink));
     }
 
-    public void join(String roomId, String inviteCode, GameParticipant participant) {
-        guard(roomId, null, () -> {
+    /**
+     * roomId/inviteCode 3인자 버전. 검증이 끝난 뒤 별도로 할 일이 없는 호출자(테스트 등)를 위한
+     * 편의 오버로드다.
+     */
+    public boolean join(String roomId, String inviteCode, GameParticipant participant) {
+        return join(roomId, inviteCode, participant, () -> { });
+    }
+
+    /**
+     * 방 참가를 검증하고 확정한다. 성공/실패를 boolean 으로 돌려준다 — {@link GameWebSocketHandler}
+     * 는 이 값을 보고서야 세션을 "참가함" 상태로 만들어야 한다(C2). 검증(초대 코드, 정원, 진행 상태)
+     * 전에 세션을 허브에 구독시키면, 유효한 토큰이지만 틀린 초대 코드를 댄 참가자가 다른 참가자의
+     * ROOM_STATE 를 계속 엿듣게 된다.
+     *
+     * <p>{@code onValidated} 는 참가가 실제로 확정된 직후, 이 참가에 대한 ROOM_STATE 를 방에
+     * 브로드캐스트하기 직전에 불린다. 호출자는 여기서 허브 구독을 열어 자신의 참가로 인한
+     * ROOM_STATE 를 놓치지 않게 한다.
+     */
+    public boolean join(String roomId, String inviteCode, GameParticipant participant, Runnable onValidated) {
+        return guard(roomId, null, () -> {
             Room room = roomService.join(roomId, inviteCode, participant);
+            onValidated.run();
             broadcastRoomState(room);
         });
     }
@@ -48,9 +68,17 @@ public class RoomCommandDispatcher {
         });
     }
 
+    /**
+     * C2: {@code requireRoomById} 는 방 존재만 확인하고 멤버십은 보지 않는다 — 그래서 초대
+     * 코드가 틀려 join 이 실패한 세션이라도(혹은 애초에 이 방에 들어온 적 없는 세션이라도)
+     * roomId 만 알면 게임 명령을 sink 까지 흘려보낼 수 있었다. 여기서 먼저 멤버십을 확인한다.
+     */
     public void gameCommand(String roomId, String participantId, ClientMessage message) {
         guard(roomId, message.seq(), () -> {
             Room room = roomService.requireRoomById(roomId);
+            if (room.member(participantId).isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this room");
+            }
             GameCommandSink sink = sinks.get(room.gameType());
             if (sink == null) {
                 throw new IllegalStateException("No game handler for " + room.gameType());
@@ -111,19 +139,23 @@ public class RoomCommandDispatcher {
         roomHub.broadcast(room.roomId(), ServerMessage.of("ROOM_STATE", RoomStateProjector.project(room)));
     }
 
-    private void guard(String roomId, Long ackSeq, Runnable action) {
+    /** @return true면 action이 예외 없이 끝났다는 뜻이다. false면 ERROR로 흡수됐다는 뜻이다. */
+    private boolean guard(String roomId, Long ackSeq, Runnable action) {
         try {
             action.run();
+            return true;
         } catch (ResponseStatusException exception) {
             roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, Map.of(
                     "code", exception.getStatusCode().value(),
                     "message", String.valueOf(exception.getReason())
             )));
+            return false;
         } catch (RuntimeException exception) {
             roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, Map.of(
                     "code", 500,
                     "message", "Command failed"
             )));
+            return false;
         }
     }
 }

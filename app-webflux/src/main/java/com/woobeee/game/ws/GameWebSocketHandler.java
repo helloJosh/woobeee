@@ -143,12 +143,23 @@ public class GameWebSocketHandler implements WebSocketHandler {
         }
 
         return joinAuthenticator.authenticate(roomId, token)
-                .doOnNext(participant -> {
-                    state.set(new SessionState(roomId, participant.participantId()));
-                    // 구독을 먼저 연다. dispatcher.join 이 브로드캐스트하는 ROOM_STATE 를
-                    // 이 세션도 받아야 하기 때문이다.
-                    joinedRoomId.tryEmitValue(roomId);
-                    dispatcher.join(roomId, inviteCode, participant);
+                .flatMap(participant -> {
+                    // 토큰 인증은 여기서 끝났을 뿐이다 — 방 존재, 초대 코드, 정원, 진행 상태는
+                    // dispatcher.join 안에서 검증된다. 그 검증이 끝나기 전에 이 세션을 "참가함"
+                    // 상태로 만들거나 허브에 구독시키면(C2), 유효한 토큰이지만 틀린 초대 코드를
+                    // 댄 참가자가 다른 참가자들의 ROOM_STATE 를 계속 엿듣게 된다 — join 이
+                    // 실패해도 state 가 non-null 이라 JOIN 데드라인도 더 이상 이 세션을 닫지
+                    // 않는다. 그래서 성공/실패를 boolean 으로 돌려받아, 실패하면 아무것도
+                    // 구독시키지 않고 세션을 닫는다.
+                    //
+                    // 구독은 onValidated 콜백으로 넘긴다 — dispatcher.join 이 참가를 확정한
+                    // 직후, 그 참가에 대한 ROOM_STATE 를 브로드캐스트하기 직전에 불리므로
+                    // 이 세션도 자신의 참가로 인한 ROOM_STATE 를 받는다.
+                    boolean joined = dispatcher.join(roomId, inviteCode, participant, () -> {
+                        state.set(new SessionState(roomId, participant.participantId()));
+                        joinedRoomId.tryEmitValue(roomId);
+                    });
+                    return joined ? Mono.<Void>empty() : session.close();
                 })
                 .onErrorResume(error -> session.close().then(Mono.empty()))
                 .then();

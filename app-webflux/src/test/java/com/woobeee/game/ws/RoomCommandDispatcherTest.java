@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -179,6 +180,28 @@ class RoomCommandDispatcherTest {
         dispatcher.start("room-1", HOST.participantId());
 
         assertThat(log).containsExactly("ROOM_STATE", "onStart", "GAME_START");
+    }
+
+    /**
+     * C2 regression: {@code requireRoomById} only checks the room exists, not that the caller is
+     * a member of it. A non-member who merely knows the roomId (e.g. a session whose JOIN failed
+     * invite-code validation, or one from a different room entirely) must not have its game
+     * commands reach a registered sink.
+     */
+    @Test
+    void gameCommandFromANonMemberDoesNotReachTheSink() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> dispatcher.gameCommand("room-1", "not-a-member",
+                        new ClientMessage("OMOK_PLACE", 7L, null)))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("ERROR"))
+                .expectComplete()
+                .verify(Duration.ofSeconds(2));
+
+        assertThat(log).isEmpty();
     }
 
     /** F2 regression: a throwing sink must degrade to an ERROR broadcast, not escape the dispatcher. */

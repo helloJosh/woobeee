@@ -9,7 +9,18 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 방 하나의 인메모리 상태. 스레드 안전하지 않다 — 방 명령 큐가 접근을 직렬화한다(Task 9).
+ * 방 하나의 인메모리 상태.
+ *
+ * <p>스레드 안전하다 — 모든 변경자와, 멤버 컬렉션을 순회하는 모든 조회자({@link #members()},
+ * {@link #member(String)}, {@link #isFull()}, {@link #promoteNextHost()} 등)가 이 인스턴스를
+ * 모니터로 동기화한다. 큐를 두어 방 명령을 직렬화하는 것이 아니라, 이 객체 자체가 동시 접근에
+ * 안전한 것이다. {@code status} 와 {@code hostParticipantId} 의 가시성도 같은 동기화로
+ * 보장된다.
+ *
+ * <p>이 동기화는 이 인스턴스 안의 상태(멤버 맵, status, hostParticipantId)가 손상되거나
+ * ({@code ConcurrentModificationException} 등) 유실되지 않음을 보장할 뿐이다. 정원 확인 후
+ * 추가처럼 여러 번의 호출을 조합하는 상위 로직(예: {@code RoomService.join})까지 원자적으로
+ * 만들지는 않는다 — 그 시퀀스를 원자적으로 만들려면 호출자가 별도로 동기화하거나 큐를 둬야 한다.
  */
 public final class Room {
     private final String roomId;
@@ -46,48 +57,48 @@ public final class Room {
         return createdAt;
     }
 
-    public String hostParticipantId() {
+    public synchronized String hostParticipantId() {
         return hostParticipantId;
     }
 
-    public RoomStatus status() {
+    public synchronized RoomStatus status() {
         return status;
     }
 
-    public List<RoomMember> members() {
+    public synchronized List<RoomMember> members() {
         return List.copyOf(members.values());
     }
 
-    public Optional<RoomMember> member(String participantId) {
+    public synchronized Optional<RoomMember> member(String participantId) {
         return Optional.ofNullable(members.get(participantId));
     }
 
-    public boolean isFull() {
+    public synchronized boolean isFull() {
         return members.size() >= gameType.capacity();
     }
 
-    public void addMember(GameParticipant participant) {
+    public synchronized void addMember(GameParticipant participant) {
         members.put(participant.participantId(), new RoomMember(participant));
     }
 
-    public void removeMember(String participantId) {
+    public synchronized void removeMember(String participantId) {
         members.remove(participantId);
     }
 
-    public void setReady(String participantId, boolean ready) {
+    public synchronized void setReady(String participantId, boolean ready) {
         member(participantId).ifPresent(m -> m.ready(ready));
     }
 
-    public void setConnection(String participantId, ConnectionState connection) {
+    public synchronized void setConnection(String participantId, ConnectionState connection) {
         member(participantId).ifPresent(m -> m.connection(connection));
     }
 
-    public void setStatus(RoomStatus status) {
+    public synchronized void setStatus(RoomStatus status) {
         this.status = status;
     }
 
     /** 방장이 빠진 뒤 참가 순서상 다음 사람을 방장으로 세운다. 아무도 없으면 그대로 둔다. */
-    public void promoteNextHost() {
+    public synchronized void promoteNextHost() {
         if (members.containsKey(hostParticipantId)) {
             return;
         }
