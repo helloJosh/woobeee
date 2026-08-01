@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,5 +50,14 @@ public class RoomRegistry {
         int before = rooms.size();
         rooms.values().removeIf(room -> room.createdAt().isBefore(cutoff));
         return before - rooms.size();
+    }
+
+    /** TTL을 넘긴 방의 id 목록. 지우기 전에 허브를 닫아야 해서 따로 뽑는다. */
+    public List<String> expiredRoomIds(Instant now) {
+        Instant cutoff = now.minus(ROOM_TTL);
+        return rooms.values().stream()
+                .filter(room -> room.createdAt().isBefore(cutoff))
+                .map(Room::roomId)
+                .toList();
     }
 }

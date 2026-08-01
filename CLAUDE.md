@@ -102,7 +102,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | --- | --- | --- | --- |
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/댓글/좋아요/카테고리 |
-| app-webflux | game | `/api/game` | `health`(공개), `me`(인증) — 나머지는 후속 spec |
+| app-webflux | game | `/api/game`, `/ws/game` | `health`(공개), `me`, `rooms*`(방 생성·요약·게스트 토큰), WebSocket 실시간 |
 
 ## 안전 수칙
 
@@ -114,7 +114,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 
 | 항목 | 내용 |
 | --- | --- |
-| 게임 도메인 설계 | 실시간 통신 방식(WebSocket/SSE/폴링), 게임 규칙, `V2__game.sql` → 별도 spec |
+| 게임 규칙 구현 | 방·실시간 기반은 완료. 오목/장애물피하기 로직과 `V2__game.sql` 은 Plan 2·3 |
 | front 잔존 페이지 | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 삭제 또는 게임 화면으로 대체 |
 | 프로필 이미지 front UI | 백엔드 계약만 있고 업로드·표시 화면이 없다 |
 | 고아 오브젝트 정리 | 발급받고 등록하지 않은 `profiles/` 업로드에 대한 lifecycle 정책 |
