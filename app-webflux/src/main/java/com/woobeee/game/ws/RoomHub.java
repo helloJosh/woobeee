@@ -1,5 +1,7 @@
 package com.woobeee.game.ws;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -15,17 +17,24 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Component
 public class RoomHub {
+    private static final Logger log = LoggerFactory.getLogger(RoomHub.class);
     private final Map<String, Sinks.Many<ServerMessage>> sinks = new ConcurrentHashMap<>();
 
     public Flux<ServerMessage> subscribe(String roomId) {
         return sinkFor(roomId).asFlux();
     }
 
-    public void broadcast(String roomId, ServerMessage message) {
+    public Sinks.EmitResult broadcast(String roomId, ServerMessage message) {
         Sinks.Many<ServerMessage> sink = sinks.get(roomId);
         if (sink != null) {
-            sink.tryEmitNext(message);
+            Sinks.EmitResult result = sink.tryEmitNext(message);
+            if (result != Sinks.EmitResult.OK) {
+                log.warn("Broadcast to room {} failed with type={} result={}",
+                    roomId, message.type(), result);
+            }
+            return result;
         }
+        return Sinks.EmitResult.OK;
     }
 
     public void close(String roomId) {

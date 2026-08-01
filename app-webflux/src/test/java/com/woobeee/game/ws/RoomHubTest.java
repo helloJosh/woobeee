@@ -1,6 +1,7 @@
 package com.woobeee.game.ws;
 
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Sinks;
 import reactor.test.StepVerifier;
 
 import java.time.Duration;
@@ -52,5 +53,35 @@ class RoomHubTest {
 
         StepVerifier.create(hub.subscribe("ghost").take(Duration.ofMillis(50)))
                 .verifyComplete();
+    }
+
+    @Test
+    void broadcastFailureWhenBufferOverflows() {
+        RoomHub hub = new RoomHub();
+
+        // Trigger the sink creation and subscribe with a subscriber that doesn't request items
+        // This applies backpressure and causes the buffer to fill
+        hub.subscribe("overflow-room").subscribe(
+                item -> {}, // onNext (won't be called due to backpressure)
+                err -> {}, // onError
+                () -> {}, // onComplete
+                subscription -> {
+                    // Request 0 items to apply backpressure and fill the buffer
+                    // subscription.request(0) is implicit when we don't call request
+                }
+        );
+
+        // Fill the buffer (size 256) and beyond
+        boolean overflowOccurred = false;
+        for (int i = 0; i < 300; i++) {
+            Sinks.EmitResult result = hub.broadcast("overflow-room",
+                    ServerMessage.of("FILL", Map.of("seq", i)));
+            if (result != Sinks.EmitResult.OK) {
+                overflowOccurred = true;
+                break;
+            }
+        }
+
+        assert overflowOccurred : "Expected overflow but buffer never filled";
     }
 }
