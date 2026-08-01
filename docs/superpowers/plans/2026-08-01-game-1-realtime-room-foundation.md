@@ -2951,11 +2951,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.woobeee.game.identity.GameParticipant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.reactivestreams.Publisher;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import reactor.test.scheduler.VirtualTimeScheduler;
 
 import java.time.Duration;
@@ -3111,6 +3111,41 @@ class GameWebSocketHandlerTest {
         verify(dispatcher).gameCommand(eq("room-1"), eq("m:11"), any(ClientMessage.class));
     }
 
+    /**
+     * outbound 배선 회귀 테스트. Flux.defer 로 감싸면 구독 시점의 state 가 null 이라
+     * 빈 스트림으로 끝나고 아무 메시지도 나가지 않는다 — 그 버그를 이 테스트가 잡는다.
+     */
+    @Test
+    void hubBroadcastsReachTheSessionAfterJoin() {
+        when(authenticator.authenticate(eq("room-1"), eq("tok")))
+                .thenReturn(Mono.just(GameParticipant.member(11L, "host")));
+
+        List<String> sent = new CopyOnWriteArrayList<>();
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("session-1");
+        when(session.receive()).thenReturn(Flux.just(
+                        "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}")
+                .map(payload -> {
+                    WebSocketMessage message = mock(WebSocketMessage.class);
+                    when(message.getPayloadAsText()).thenReturn(payload);
+                    return message;
+                }).concatWith(Flux.never()));
+        when(session.textMessage(anyString())).thenAnswer(invocation -> {
+            sent.add(invocation.getArgument(0));
+            return mock(WebSocketMessage.class);
+        });
+        when(session.send(any())).thenAnswer(invocation -> {
+            Publisher<WebSocketMessage> messages = invocation.getArgument(0);
+            return Flux.from(messages).then();
+        });
+        when(session.close()).thenReturn(Mono.empty());
+
+        handler.handle(session).subscribe();
+        hub.broadcast("room-1", ServerMessage.of("ROOM_STATE", java.util.Map.of("n", 1)));
+
+        assertThat(sent).anySatisfy(text -> assertThat(text).contains("ROOM_STATE"));
+    }
+
     @Test
     void messagesBeforeJoinAreIgnored() {
         WebSocketSession session = sessionEmitting("{\"type\":\"READY\",\"seq\":1,\"payload\":{\"ready\":true}}");
@@ -3134,12 +3169,11 @@ package com.woobeee.game.ws;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.woobeee.game.identity.GameParticipant;
 import org.springframework.web.reactive.socket.WebSocketHandler;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import reactor.core.Disposable;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 
 import java.time.Duration;
@@ -3182,6 +3216,11 @@ public class GameWebSocketHandler implements WebSocketHandler {
     public Mono<Void> handle(WebSocketSession session) {
         AtomicReference<SessionState> state = new AtomicReference<>(null);
 
+        // JOIN 이 도착해야 어느 방을 구독할지 알 수 있다. send() 는 지금 구독되므로
+        // Flux.defer 로 감싸면 그 시점의 state(=null)를 읽고 빈 스트림으로 끝나 버린다 —
+        // 아무 메시지도 나가지 않는다. 그래서 방 id 를 Sinks.One 으로 늦게 넘긴다.
+        Sinks.One<String> joinedRoomId = Sinks.one();
+
         Disposable joinTimer = Mono.delay(joinDeadline, timerScheduler)
                 .filter(ignored -> state.get() == null)
                 .flatMap(ignored -> session.close())
@@ -3189,17 +3228,14 @@ public class GameWebSocketHandler implements WebSocketHandler {
 
         Mono<Void> inbound = session.receive()
                 .map(message -> message.getPayloadAsText())
-                .concatMap(text -> handleText(session, state, text))
+                .concatMap(text -> handleText(session, state, joinedRoomId, text))
                 .then();
 
         Mono<Void> outbound = session.send(
-                Flux.defer(() -> {
-                    SessionState joined = state.get();
-                    if (joined == null) {
-                        return Flux.empty();
-                    }
-                    return roomHub.subscribe(joined.roomId()).map(this::toTextMessage).map(session::textMessage);
-                })
+                joinedRoomId.asMono()
+                        .flatMapMany(roomHub::subscribe)
+                        .map(this::toTextMessage)
+                        .map(session::textMessage)
         );
 
         return Mono.when(inbound, outbound)
@@ -3216,7 +3252,12 @@ public class GameWebSocketHandler implements WebSocketHandler {
                 });
     }
 
-    private Mono<Void> handleText(WebSocketSession session, AtomicReference<SessionState> state, String text) {
+    private Mono<Void> handleText(
+            WebSocketSession session,
+            AtomicReference<SessionState> state,
+            Sinks.One<String> joinedRoomId,
+            String text
+    ) {
         ClientMessage message = parse(text);
         if (message == null) {
             return Mono.empty();
@@ -3227,7 +3268,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
             if (!"JOIN".equals(message.type())) {
                 return Mono.empty();
             }
-            return join(session, state, message);
+            return join(session, state, joinedRoomId, message);
         }
 
         switch (message.type()) {
@@ -3249,7 +3290,12 @@ public class GameWebSocketHandler implements WebSocketHandler {
         return Mono.empty();
     }
 
-    private Mono<Void> join(WebSocketSession session, AtomicReference<SessionState> state, ClientMessage message) {
+    private Mono<Void> join(
+            WebSocketSession session,
+            AtomicReference<SessionState> state,
+            Sinks.One<String> joinedRoomId,
+            ClientMessage message
+    ) {
         JsonNode payload = message.payload();
         if (payload == null) {
             return Mono.empty();
@@ -3265,6 +3311,9 @@ public class GameWebSocketHandler implements WebSocketHandler {
         return joinAuthenticator.authenticate(roomId, token)
                 .doOnNext(participant -> {
                     state.set(new SessionState(roomId, participant.participantId()));
+                    // 구독을 먼저 연다. dispatcher.join 이 브로드캐스트하는 ROOM_STATE 를
+                    // 이 세션도 받아야 하기 때문이다.
+                    joinedRoomId.tryEmitValue(roomId);
                     dispatcher.join(roomId, inviteCode, participant);
                 })
                 .onErrorResume(error -> session.close().then(Mono.empty()))
@@ -3313,10 +3362,6 @@ public class GameWebSocketHandler implements WebSocketHandler {
             this.left = true;
         }
     }
-
-    /** GameParticipant 를 import 하지 않으면 컴파일되지 않으므로 참조를 남긴다. */
-    @SuppressWarnings("unused")
-    private static final Class<GameParticipant> PARTICIPANT_TYPE = GameParticipant.class;
 }
 ```
 
@@ -3379,7 +3424,7 @@ public class GameWebSocketConfig {
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `./mvnw -pl app-webflux test -Dtest=GameWebSocketHandlerTest`
-Expected: PASS, 7 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 6: Run the full suite and the dependency check**
 
