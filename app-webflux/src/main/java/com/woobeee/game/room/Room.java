@@ -17,10 +17,11 @@ import java.util.Optional;
  * 안전한 것이다. {@code status} 와 {@code hostParticipantId} 의 가시성도 같은 동기화로
  * 보장된다.
  *
- * <p>이 동기화는 이 인스턴스 안의 상태(멤버 맵, status, hostParticipantId)가 손상되거나
- * ({@code ConcurrentModificationException} 등) 유실되지 않음을 보장할 뿐이다. 정원 확인 후
- * 추가처럼 여러 번의 호출을 조합하는 상위 로직(예: {@code RoomService.join})까지 원자적으로
- * 만들지는 않는다 — 그 시퀀스를 원자적으로 만들려면 호출자가 별도로 동기화하거나 큐를 둬야 한다.
+ * <p>정원 확인 후 추가, 진행 상태 확인 후 시작처럼 여러 단계를 조합하는 시퀀스는 각 단계를
+ * 개별적으로 동기화하는 것만으로는 원자적이지 않다 — 그 사이에 다른 스레드가 끼어들 수 있다
+ * (체크-후-액션 경합). 그래서 참가 판정은 {@link #admit(GameParticipant, RoomStatus)}, 시작
+ * 판정은 {@link #beginGame(String, int)} 로 각각 하나의 동기화 블록에 모아 원자적으로 수행한다.
+ * 호출자({@code RoomService})는 이 두 메서드가 돌려주는 결과를 상태 코드로 매핑하기만 한다.
  */
 public final class Room {
     private final String roomId;
@@ -103,5 +104,96 @@ public final class Room {
             return;
         }
         members.keySet().stream().findFirst().ifPresent(next -> hostParticipantId = next);
+    }
+
+    /**
+     * 참가 판정과 참가를 하나의 원자적 동작으로 묶는다.
+     *
+     * <p>이미 멤버라면(재접속) 정원·상태 검사를 건너뛰고 연결 상태만 CONNECTED 로 되돌린다.
+     * 그 외에는 {@code expectedStatus} 와 다르면, 혹은 정원({@link GameType#capacity()})이
+     * 찼으면 거절하고, 그렇지 않으면 멤버로 추가한다. 이 판정 전체가 하나의 동기화 블록 안에서
+     * 이뤄지므로, 이 메서드를 호출하는 스레드와 {@link #beginGame(String, int)} 를 호출하는
+     * 스레드는 서로의 시퀀스 중간에 끼어들 수 없다 — 둘 중 하나가 완전히 끝난 뒤에야 다른 하나가
+     * 시작된다.
+     */
+    public synchronized AdmitResult admit(GameParticipant participant, RoomStatus expectedStatus) {
+        RoomMember existing = members.get(participant.participantId());
+        if (existing != null) {
+            existing.connection(ConnectionState.CONNECTED);
+            return AdmitResult.RECONNECTED;
+        }
+
+        if (status != expectedStatus) {
+            return AdmitResult.GAME_ALREADY_STARTED;
+        }
+
+        if (members.size() >= gameType.capacity()) {
+            return AdmitResult.ROOM_FULL;
+        }
+
+        members.put(participant.participantId(), new RoomMember(participant));
+        return AdmitResult.ADMITTED;
+    }
+
+    /**
+     * 시작 판정과 상태 전환을 하나의 원자적 동작으로 묶는다.
+     *
+     * <p>방장 확인, 진행 상태 확인, 최소 인원 확인, 오목 정원 일치 확인, 전원 준비 완료 확인을
+     * 거쳐 통과하면 상태를 {@link RoomStatus#IN_PROGRESS} 로 바꾼다. 이 전체가 하나의 동기화
+     * 블록에서 이뤄지므로, 이 판정 도중에 {@link #admit(GameParticipant, RoomStatus)} 가 끼어들어
+     * 멤버 구성을 바꿔치기할 수 없다.
+     */
+    public synchronized StartResult beginGame(String requesterParticipantId, int minPlayers) {
+        if (!hostParticipantId.equals(requesterParticipantId)) {
+            return StartResult.NOT_HOST;
+        }
+
+        if (status != RoomStatus.WAITING) {
+            return StartResult.NOT_WAITING;
+        }
+
+        if (members.size() < minPlayers) {
+            return StartResult.NOT_ENOUGH_PLAYERS;
+        }
+
+        if (gameType == GameType.OMOK && members.size() != GameType.OMOK.capacity()) {
+            return StartResult.OMOK_REQUIRES_TWO;
+        }
+
+        boolean allReady = members.values().stream().allMatch(RoomMember::ready);
+        if (!allReady) {
+            return StartResult.NOT_ALL_READY;
+        }
+
+        status = RoomStatus.IN_PROGRESS;
+        return StartResult.STARTED;
+    }
+
+    /** {@link #admit(GameParticipant, RoomStatus)} 의 결과. */
+    public enum AdmitResult {
+        /** 이미 멤버였고, 연결 상태만 CONNECTED 로 되돌렸다. */
+        RECONNECTED,
+        /** 신규 참가자로 추가됐다. */
+        ADMITTED,
+        /** {@code expectedStatus} 와 방의 현재 상태가 달라 거절됐다. */
+        GAME_ALREADY_STARTED,
+        /** 정원이 찼다. */
+        ROOM_FULL
+    }
+
+    /** {@link #beginGame(String, int)} 의 결과. */
+    public enum StartResult {
+        /** 상태를 {@link RoomStatus#IN_PROGRESS} 로 바꿨다. */
+        STARTED,
+        /** 요청자가 방장이 아니다. */
+        NOT_HOST,
+        /** 방이 이미 {@link RoomStatus#WAITING} 이 아니다. */
+        NOT_WAITING,
+        /** 최소 인원 미달이다. */
+        NOT_ENOUGH_PLAYERS,
+        /** 오목인데 정원과 인원이 일치하지 않는다. */
+        OMOK_REQUIRES_TWO,
+        /** 전원 준비 완료 상태가 아니다. */
+        NOT_ALL_READY
     }
 }
