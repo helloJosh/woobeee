@@ -24,6 +24,14 @@ public class RoomHub {
         return sinkFor(roomId).asFlux();
     }
 
+    /**
+     * Broadcast a message to all subscribers of a room.
+     *
+     * <p>Returns {@link Sinks.EmitResult#OK} if the message was accepted by the sink,
+     * or another result if the emit failed (overflow, terminated, etc.).
+     * Note: {@code OK} also covers the case where the room has no sink at all,
+     * so nothing was actually sent; check the room existence separately if needed.
+     */
     public Sinks.EmitResult broadcast(String roomId, ServerMessage message) {
         Sinks.Many<ServerMessage> sink = sinks.get(roomId);
         if (sink != null) {

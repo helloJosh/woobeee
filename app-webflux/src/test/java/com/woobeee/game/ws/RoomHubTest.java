@@ -7,6 +7,8 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 class RoomHubTest {
 
     @Test
@@ -82,6 +84,8 @@ class RoomHubTest {
             }
         }
 
-        assert overflowOccurred : "Expected overflow but buffer never filled";
+        assertThat(overflowOccurred)
+                .as("Buffer overflow should be detected within 300 broadcasts to a room with no consumer")
+                .isTrue();
     }
 }
