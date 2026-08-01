@@ -77,6 +77,29 @@ class GameResultRepositoryTest {
     }
 
     @Test
+    void insertResultBindsNullWinnerAsNull() {
+        FinishedGame gameWithNoWinner = new FinishedGame(
+                "OMOK",
+                "room-1",
+                START,
+                END,
+                null,
+                List.of(new FinishedParticipant("m:11", "host", 11L, 1))
+        );
+
+        RecordingDatabaseClient client = new RecordingDatabaseClient();
+        client.stubOne(INSERT_RESULT_SQL, 77L);
+
+        new GameResultRepository(client).insertResult(gameWithNoWinner, END).block(Duration.ofSeconds(2));
+
+        RecordingDatabaseClient.Statement statement = client.onlyStatement();
+        assertThat(statement.bound()).doesNotContainKey("winner");
+        assertThat(statement.boundNull()).containsOnly(
+                Map.entry("winner", String.class)
+        );
+    }
+
+    @Test
     void attachReplayKeyUpdatesTheRow() {
         RecordingDatabaseClient client = new RecordingDatabaseClient();
         client.stubRowsUpdated(ATTACH_REPLAY_KEY_SQL, 1L);

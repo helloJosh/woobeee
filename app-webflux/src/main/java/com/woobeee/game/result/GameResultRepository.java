@@ -34,13 +34,17 @@ public class GameResultRepository {
     }
 
     public Mono<Long> insertResult(FinishedGame game, Instant createdAt) {
-        return databaseClient.sql(INSERT_RESULT)
+        DatabaseClient.GenericExecuteSpec spec = databaseClient.sql(INSERT_RESULT)
                 .bind("gameType", game.gameType())
                 .bind("roomId", game.roomId())
                 .bind("startedAt", toLocal(game.startedAt()))
-                .bind("endedAt", toLocal(game.endedAt()))
-                .bind("winner", game.winnerParticipantId() == null ? "" : game.winnerParticipantId())
-                .bind("createdAt", toLocal(createdAt))
+                .bind("endedAt", toLocal(game.endedAt()));
+
+        spec = game.winnerParticipantId() == null
+                ? spec.bindNull("winner", String.class)
+                : spec.bind("winner", game.winnerParticipantId());
+
+        return spec.bind("createdAt", toLocal(createdAt))
                 .map((Readable row) -> row.get("id", Long.class))
                 .one();
     }
