@@ -4,8 +4,10 @@ import com.woobeee.game.identity.GameParticipant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.scheduler.VirtualTimeScheduler;
@@ -97,6 +99,26 @@ class GameWebSocketHandlerTest {
 
         verify(session, never()).close();
         verify(dispatcher).join(eq("room-1"), eq("code"), any(GameParticipant.class));
+    }
+
+    /**
+     * 보안 경계: 인증 실패(알 수 없는 토큰, 다른 방의 게스트 토큰, 사라진 회원 등 모두
+     * JoinAuthenticator 가 UNAUTHORIZED 로 던진다)면 세션을 닫아야 한다. 닫되 방에는
+     * 절대 join 시키면 안 된다 — 닫고 나서도 join 이 불렸다면 유령 참가자가 방 상태에
+     * 남는다.
+     */
+    @Test
+    void closesTheSessionWhenJoinAuthenticationFails() {
+        when(authenticator.authenticate(eq("room-1"), eq("tok")))
+                .thenReturn(Mono.error(new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid game token")));
+        WebSocketSession session = sessionEmitting(
+                "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}"
+        );
+
+        handler.handle(session).subscribe();
+
+        verify(session).close();
+        verify(dispatcher, never()).join(anyString(), anyString(), any());
     }
 
     /** GAME-AC-08 */
