@@ -26,6 +26,8 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -102,6 +104,11 @@ class DodgeGameSinkTest {
     @SuppressWarnings("unchecked")
     private Map<String, Object> asPayload(ServerMessage message) {
         return (Map<String, Object>) message.payload();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> positionsOf(Map<String, Object> payload) {
+        return (List<Map<String, Object>>) payload.get("positions");
     }
 
     /** Parses one recorded ndjson replay and returns the (non-header) line for a given tick, or null. */
@@ -228,12 +235,34 @@ class DodgeGameSinkTest {
      * GAME-AC-23: a reconnecting player gets the current frame — the same {@code tick} /
      * {@code positions} / {@code obstacles} content a normal DODGE_TICK carries, so the client's
      * existing frame renderer handles it unchanged.
+     *
+     * <p>The assertions are deliberately against the <em>moved</em> position and the <em>live</em>
+     * obstacle list captured from the preceding DODGE_TICK, not merely against the participant id
+     * set: a snapshot built from the starting frame would have the right ids, an empty obstacle
+     * list and the host still at its spawn column, and must not pass.
+     *
+     * <p>The tail assertion is the "does not advance the tick" half of GAME-AC-23. It lives here
+     * rather than in its own test because on its own it passes against an {@code onRejoin} that
+     * does nothing at all; paired with the broadcast assertion it means the snapshot really went
+     * out <em>and</em> did not cost a tick.
      */
     @Test
-    void aRejoinBroadcastsTheCurrentTickPositionsAndObstacles() {
+    void aRejoinBroadcastsTheCurrentTickPositionsAndObstaclesWithoutAdvancing() {
         sink.onStart(room);
+        // Move the host off its spawn column so a starting-frame snapshot is distinguishable.
+        sink.onGameCommand(room, "m:11", moveMessage("LEFT", 1L));
+
+        AtomicReference<Map<String, Object>> lastTick = new AtomicReference<>();
+        hub.subscribe("room-1")
+                .filter(message -> "DODGE_TICK".equals(message.type()))
+                .subscribe(message -> lastTick.set(asPayload(message)));
         scheduler.advanceTimeBy(Duration.ofMillis(300));
+
         int tickNow = sink.gameOf("room-1").tick();
+        Object obstaclesOnTheWire = lastTick.get().get("obstacles");
+        assertThat((List<?>) obstaclesOnTheWire)
+                .as("the scenario is only meaningful if obstacles actually exist by now")
+                .isNotEmpty();
 
         StepVerifier.create(hub.subscribe("room-1").take(1))
                 .then(() -> sink.onRejoin(room, "g:a"))
@@ -242,27 +271,116 @@ class DodgeGameSinkTest {
                     Map<String, Object> payload = asPayload(message);
                     assertThat(payload).containsEntry("gameType", "DODGE");
                     assertThat(payload).containsEntry("tick", tickNow);
+                    // Same obstacle cells the room was last told about, in the same order.
+                    assertThat(payload).containsEntry("obstacles", obstaclesOnTheWire);
                     @SuppressWarnings("unchecked")
                     List<Map<String, Object>> positions =
                             (List<Map<String, Object>>) payload.get("positions");
-                    assertThat(positions).extracting(position -> position.get("participantId"))
-                            .containsExactlyInAnyOrderElementsOf(sink.gameOf("room-1").survivors());
-                    assertThat(payload).containsKey("obstacles");
+                    assertThat(positions)
+                            .containsExactlyInAnyOrderElementsOf(positionsOf(lastTick.get()));
+                    // Host spawns at x=2 (first of DodgeRules.startingCells(3)); the LEFT above
+                    // moved it to x=1 on tick 1 and nothing has moved it since.
+                    assertThat(positions).contains(
+                            Map.of("participantId", "m:11", "x", 1, "y", DodgeRules.ROWS - 1));
                 })
                 .expectComplete()
                 .verify(VERIFY_TIMEOUT);
+
+        assertThat(sink.gameOf("room-1").tick()).isEqualTo(tickNow);
     }
 
-    /** GAME-AC-23: taking a snapshot must not advance the game by a tick. */
+    /**
+     * Important-1 regression: the payload used to be computed under the game monitor and then
+     * broadcast <em>after</em> releasing it. In that window the tick loop could take the monitor,
+     * advance to N+1 and broadcast {@code DODGE_TICK(N+1)} — and only then would the stale
+     * {@code GAME_SNAPSHOT(tick=N)} go out. Because GAME_SNAPSHOT is full state broadcast to the
+     * whole room, every client would rewind a frame and then apply N+2 on top of it.
+     * {@link RoomHub} serialising its emits does not help: the payload is computed before the
+     * emit lock is taken.
+     *
+     * <p>This hub drives a real tick at the exact instant the snapshot is handed to the hub. If
+     * the broadcast happens under the monitor, the ticking thread cannot proceed until the
+     * snapshot is on the wire, so GAME_SNAPSHOT must be observed first and must still carry the
+     * pre-tick counter.
+     */
     @Test
-    void aRejoinDoesNotAdvanceTheTickCounter() {
+    void aConcurrentTickCannotOvertakeTheSnapshotOnTheWire() throws InterruptedException {
+        AtomicReference<DodgeGameSink> racingSink = new AtomicReference<>();
+        AtomicReference<Thread> ticker = new AtomicReference<>();
+        AtomicBoolean fired = new AtomicBoolean(false);
+
+        RoomHub racingHub = new RoomHub() {
+            @Override
+            public Sinks.EmitResult broadcast(String roomId, ServerMessage message) {
+                if ("GAME_SNAPSHOT".equals(message.type()) && fired.compareAndSet(false, true)) {
+                    Thread thread = new Thread(() -> racingSink.get().onTick(room));
+                    ticker.set(thread);
+                    thread.start();
+                    try {
+                        // Give the tick every chance to win. Holding the monitor blocks it here;
+                        // not holding it lets it advance and broadcast before we emit.
+                        thread.join(500);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return super.broadcast(roomId, message);
+            }
+        };
+
+        DodgeGameSink monitoredSink = new DodgeGameSink(
+                racingHub,
+                resultService,
+                new DodgeReplayWriter(objectMapper),
+                idsReturning(12345),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                VirtualTimeScheduler.create());
+        racingSink.set(monitoredSink);
+        monitoredSink.onStart(room);
+
+        StepVerifier.create(racingHub.subscribe("room-1").take(2))
+                .then(() -> monitoredSink.onRejoin(room, "g:a"))
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("GAME_SNAPSHOT");
+                    assertThat(asPayload(message)).containsEntry("tick", 0);
+                })
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("DODGE_TICK");
+                    assertThat(asPayload(message)).containsEntry("tick", 1);
+                })
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+
+        ticker.get().join(VERIFY_TIMEOUT.toMillis());
+    }
+
+    /**
+     * Important-2: {@code onParticipantGone} can finish the game (last survivor standing) while
+     * leaving it in the {@code games} map — only the next tick evicts it. A player reconnecting
+     * inside that window must not be handed a snapshot of a game that is already over; the
+     * GAME_END that follows is the truth, and a snapshot would leave the board animating a game
+     * with no survivors left to move.
+     *
+     * <p>Deleting the {@code finished()} guard from the sink makes this fail: a GAME_SNAPSHOT
+     * arrives ahead of the PROBE.
+     */
+    @Test
+    void aRejoinIntoAFinishedButNotYetEvictedGameBroadcastsNothing() {
         sink.onStart(room);
-        scheduler.advanceTimeBy(Duration.ofMillis(300));
-        int before = sink.gameOf("room-1").tick();
+        sink.onParticipantGone(room, "g:a");
+        sink.onParticipantGone(room, "g:b");
 
-        sink.onRejoin(room, "g:a");
+        assertThat(sink.gameOf("room-1"))
+                .as("the tick that evicts the finished game has not run yet")
+                .isNotNull();
+        assertThat(sink.gameOf("room-1").finished()).isTrue();
 
-        assertThat(sink.gameOf("room-1").tick()).isEqualTo(before);
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> sink.onRejoin(room, "g:a"))
+                .then(() -> hub.broadcast("room-1", ServerMessage.of("PROBE", Map.of())))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("PROBE"))
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
     }
 
     /**

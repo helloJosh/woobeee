@@ -163,8 +163,20 @@ public class OmokGameSink implements GameCommandSink {
     /**
      * 재접속한 참가자에게 판을 다시 그려 줄 GAME_SNAPSHOT 을 낸다.
      *
-     * <p>판을 격자로 인코딩하지 않고 착수 목록을 순서대로 싣는다 — 기보 뷰어가 이미 이해하는
-     * 모양 그대로여서 클라이언트가 판 복원 코드를 한 벌만 갖는다.
+     * <p>판을 격자로 인코딩하지 않고 착수 목록을 순서대로 싣는다. 각 착수가 자기 색을 함께 들고
+     * 있어서(<code>{x, y, color}</code>) 클라이언트는 별도의 헤더 없이 목록만으로 판을 세울 수 있다.
+     * <b>이것은 기보 형식이 아니다</b> — {@link OmokReplayWriter} 는 색을 헤더의
+     * {@code players[]} 에 한 번만 선언하고 각 수는 <code>{t, p, x, y}</code> 로 적는다. 재생은
+     * 헤더부터 순서대로 읽는 것이 전제라 그 모양이 맞지만, 판 하나를 즉시 그리는 데에는 자기 자신을
+     * 설명하는 쪽이 맞다. 두 형식이 다른 것은 의도된 것이다.
+     *
+     * <p><b>브로드캐스트를 모니터 안에서 한다.</b> 페이로드만 모니터 안에서 만들고 밖에서 내보내면,
+     * 그 사이에 착수 하나가 모니터를 잡고 N+1 번째 수를 두고 {@code OMOK_MOVED} 를 먼저 내보낼 수
+     * 있다. 그러면 뒤늦게 나가는 이 스냅샷은 {@code [1..N]} 만 담은 낡은 전체 상태가 되고, 방 전체가
+     * 그걸 받아 N+1 을 영영 잃은 채 되감긴다 — 차례도 어긋나고 다음 수는 갈라진 판에 놓인다.
+     * {@link RoomHub} 가 emit 을 방마다 직렬화하지만 페이로드는 그 락을 잡기 전에 계산되므로 도움이
+     * 되지 않는다. 허브가 게임 모니터를 잡는 경로는 어디에도 없어(구독자는 세션 전송뿐이다) 이
+     * 순서로 인한 교착은 생기지 않는다.
      *
      * <p><b>세션 하나가 아니라 방 전체에 브로드캐스트한다.</b> {@link RoomHub} 에는 세션 단위 전송이
      * 없고({@code subscribe(roomId)} / {@code broadcast(roomId, message)} 뿐이다) 그것을 추가하는
@@ -178,32 +190,28 @@ public class OmokGameSink implements GameCommandSink {
             return;
         }
 
-        List<Map<String, Object>> moves;
-        String nextTurn;
-        String turnDeadline;
-        // 틱/착수와 같은 모니터에서 읽는다 — 착수 중간에 뜬 스냅샷은 판과 차례가 어긋난
-        // 스냅샷이다.
+        // 읽기와 내보내기를 착수와 같은 모니터 안에 함께 둔다 — 상태를 읽은 시점과 그것이 실제로
+        // 나가는 시점 사이에 판이 움직이면 스냅샷은 낡은 전체 상태가 된다(위 javadoc 참조).
         synchronized (game) {
             if (game.finished()) {
                 return;
             }
-            moves = game.moves().stream()
+
+            List<Map<String, Object>> moves = game.moves().stream()
                     .map(move -> Map.<String, Object>of(
                             "x", move.x(),
                             "y", move.y(),
                             "color", move.stone().name()
                     ))
                     .toList();
-            nextTurn = game.currentTurnParticipantId();
-            turnDeadline = game.turnDeadline().toString();
-        }
 
-        roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_SNAPSHOT", Map.of(
-                "gameType", "OMOK",
-                "moves", moves,
-                "nextTurn", nextTurn,
-                "turnDeadline", turnDeadline
-        )));
+            roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_SNAPSHOT", Map.of(
+                    "gameType", gameType().name(),
+                    "moves", moves,
+                    "nextTurn", game.currentTurnParticipantId(),
+                    "turnDeadline", game.turnDeadline().toString()
+            )));
+        }
     }
 
     @Override

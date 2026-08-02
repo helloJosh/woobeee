@@ -218,6 +218,13 @@ public class DodgeGameSink implements GameCommandSink {
      * {@link DodgeGame#currentFrame()} 은 틱을 진행하지 않으므로, 재접속 때문에 게임이 한 칸
      * 앞으로 가는 일은 없다.
      *
+     * <p><b>브로드캐스트를 모니터 안에서 한다.</b> 프레임만 모니터 안에서 뜨고 밖에서 내보내면, 그
+     * 사이에 틱 루프가 모니터를 잡고 N+1 로 진행해 {@code DODGE_TICK} 을 먼저 내보낼 수 있다.
+     * 그러면 뒤늦게 나가는 이 스냅샷은 {@code tick=N} 짜리 낡은 전체 상태가 되고, 방 전체가 한 프레임
+     * 되감긴 뒤 그 위에 N+2 를 얹는다. {@link RoomHub} 가 emit 을 방마다 직렬화하지만 페이로드는 그
+     * 락을 잡기 전에 계산되므로 도움이 되지 않는다. 허브가 게임 모니터를 잡는 경로는 어디에도 없어
+     * (구독자는 세션 전송뿐이다) 이 순서로 인한 교착은 생기지 않는다.
+     *
      * <p><b>세션 하나가 아니라 방 전체에 브로드캐스트한다.</b> {@link RoomHub} 에는 세션 단위 전송이
      * 없고({@code subscribe(roomId)} / {@code broadcast(roomId, message)} 뿐이다) 그것을 추가하는
      * 것은 이 변경의 범위를 넘는다. 나머지 참가자가 권위 있는 상태로 한 번 더 그리는 것은 무해하고,
@@ -230,22 +237,22 @@ public class DodgeGameSink implements GameCommandSink {
             return;
         }
 
-        DodgeFrame frame;
-        // 틱 루프와 같은 모니터에서 읽는다 — positions/obstacles 는 스레드 안전하지 않고,
-        // 틱 중간에 뜬 스냅샷은 입력만 반영되고 장애물은 안 내려온 손상된 프레임이다.
+        // 프레임을 뜨는 것과 내보내는 것을 틱 루프와 같은 모니터 안에 함께 둔다 — positions/
+        // obstacles 가 스레드 안전하지 않기도 하지만, 무엇보다 뜬 시점과 나가는 시점 사이에 틱이
+        // 돌면 스냅샷이 낡은 전체 상태가 된다(위 javadoc 참조).
         synchronized (game) {
             if (game.finished()) {
                 return;
             }
-            frame = game.currentFrame();
-        }
 
-        roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_SNAPSHOT", Map.of(
-                "gameType", "DODGE",
-                "tick", frame.tick(),
-                "positions", positionsOf(frame),
-                "obstacles", obstaclesOf(frame)
-        )));
+            DodgeFrame frame = game.currentFrame();
+            roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_SNAPSHOT", Map.of(
+                    "gameType", gameType().name(),
+                    "tick", frame.tick(),
+                    "positions", positionsOf(frame),
+                    "obstacles", obstaclesOf(frame)
+            )));
+        }
     }
 
     @Override

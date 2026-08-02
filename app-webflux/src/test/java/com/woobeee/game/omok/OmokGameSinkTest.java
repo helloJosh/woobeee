@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.test.StepVerifier;
 
 import java.time.Clock;
@@ -25,6 +26,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -179,11 +181,17 @@ class OmokGameSinkTest {
 
     /**
      * GAME-AC-23: a reconnecting player must be able to redraw the board. The snapshot carries the
-     * move list in order rather than a board grid, so the client replays it with the very same
-     * code the replay viewer already uses.
+     * move list in order, each move self-describing its colour, so the client needs no separate
+     * header to know which stone is which.
+     *
+     * <p>The tail assertions are the "does not disturb the game" half of GAME-AC-23, kept in this
+     * test rather than a separate one on purpose: on their own they pass against an {@code
+     * onRejoin} that does nothing at all, which pins nothing. Paired with the broadcast assertion
+     * above they mean something — the snapshot really went out, <em>and</em> producing it consumed
+     * neither the turn nor a move.
      */
     @Test
-    void aRejoinBroadcastsEveryMoveSoFarWithTheCurrentTurn() {
+    void aRejoinBroadcastsEveryMoveSoFarWithTheCurrentTurnAndConsumesNeither() {
         sink.onStart(room);
         sink.onGameCommand(room, "m:11", placeMessage(7, 7, 1L));
         sink.onGameCommand(room, "g:a", placeMessage(8, 8, 2L));
@@ -203,20 +211,121 @@ class OmokGameSinkTest {
                 })
                 .expectComplete()
                 .verify(VERIFY_TIMEOUT);
+
+        assertThat(sink.gameOf("room-1").currentTurnParticipantId()).isEqualTo("m:11");
+        assertThat(sink.gameOf("room-1").moves()).hasSize(2);
     }
 
-    /** GAME-AC-23: reading state for the snapshot must not be a move. */
+    /**
+     * Important-1 regression: the payload used to be computed under the game monitor and then
+     * broadcast <em>after</em> releasing it. In that window a concurrent OMOK_PLACE could take the
+     * monitor, land move N+1 and broadcast {@code OMOK_MOVED(N+1)} — and only then would the stale
+     * {@code GAME_SNAPSHOT([1..N])} go out. Because GAME_SNAPSHOT is full state broadcast to the
+     * whole room, every client would rewind, lose move N+1 for good, hold the wrong turn, and
+     * apply move N+2 to a diverged board. {@link RoomHub} serialising its emits does not help:
+     * the payload is computed before the emit lock is taken.
+     *
+     * <p>This hub fires a real, legal placement by the other player at the exact instant the
+     * snapshot is handed to the hub. If the broadcast happens under the monitor, that thread
+     * cannot proceed until the snapshot is on the wire, so GAME_SNAPSHOT must be observed first
+     * and must still carry only the single move that existed when it was taken.
+     */
     @Test
-    void aRejoinLeavesTheGameExactlyAsItWas() {
-        sink.onStart(room);
-        sink.onGameCommand(room, "m:11", placeMessage(7, 7, 1L));
-        String turnBefore = sink.gameOf("room-1").currentTurnParticipantId();
-        int movesBefore = sink.gameOf("room-1").moves().size();
+    void aConcurrentPlacementCannotOvertakeTheSnapshotOnTheWire() throws InterruptedException {
+        AtomicReference<OmokGameSink> racingSink = new AtomicReference<>();
+        AtomicReference<Thread> placer = new AtomicReference<>();
+        AtomicBoolean fired = new AtomicBoolean(false);
 
-        sink.onRejoin(room, "g:a");
+        RoomHub racingHub = new RoomHub() {
+            @Override
+            public Sinks.EmitResult broadcast(String roomId, ServerMessage message) {
+                if ("GAME_SNAPSHOT".equals(message.type()) && fired.compareAndSet(false, true)) {
+                    Thread thread = new Thread(() ->
+                            racingSink.get().onGameCommand(room, "g:a", placeMessage(8, 8, 2L)));
+                    placer.set(thread);
+                    thread.start();
+                    try {
+                        // Give the placement every chance to win. Holding the monitor blocks it
+                        // here; not holding it lets it land and broadcast before we emit.
+                        thread.join(500);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return super.broadcast(roomId, message);
+            }
+        };
 
-        assertThat(sink.gameOf("room-1").currentTurnParticipantId()).isEqualTo(turnBefore);
-        assertThat(sink.gameOf("room-1").moves()).hasSize(movesBefore);
+        OmokGameSink monitoredSink = new OmokGameSink(
+                racingHub, resultService, new OmokReplayWriter(objectMapper), Clock.fixed(NOW, ZoneOffset.UTC));
+        racingSink.set(monitoredSink);
+        monitoredSink.onStart(room);
+        monitoredSink.onGameCommand(room, "m:11", placeMessage(7, 7, 1L));
+
+        StepVerifier.create(racingHub.subscribe("room-1").take(2))
+                .then(() -> monitoredSink.onRejoin(room, "g:a"))
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("GAME_SNAPSHOT");
+                    assertThat(movesOf(asPayload(message)))
+                            .containsExactly(Map.of("x", 7, "y", 7, "color", "BLACK"));
+                })
+                .assertNext(message -> assertThat(message.type()).isEqualTo("OMOK_MOVED"))
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+
+        placer.get().join(VERIFY_TIMEOUT.toMillis());
+    }
+
+    /**
+     * Important-2: {@code place()} flips {@code finished} inside the monitor, but {@code finish()}
+     * only evicts the game from the map afterwards — and the winning OMOK_MOVED is broadcast in
+     * between. A player reconnecting inside that window must not be handed a snapshot of a game
+     * that is already decided: the GAME_END arriving right behind it is the truth, and a snapshot
+     * would leave the board showing a live game with a turn that will never come.
+     *
+     * <p>Deleting the {@code finished()} guard from the sink makes this fail: a GAME_SNAPSHOT
+     * appears ahead of the OMOK_MOVED that opened the window.
+     */
+    @Test
+    void aRejoinInsideTheWindowWhereTheGameIsFinishedButStillMappedBroadcastsNothing() {
+        AtomicReference<OmokGameSink> sinkRef = new AtomicReference<>();
+        AtomicBoolean atTheWinningMove = new AtomicBoolean(false);
+        AtomicBoolean windowWasReal = new AtomicBoolean(false);
+
+        RoomHub windowHub = new RoomHub() {
+            @Override
+            public Sinks.EmitResult broadcast(String roomId, ServerMessage message) {
+                if (atTheWinningMove.compareAndSet(true, false) && "OMOK_MOVED".equals(message.type())) {
+                    OmokGame stillMapped = sinkRef.get().gameOf("room-1");
+                    windowWasReal.set(stillMapped != null && stillMapped.finished());
+                    sinkRef.get().onRejoin(room, "g:a");
+                }
+                return super.broadcast(roomId, message);
+            }
+        };
+
+        OmokGameSink windowSink = new OmokGameSink(
+                windowHub, resultService, new OmokReplayWriter(objectMapper), Clock.fixed(NOW, ZoneOffset.UTC));
+        sinkRef.set(windowSink);
+        windowSink.onStart(room);
+        for (int i = 0; i < 4; i++) {
+            windowSink.onGameCommand(room, "m:11", placeMessage(3 + i, 7, i * 2 + 1L));
+            windowSink.onGameCommand(room, "g:a", placeMessage(3 + i, 9, i * 2 + 2L));
+        }
+
+        StepVerifier.create(windowHub.subscribe("room-1").take(2))
+                .then(() -> {
+                    atTheWinningMove.set(true);
+                    windowSink.onGameCommand(room, "m:11", placeMessage(7, 7, 99L));
+                })
+                .assertNext(message -> assertThat(message.type()).isEqualTo("OMOK_MOVED"))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("GAME_END"))
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+
+        assertThat(windowWasReal)
+                .as("the rejoin must have happened while the game was finished but still mapped")
+                .isTrue();
     }
 
     /**
