@@ -321,7 +321,7 @@ game 쪽에서 참조 무결성을 강제하면 회원 삭제 경로가 game에 
 
 장애물피하기 — 시드와 입력, 그리고 **이탈**을 남기고 재생 시 같은 로직으로 재현한다.
 ```
-{"v":2,"gameType":"DODGE","cols":12,"rows":16,"tickMs":100,"seed":8412739,"players":[...]}
+{"v":2,"gameType":"DODGE","cols":12,"rows":16,"tickMs":100,"seed":8412739,"prng":"xorshift32","baseSpawn":0.15,"spawnStep":0.05,"spawnStepTicks":100,"maxSpawn":0.6,"players":[{"participantId":"m:11","displayName":"..."}]}
 {"tick":3,"moves":{"m:11":"LEFT","g:ab12":"RIGHT"}}
 {"tick":5,"departures":["g:ab12"]}
 {"tick":7,"moves":{"m:11":"UP"},"departures":["g:cd34"]}

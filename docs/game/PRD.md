@@ -87,6 +87,12 @@
 - **스왑도 충돌이다.** 참가자가 위로 올라가고 장애물이 내려와 서로 지나치면 격자상 겹치지 않지만
   부딪힌 것으로 본다. 이 케이스를 빼면 위로 이동해 장애물을 통과하는 버그가 된다.
 - 순위는 탈락 역순. 같은 틱 탈락은 공동 순위. 생존자가 1명이 되면 종료한다.
+  - **예외: 1인 게임.** "한 명 남음"이 종료인 것은 원래 둘 이상으로 시작한 게임에서만이다.
+    참가자가 처음부터 한 명이면 그 한 명이 맞을 때까지 계속되고, 맞는 순간(생존자 0명) 끝난다 —
+    그렇지 않으면 1인 게임이 시작하자마자 끝나 버린다. `DodgeGame:130` 이
+    `participantIds.size() > 1` 로 이 조건을 걸고 있고
+    `DodgeGameTest.aSoloGameEndsWhenItsOnlyParticipantIsHit` 이 고정한다. 브라우저 포트도 같은
+    조건이어야 1인 기보의 길이가 서버와 일치한다.
 - 게임 중 이탈이 확정되면 그 참가자를 탈락 처리하고 게임은 계속한다.
 - 방 명령을 직렬화하는 큐는 없다(오목과 같다). `Room` 은 스스로 동기화하지만 싱크가 들고 있는
   게임 객체는 그 보호를 자동으로 물려받지 않는다 — 그래서 틱 타이머와 최대 8명이 보내는
@@ -113,8 +119,15 @@ PRNG 은 **xorshift32** 로 고정한다. 브라우저가 서버와 같은 난�
 `java.util.Random` 을 쓰면 JS 가 48비트 LCG 를 재구현해야 한다. 시드가 0이면 1로 바꾼다 —
 xorshift 는 0에서 멈춘다.
 
-격자 크기·틱 간격·확률 곡선은 기보 헤더에 실어 보낸다. 클라이언트가 같은 규칙으로 재생해야
-하므로 이 값들이 곧 계약이다.
+격자 크기·틱 간격·확률 곡선은 기보 헤더에 실어 보낸다(`cols`, `rows`, `tickMs`, `prng`,
+`baseSpawn`, `spawnStep`, `spawnStepTicks`, `maxSpawn`). 클라이언트가 같은 규칙으로 재생해야
+하므로 이 값들이 곧 계약이다 — 그러므로 **리더는 이 값들을 자기 상수와 대조하고 다르면 즉시
+던진다**(`v` 가 다를 때와 같은 태도다). 헤더를 싣기만 하고 읽지 않으면, 서버 상수가 바뀐 뒤에
+저장된 옛 기보를 새 상수로 재생할 때 예외도 경고도 없이 다른 게임이 그려진다.
+
+시작 위치도 같은 계약이다. `round((i + 0.5) * COLUMNS / playerCount - 0.5)` 를 `[0, COLUMNS-1]`
+로 클램프한 값이고(8인이면 `[0,2,3,5,6,8,9,11]`), 한 칸이라도 다르면 틱 1부터 갈린다.
+`DodgeRulesTest.startingCellsForEightPlayersAreExactlyTheseColumns` 가 서버 쪽 골든이다.
 
 ## 영속화
 
@@ -164,7 +177,7 @@ xorshift 는 0에서 멈춘다.
 | GAME-AC-17 | 참가자와 장애물이 서로 지나친 경우(스왑)도 충돌로 판정한다 | `DodgeGameTest` |
 | GAME-AC-18 | 탈락 역순이 순위이고, 같은 틱 탈락은 공동 순위다 | `DodgeGameTest` |
 | GAME-AC-19 | 같은 시드와 같은 입력 로그로 재생하면 원본과 같은 결과가 나온다. 충돌로 끝난 게임과 이탈로 끝난 게임 두 종료 경로 모두 커버한다 — 이탈 경로가 실제로 깨져 있던 경로다 | `DodgeReplayTest`, `Xorshift32Test` |
-| GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest`, `OmokGameSinkTest` |
+| GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest`, `OmokGameSinkTest`, `DodgeGameSinkTest.theGameEndsAndRecordsAResult` |
 | GAME-AC-21 | 기보 업로드가 실패해도 결과는 남고 `replay_object_key` 는 `null` 이다 | `GameResultServiceTest`, `ReplayUploaderTest` |
 | GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다. 게스트(`member_id` 없음)는 애초에 `member_id` 로 참가자를 확인하는 이 조회의 대상이 될 수 없으므로 기보를 절대 조회할 수 없다 | `GameResultControllerTest`, `GameResultQueryRepositoryTest`(`FIND_REPLAY_ACCESS` 의 `p.member_id = :memberId` SQL 고정) |
 
