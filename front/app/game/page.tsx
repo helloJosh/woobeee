@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { gameAPI } from "@/lib/api"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { createGameRoom } from "@/lib/game-hub"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameType } from "@/lib/types"
 
@@ -30,20 +31,26 @@ export default function GameHubPage() {
     const router = useRouter()
     const { isAuthenticated, loading } = useAuth()
     const [creating, setCreating] = useState<GameType | null>(null)
+    const [error, setError] = useState<string | null>(null)
 
     const createRoom = async (gameType: GameType, path: string) => {
-        if (!isAuthenticated) {
-            router.push("/login")
-            return
-        }
-
+        setError(null)
         setCreating(gameType)
-        try {
-            const room = await gameAPI.createRoom(gameType)
-            router.push(`/game/${path}/${room.roomId}?invite=${room.inviteCode}`)
-        } catch (error) {
-            console.error("Failed to create room:", error)
-            setCreating(null)
+
+        const outcome = await createGameRoom(gameType, path, isAuthenticated)
+        switch (outcome.kind) {
+            case "redirect-to-login":
+                setCreating(null)
+                router.push("/login")
+                break
+            case "navigate":
+                // creating을 그대로 두고 스피너를 보여준 채 다음 페이지로 이동한다.
+                router.push(outcome.path)
+                break
+            case "error":
+                setCreating(null)
+                setError(outcome.message)
+                break
         }
     }
 
@@ -75,6 +82,12 @@ export default function GameHubPage() {
                     </div>
                 ))}
             </div>
+
+            {error ? (
+                <Alert variant="destructive" className="mt-6">
+                    <AlertDescription>{error}</AlertDescription>
+                </Alert>
+            ) : null}
 
             {!loading && !isAuthenticated ? (
                 <p className="mt-6 text-sm text-muted-foreground">
