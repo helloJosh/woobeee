@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { createGameRoom } from "@/lib/game-hub"
+import { assertNever, createGameRoom } from "@/lib/game-hub"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameType } from "@/lib/types"
 
@@ -51,6 +51,8 @@ export default function GameHubPage() {
                 setCreating(null)
                 setError(outcome.message)
                 break
+            default:
+                assertNever(outcome)
         }
     }
 
