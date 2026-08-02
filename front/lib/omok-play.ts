@@ -97,8 +97,14 @@ function applyServerMessage(state: OmokRoomState, message: ServerMessage): OmokR
             hostParticipantId: message.payload.hostParticipantId,
             // 서버는 게임이 끝나도 방 상태를 IN_PROGRESS 로 둔다(CLAUDE.md 의 known-gap G3).
             // 그대로 받아들이면 GAME_END 로 FINISHED 가 된 화면이 다음 ROOM_STATE(상대가
-            // 접속을 끊는 것만으로도 온다) 한 번에 "진행 중" 으로 되돌아가고, 사이드바에
-            // 준비 버튼이 다시 나타난다. 종료는 되돌리지 않는다.
+            // 접속을 끊는 것만으로도 온다) 한 번에 "진행 중" 으로 되돌아간다.
+            //
+            // 사이드바의 준비·시작 버튼은 이것과 무관하다 — RoomSidebar 는 그 블록을
+            // status === "WAITING" 에서만 그리고 서버는 시작 뒤에 WAITING 을 보내지 않는다.
+            // 실제로 어긋나는 것은 이 status 를 읽는 두 곳이다: describeTurn 이 끝난 판에
+            // 대해 "상대 차례" 를 만들고(지금은 statusLine 에서 outcome 이 먼저 걸려 가려질
+            // 뿐이다 — 그 우연에 기대고 싶지 않다), canPlaceStone 이 IN_PROGRESS 를 참으로
+            // 보게 된다. 끝난 판은 끝난 판으로 남긴다.
             status: state.status === "FINISHED" ? "FINISHED" : message.payload.status,
         }
     }
@@ -137,7 +143,12 @@ function applyServerMessage(state: OmokRoomState, message: ServerMessage): OmokR
             placements: snapshot.moves.map(({ x, y, color }) => ({ x, y, color })),
             turnParticipantId: snapshot.nextTurn,
             turnDeadline: snapshot.turnDeadline,
-            notice: null,
+            // notice 는 지우지 않는다. 스냅샷은 누가 재접속하든 방 전체로 나가므로
+            // (OmokGameSink.onRejoin 은 세션 단위 전송이 없어 broadcast 한다) 여기서 지우면
+            // 상대가 새로고침하는 것만으로 내 금수 안내가 사라진다. 판만 갈아 끼운다.
+            //
+            // 반면 pendingPlaceSeq 는 비운다. 내가 재접속한 경우 끊기기 전에 보낸 착수의
+            // 응답은 영영 오지 않으므로, 남겨 두면 그 seq 가 다음 착수를 막는 잠금으로 굳는다.
             pendingPlaceSeq: null,
         }
     }
@@ -194,7 +205,17 @@ function applyServerMessage(state: OmokRoomState, message: ServerMessage): OmokR
     if (isServerMessage(message, "ERROR")) {
         // payload.message 는 서버 로그용 영어다. 사용자에게 보여줄 문구는 payload.code
         // (`game_*`)로 error-messages.ts 에서 찾는다 — HTTP 실패와 같은 지도다.
-        return { ...state, notice: getFriendlyErrorMessage(message.payload.code) }
+        return {
+            ...state,
+            notice: getFriendlyErrorMessage(message.payload.code),
+            // ERROR 도 내 착수에 대한 응답일 수 있다 — RoomCommandDispatcher.gameCommand 는
+            // guard(roomId, message.seq(), ...) 로 감싸여 있어 실패하면 그 명령의 seq 가
+            // ackSeq 로 돌아온다. 여기서 비워 두지 않으면 응답을 이미 받은 seq 가 영영 남고,
+            // seq 는 클라이언트마다 따로 0 부터 세므로 나중에 상대의 OMOK_PLACE 가 같은 값을
+            // 쓰는 순간 상대의 금수 안내가 내 화면에 뜬다 — pendingPlaceSeq 가 막으려던 바로
+            // 그 일이다. 내 것이 아닌 ERROR 는 대기 중인 seq 를 건드리지 않는다.
+            pendingPlaceSeq: message.ackSeq === state.pendingPlaceSeq ? null : state.pendingPlaceSeq,
+        }
     }
 
     // 모르는 타입은 버리지 않고 그냥 지나간다 — 서버가 새 메시지를 추가해도 화면은 살아 있다.
@@ -266,15 +287,23 @@ export function resolveSelfParticipantId(input: SelfIdentityInput): string | nul
 /**
  * 내 돌 색. 흑은 방장이다(OmokGameSink.onStart). 오목은 정확히 두 명이므로 방장이 아니면
  * 백이다. 어느 쪽인지 화면에 쓰지 않으면 첫 수를 두기 전까지 자기 색을 알 방법이 없다.
+ *
+ * <p>"방장이 아니다" 만으로 백이라고 단정하지 않는다 — resolveSelfParticipantId 가 명단에
+ * 없는 후보를 돌려줄 수 있고(회원 식별자를 만들었지만 아직 ROOM_STATE 가 오지 않았거나
+ * localStorage 가 낡은 경우), 그때 "내 돌 백" 은 근거 없는 단정이다. 명단에서 나를 실제로
+ * 찾았을 때만 답한다.
  */
 export function myStoneColor(
-    selfParticipantId: string | null,
-    hostParticipantId: string
+    state: OmokRoomState,
+    selfParticipantId: string | null
 ): OmokStone | null {
-    if (!selfParticipantId || !hostParticipantId) {
+    if (!selfParticipantId || !state.hostParticipantId) {
         return null
     }
-    return selfParticipantId === hostParticipantId ? "BLACK" : "WHITE"
+    if (!state.participants.some((p) => p.participantId === selfParticipantId)) {
+        return null
+    }
+    return selfParticipantId === state.hostParticipantId ? "BLACK" : "WHITE"
 }
 
 /**
@@ -322,6 +351,15 @@ export function describeTurn(state: OmokRoomState, myTurn: boolean): string {
         ? ` · 제한 ${new Date(state.turnDeadline).toLocaleTimeString()}`
         : ""
     return `${myTurn ? "내 차례" : "상대 차례"}${hint}`
+}
+
+/**
+ * 더 이상 아무것도 기다릴 것이 없는 상태. createGameSocket 의 `settled` 와 같은 둘이다 —
+ * 이 상태에서는 소켓이 다시 붙지 않으므로 화면도 진행 중임을 뜻하는 표시(스피너)를 걷어야
+ * 한다. 돌아가는 스피너는 "곧 될 것" 이라는 약속인데 여기서는 지켜지지 않는다.
+ */
+export function isSocketSettled(status: SocketStatus): boolean {
+    return status === "rejected" || status === "closed"
 }
 
 /**

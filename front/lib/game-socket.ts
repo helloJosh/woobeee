@@ -326,7 +326,15 @@ export interface GameSocketOptions {
 }
 
 export interface GameSocket {
-    send: (type: string, payload?: unknown) => number
+    /**
+     * 보낸 메시지의 seq. **소켓이 열려 있지 않아 프레임을 버렸으면 `null` 이다.**
+     *
+     * <p>seq 를 돌려주는 이유는 서버가 그것을 `ackSeq` 로 되돌려 주기 때문이다 — 방 전체로
+     * 브로드캐스트되는 응답(OMOK_REJECTED, ERROR) 중 내 명령에 대한 것만 골라내는 유일한
+     * 수단이다. 버린 프레임에 대해서까지 번호를 돌려주면 호출자는 영영 오지 않을 응답을
+     * 기다리게 되고, 그 번호는 나중에 상대의 같은 번호와 겹친다.
+     */
+    send: (type: string, payload?: unknown) => number | null
     close: () => void
 }
 
@@ -513,12 +521,17 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
      * 이동을 나중에 몰아서 보내면 이미 지나간 판·틱에 대한 명령이 되어 더 나쁘다. 화면은
      * onStatusChange 가 `joined` 를 알린 동안에만 입력을 열어야 한다 — `open` 은 아직
      * 참가가 확정되지 않은 상태라 여기서 보낸 명령이 서버에 버려진다.
+     *
+     * <p>버린 경우에는 `null` 을 돌려준다. seq 자체는 그대로 올려 둔다 — 이 번호는 이
+     * 클라이언트에 대해 단조 증가한다는 것만 지키면 되고, 버린 프레임의 번호를 재사용하면
+     * 서버가 이미 본 번호와 겹칠 수 있다. 호출자에게 번호를 주지 않는 것만으로 충분하다.
      */
-    const send = (type: string, payload?: unknown): number => {
+    const send = (type: string, payload?: unknown): number | null => {
         seq += 1
-        if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(encodeClientMessage(type, seq, payload))
+        if (socket?.readyState !== WebSocket.OPEN) {
+            return null
         }
+        socket.send(encodeClientMessage(type, seq, payload))
         return seq
     }
 

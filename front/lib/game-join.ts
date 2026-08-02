@@ -140,7 +140,15 @@ export function readStoredGuestIdentity(roomId: string): StoredGuestIdentity | n
         clearStoredGuestToken(roomId)
         return null
     }
-    return { token: entry.token, participantId: entry.participantId ?? null }
+
+    // participantId 가 없거나 이상하면 없는 것으로 친다 — 항목 전체를 버리지 않는다.
+    // 버리면 그 게스트는 게이트에서 새 닉네임으로 다시 들어가 방에 두 자리를 차지한다
+    // (원래 자리는 이탈 유예 30초 동안 그대로 잡혀 있다). 쓸 수 있는 토큰을 못 쓰게 되는
+    // 쪽이 화면에서 나를 못 찾는 쪽보다 훨씬 나쁘다.
+    const participantId = typeof entry.participantId === "string" && entry.participantId.length > 0
+        ? entry.participantId
+        : null
+    return { token: entry.token, participantId }
 }
 
 export function readStoredGuestToken(roomId: string): string | null {
@@ -163,14 +171,12 @@ function isStoredGuestToken(value: unknown): value is StoredGuestToken {
         return false
     }
     const candidate = value as Partial<StoredGuestToken>
+    // participantId 는 검사하지 않는다. 항목을 쓸 수 있게 하는 것은 토큰과 발급 시각뿐이고,
+    // participantId 의 유효성은 readStoredGuestIdentity 가 항목을 버리지 않고 걸러 낸다.
     return typeof candidate.token === "string"
         && candidate.token.length > 0
         && typeof candidate.issuedAt === "number"
         && Number.isFinite(candidate.issuedAt)
-        // 없어도 되지만, 있다면 비지 않은 문자열이어야 한다 — 빈 문자열을 그대로 통과시키면
-        // 게임 화면이 명단의 누구와도 맞지 않는 식별자를 나로 믿는다.
-        && (candidate.participantId === undefined
-            || (typeof candidate.participantId === "string" && candidate.participantId.length > 0))
 }
 
 export type GuestJoinOutcome =

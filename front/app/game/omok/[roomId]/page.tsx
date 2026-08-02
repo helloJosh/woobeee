@@ -18,6 +18,7 @@ import {
     describeSocketStatus,
     describeTurn,
     initialOmokRoomState,
+    isSocketSettled,
     myStoneColor,
     reduceOmokRoom,
     resolveSelfParticipantId,
@@ -167,16 +168,27 @@ function OmokRoomScreen() {
         )
     }
 
-    const myTurn = canPlaceStone(state, selfParticipantId, socketStatus)
-    const myStone = myStoneColor(selfParticipantId, state.hostParticipantId)
+    const myStone = myStoneColor(state, selfParticipantId)
     const connectionNotice = describeSocketStatus(socketStatus, socketErrorCode)
+    // 응답을 기다리는 착수가 있는 동안에는 판을 닫는다. 빈 칸 두 곳을 빠르게 연달아 누르면
+    // 둘 다 나가고 두 번째가 pendingPlaceSeq 를 덮어써, 첫 번째의 거부 안내가 조용히 사라진다.
+    // 서버는 모든 OMOK_PLACE 에 응답하므로(착수·거부·오류) 이 잠금은 왕복 한 번만 지속된다.
+    const awaitingPlace = state.pendingPlaceSeq !== null
+    const myTurn = canPlaceStone(state, selfParticipantId, socketStatus)
+    // 차례 안내는 notice 와 자리를 다투지 않는다. 금수를 뒀을 때 거부 안내가 차례 표시를
+    // 통째로 밀어내면, 여전히 내 차례인데 화면이 그 말을 멈춘다.
     const statusLine = state.outcome
         ? describeGameOutcome(state.outcome, selfParticipantId)
-        : state.notice ?? describeTurn(state, state.turnParticipantId === selfParticipantId)
+        : describeTurn(state, state.turnParticipantId === selfParticipantId)
 
     const place = (x: number, y: number) => {
+        if (awaitingPlace) {
+            return
+        }
+        // send 는 소켓이 열려 있지 않으면 프레임을 버리고 null 을 돌려준다. 그 경우 응답도
+        // 오지 않으므로 잠금을 걸면 안 된다 — 걸면 다음 착수까지 막힌다.
         const seq = socketRef.current?.send("OMOK_PLACE", { x, y })
-        if (seq !== undefined) {
+        if (typeof seq === "number") {
             dispatch({ type: "place-sent", seq })
         }
     }
@@ -185,9 +197,16 @@ function OmokRoomScreen() {
         <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:flex-row lg:items-start">
             <div className="flex min-w-0 flex-1 flex-col items-center gap-3">
                 {connectionNotice ? (
-                    <Alert className="w-full max-w-[min(100%,80vh)]">
+                    // 종단 상태에는 스피너를 달지 않는다. 소켓은 다시 붙지 않는데 돌아가는
+                    // 스피너는 "곧 됩니다" 라고 말한다.
+                    <Alert
+                        className="w-full max-w-[min(100%,80vh)]"
+                        variant={isSocketSettled(socketStatus) ? "destructive" : "default"}
+                    >
                         <AlertDescription className="flex items-center gap-2 text-sm">
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {isSocketSettled(socketStatus) ? null : (
+                                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                            )}
                             {connectionNotice}
                         </AlertDescription>
                     </Alert>
@@ -196,11 +215,11 @@ function OmokRoomScreen() {
                 <OmokBoard
                     size={OMOK_BOARD_SIZE}
                     placements={state.placements}
-                    disabled={!myTurn}
+                    disabled={!myTurn || awaitingPlace}
                     onPlace={place}
                 />
 
-                <div className="flex min-h-5 items-center gap-2 text-sm text-muted-foreground">
+                <div className="flex min-h-5 flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                     {myStone ? (
                         <span className="flex items-center gap-1.5">
                             <span
@@ -214,7 +233,8 @@ function OmokRoomScreen() {
                             내 돌 {myStone === "BLACK" ? "흑" : "백"}
                         </span>
                     ) : null}
-                    <span>{statusLine}</span>
+                    {statusLine ? <span>{statusLine}</span> : null}
+                    {state.notice ? <span className="text-destructive">{state.notice}</span> : null}
                 </div>
             </div>
 
