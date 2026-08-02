@@ -1,0 +1,322 @@
+package com.woobeee.game.dodge;
+
+import com.woobeee.game.identity.GameParticipant;
+import com.woobeee.game.result.FinishedGame;
+import com.woobeee.game.result.FinishedParticipant;
+import com.woobeee.game.result.GameResultService;
+import com.woobeee.game.room.GameIdGenerator;
+import com.woobeee.game.room.GameType;
+import com.woobeee.game.room.Room;
+import com.woobeee.game.room.RoomMember;
+import com.woobeee.game.ws.ClientMessage;
+import com.woobeee.game.ws.GameCommandSink;
+import com.woobeee.game.ws.RoomHub;
+import com.woobeee.game.ws.ServerMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Scheduler;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * 순수한 {@link DodgeGame} 을 방·소켓·타이머와 이어 붙인다.
+ *
+ * <p>입력은 틱 사이에 버퍼에 쌓이고, 참가자당 마지막 것만 남는다. 타이머가 틱을 돌릴 때 버퍼를
+ * 통째로 비워 게임에 넘긴다 — 이 구조 덕분에 "틱당 1회"가 자연히 지켜진다.
+ *
+ * <p>{@link GameCommandSink} 의 메서드들은 방 명령을 직렬화하는 큐 없이 호출된다 — 최대 8명의
+ * 참가자가 보내는 이동 명령과, 방마다 하나씩 도는 틱 타이머가 전부 같은 {@link DodgeGame} 인스턴스를
+ * 서로 다른 스레드에서 동시에 건드릴 수 있다({@code positions}/{@code obstacles}/
+ * {@code eliminationOrder} 는 스레드 안전하지 않은 평범한 컬렉션이다). 그래서 그 게임 인스턴스를
+ * 실제로 읽거나 바꾸는 코드(틱 진행, 이탈 처리, 종료 판정)는 전부 그 게임 객체 자체를 모니터로
+ * 동기화해 직렬화한다 — {@link OmokGameSink} 와 같은 패턴이다.
+ *
+ * <p>종료 판정과 방별 맵(games/pendingInputs/recordedInputs/displayNames/memberIds/startedAt/
+ * timers) 퇴출은 그 동기화 블록 안에서 {@link Map#remove(Object, Object)} 로 원자적으로 실행한다
+ * — 같은 방에 대해 동시에 도착한 틱과 이탈 통지가 게임을 두 번 끝내 결과를 두 번 남기는 일을
+ * 막는다. {@link #onParticipantGone} 은 마지막 한 명의 이탈을 포함해 모든 실제 이탈에 대해
+ * 불리고, 게임이 이미 끝난 뒤에도 불릴 수 있다 — {@link DodgeGame#eliminate(String)} 자체가
+ * 이미 끝난 게임에서는 아무 일도 하지 않는 멱등 연산이고, 종료 판정과 결과 기록은 오직
+ * {@link #tick} 에서만 하므로 두 번째 이탈 통지가 결과를 다시 남기지 않는다.
+ */
+@Component
+public class DodgeGameSink implements GameCommandSink {
+    private static final Logger log = LoggerFactory.getLogger(DodgeGameSink.class);
+
+    private final Map<String, DodgeGame> games = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Direction>> pendingInputs = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, Map<String, Direction>>> recordedInputs = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> displayNames = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, Long>> memberIds = new ConcurrentHashMap<>();
+    private final Map<String, Instant> startedAt = new ConcurrentHashMap<>();
+    private final Map<String, Disposable> timers = new ConcurrentHashMap<>();
+
+    private final RoomHub roomHub;
+    private final GameResultService gameResultService;
+    private final DodgeReplayWriter replayWriter;
+    private final GameIdGenerator idGenerator;
+    private final Clock clock;
+    private final Scheduler tickScheduler;
+
+    public DodgeGameSink(
+            RoomHub roomHub,
+            GameResultService gameResultService,
+            DodgeReplayWriter replayWriter,
+            GameIdGenerator idGenerator,
+            Clock clock,
+            Scheduler gameTimerScheduler
+    ) {
+        this.roomHub = roomHub;
+        this.gameResultService = gameResultService;
+        this.replayWriter = replayWriter;
+        this.idGenerator = idGenerator;
+        this.clock = clock;
+        this.tickScheduler = gameTimerScheduler;
+    }
+
+    @Override
+    public GameType gameType() {
+        return GameType.DODGE;
+    }
+
+    /** 테스트에서 상태를 들여다보기 위한 접근자. */
+    public DodgeGame gameOf(String roomId) {
+        return games.get(roomId);
+    }
+
+    /** 테스트에서 아직 소비되지 않은 입력을 들여다보기 위한 접근자. */
+    public Direction pendingInputOf(String roomId, String participantId) {
+        return pendingInputs.getOrDefault(roomId, Map.of()).get(participantId);
+    }
+
+    @Override
+    public void onStart(Room room) {
+        List<RoomMember> members = room.members();
+        List<String> participantIds = members.stream()
+                .map(member -> member.participant().participantId())
+                .toList();
+
+        Map<String, String> names = new LinkedHashMap<>();
+        Map<String, Long> memberIdsByParticipant = new LinkedHashMap<>();
+        for (RoomMember member : members) {
+            GameParticipant participant = member.participant();
+            names.put(participant.participantId(), participant.displayName());
+            // RoomCommandDispatcher.settle removes a departed participant from the room
+            // before calling onParticipantGone, so by finish() time room.member(...) can no
+            // longer resolve their memberId. Snapshot it here, while everyone is still
+            // present, so a member who is eliminated by leaving still keeps their memberId
+            // on their result row (and therefore their match history / replay access).
+            if (participant.memberId() != null) {
+                memberIdsByParticipant.put(participant.participantId(), participant.memberId());
+            }
+        }
+
+        String roomId = room.roomId();
+        games.put(roomId, new DodgeGame(participantIds, idGenerator.nextSeed()));
+        pendingInputs.put(roomId, new ConcurrentHashMap<>());
+        recordedInputs.put(roomId, new LinkedHashMap<>());
+        displayNames.put(roomId, names);
+        memberIds.put(roomId, memberIdsByParticipant);
+        startedAt.put(roomId, clock.instant());
+
+        Duration period = Duration.ofMillis(DodgeRules.TICK_MILLIS);
+        timers.put(roomId, Flux.interval(period, period, tickScheduler)
+                .doOnNext(ignored -> tick(room))
+                .subscribe());
+    }
+
+    @Override
+    public void onGameCommand(Room room, String participantId, ClientMessage message) {
+        if (!"DODGE_MOVE".equals(message.type())) {
+            return;
+        }
+
+        Direction direction = Direction.parse(
+                message.payload() == null ? null : message.payload().path("direction").asString(null)
+        );
+        if (direction == null) {
+            return;
+        }
+
+        Map<String, Direction> buffer = pendingInputs.get(room.roomId());
+        if (buffer != null) {
+            buffer.put(participantId, direction);
+        }
+    }
+
+    @Override
+    public void onParticipantGone(Room room, String participantId) {
+        DodgeGame game = games.get(room.roomId());
+        if (game == null) {
+            return;
+        }
+
+        // Guard against a tick concurrently reading/advancing the same DodgeGame instance —
+        // positions/obstacles/eliminationOrder are plain (non-thread-safe) collections.
+        // eliminate() itself is a no-op once the game is finished (or for an unknown
+        // participant), which is what makes a second departure notification, or one that
+        // arrives after the game has already ended, harmless here. The actual end-of-game
+        // decision and result recording only ever happen from tick() below.
+        synchronized (game) {
+            game.eliminate(participantId);
+        }
+    }
+
+    private void tick(Room room) {
+        String roomId = room.roomId();
+        DodgeGame game = games.get(roomId);
+        if (game == null) {
+            return;
+        }
+
+        DodgeFrame frame;
+        boolean justFinished;
+        synchronized (game) {
+            Map<String, Direction> buffer = pendingInputs.get(roomId);
+            Map<String, Direction> inputs = buffer == null ? Map.of() : new LinkedHashMap<>(buffer);
+            if (buffer != null) {
+                buffer.clear();
+            }
+
+            int tickBeforeAdvance = game.tick();
+            frame = game.advanceOneTick(inputs);
+
+            if (!inputs.isEmpty()) {
+                Map<Integer, Map<String, Direction>> recorded = recordedInputs.get(roomId);
+                if (recorded != null) {
+                    recorded.put(tickBeforeAdvance, inputs);
+                }
+            }
+
+            // Evict the game from the map inside the same synchronized block that decided
+            // it finished, using the atomic remove(key, value) form: only the caller that
+            // wins this race sees justFinished=true, so finish() below runs exactly once
+            // even if a concurrent onParticipantGone() is also holding/waiting on this
+            // monitor around the same moment.
+            justFinished = frame.finished() && games.remove(roomId, game);
+        }
+
+        roomHub.broadcast(roomId, ServerMessage.of("DODGE_TICK", Map.of(
+                "tick", frame.tick(),
+                "positions", positionsOf(frame),
+                "obstacles", obstaclesOf(frame),
+                "eliminated", frame.eliminatedThisTick()
+        )));
+
+        if (justFinished) {
+            finish(room, game);
+        }
+    }
+
+    /**
+     * GAME_END 는 즉시, 저장과 무관하게 나간다 — {@link GameResultService#record} 는 DB 기록에
+     * 이어 기보를 S3 에 올린 뒤에야 완료되므로, 그 결과(gameResultId)를 기다렸다가 방송하면
+     * 참가자들이 승자를 알기까지 스토리지 왕복(및 타임아웃 가능성)을 떠안게 된다. 그래서 GAME_END
+     * 페이로드에는 gameResultId 가 없고, winnerParticipantId 와 ranks 만 실어 먼저 보낸 뒤 record
+     * 호출은 구독만 해 둔다.
+     *
+     * <p>호출 시점에 {@code game} 은 이미 {@link #tick} 이 {@code games} 맵에서 원자적으로 뺀
+     * 뒤다 — 그래도 동시에 도착한 {@link #onParticipantGone} 호출이 이 게임 객체 자체를 여전히
+     * 들고 있다가 뒤늦게 {@code eliminate} 를 부를 수 있으므로(무해한 멱등 호출이다), 여기서
+     * 게임 상태를 읽는 부분도 그 게임 객체를 모니터로 동기화해 일관된 스냅샷을 본다.
+     */
+    private void finish(Room room, DodgeGame game) {
+        String roomId = room.roomId();
+
+        Disposable timer = timers.remove(roomId);
+        if (timer != null) {
+            timer.dispose();
+        }
+
+        Map<String, String> names = displayNames.getOrDefault(roomId, Map.of());
+        Map<String, Long> memberIdsByParticipant = memberIds.getOrDefault(roomId, Map.of());
+
+        Map<String, Integer> ranks;
+        int seed;
+        Map<Integer, Map<String, Direction>> inputsByTick;
+        synchronized (game) {
+            ranks = game.finalRanks();
+            seed = game.seed();
+            inputsByTick = recordedInputs.getOrDefault(roomId, Map.of());
+        }
+
+        String winner = ranks.entrySet().stream()
+                .filter(entry -> entry.getValue() == 1)
+                .map(Map.Entry::getKey)
+                .findFirst()
+                .orElse(null);
+
+        roomHub.broadcast(roomId, ServerMessage.of("GAME_END", Map.of(
+                "winnerParticipantId", winner == null ? "" : winner,
+                "ranks", ranksPayload(ranks, names)
+        )));
+
+        List<FinishedParticipant> participants = ranks.entrySet().stream()
+                .map(entry -> new FinishedParticipant(
+                        entry.getKey(),
+                        names.getOrDefault(entry.getKey(), entry.getKey()),
+                        memberIdsByParticipant.get(entry.getKey()),
+                        entry.getValue()
+                ))
+                .toList();
+
+        FinishedGame finished = new FinishedGame(
+                "DODGE",
+                roomId,
+                startedAt.getOrDefault(roomId, clock.instant()),
+                clock.instant(),
+                winner,
+                participants
+        );
+
+        DodgeReplay replay = new DodgeReplay(seed, new ArrayList<>(names.keySet()), inputsByTick);
+        String ndjson = replayWriter.toNdjson(replay, names);
+
+        gameResultService.record(finished, ndjson).subscribe(
+                gameResultId -> { },
+                error -> log.error("Failed to record dodge result for room {}", roomId, error)
+        );
+
+        pendingInputs.remove(roomId);
+        recordedInputs.remove(roomId);
+        displayNames.remove(roomId);
+        memberIds.remove(roomId);
+        startedAt.remove(roomId);
+    }
+
+    private List<Map<String, Object>> positionsOf(DodgeFrame frame) {
+        List<Map<String, Object>> positions = new ArrayList<>();
+        frame.positions().forEach((participantId, cell) -> positions.add(Map.of(
+                "participantId", participantId,
+                "x", cell.x(),
+                "y", cell.y()
+        )));
+        return positions;
+    }
+
+    private List<Map<String, Object>> obstaclesOf(DodgeFrame frame) {
+        return frame.obstacles().stream()
+                .map(cell -> Map.<String, Object>of("x", cell.x(), "y", cell.y()))
+                .toList();
+    }
+
+    private List<Map<String, Object>> ranksPayload(Map<String, Integer> ranks, Map<String, String> names) {
+        return ranks.entrySet().stream()
+                .map(entry -> Map.<String, Object>of(
+                        "participantId", entry.getKey(),
+                        "displayName", names.getOrDefault(entry.getKey(), entry.getKey()),
+                        "rank", entry.getValue()
+                ))
+                .toList();
+    }
+}

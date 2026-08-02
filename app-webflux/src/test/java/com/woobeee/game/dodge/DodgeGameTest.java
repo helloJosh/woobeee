@@ -246,4 +246,24 @@ class DodgeGameTest {
 
         assertThat(game.tick()).isEqualTo(tickAfterFinish);
     }
+
+    @Test
+    void eliminatingADepartedPlayerAdvancesTheEliminationOrder() {
+        DodgeGame game = DodgeGameTestSupport.quiet(1, A, B);
+
+        game.eliminate(A);
+
+        assertThat(game.survivors()).containsExactly(B);
+        assertThat(game.finished()).isTrue();
+        assertThat(game.finalRanks()).containsEntry(B, 1).containsEntry(A, 2);
+    }
+
+    @Test
+    void eliminatingAnUnknownParticipantIsANoop() {
+        DodgeGame game = DodgeGameTestSupport.quiet(1, A, B, "g:c");
+
+        game.eliminate("g:zzz");
+
+        assertThat(game.survivors()).hasSize(3);
+    }
 }

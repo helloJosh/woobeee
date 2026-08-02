@@ -183,6 +183,18 @@ public final class DodgeGame {
         }
     }
 
+    /** 이탈 확정. 그 틱의 탈락자로 기록하고 마지막 한 명이 남으면 게임을 끝낸다. */
+    public void eliminate(String participantId) {
+        if (finished || positions.remove(participantId) == null) {
+            return;
+        }
+
+        eliminationOrder.add(List.of(participantId));
+        if (positions.size() <= 1) {
+            finished = true;
+        }
+    }
+
     /** 탈락 역순이 순위다. 같은 틱에 탈락한 사람은 공동 순위. */
     public Map<String, Integer> finalRanks() {
         Map<String, Integer> ranks = new LinkedHashMap<>();
