@@ -28,7 +28,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -374,8 +373,8 @@ class DodgeGameSinkTest {
         guarded.onStart(room);
         Disposable timer = guarded.timerOf("room-1");
 
-        assertThatCode(() -> scheduler.advanceTimeBy(Duration.ofMillis(100)))
-                .doesNotThrowAnyException();
+        scheduler.advanceTimeBy(Duration.ofMillis(100));
+
         assertThat(timer.isDisposed())
                 .as("a throwing tick must not terminate the interval subscription")
                 .isFalse();
@@ -407,9 +406,7 @@ class DodgeGameSinkTest {
         sink.onParticipantGone(room, "g:a");
         sink.onParticipantGone(room, "g:b");
 
-        assertThatCode(() -> scheduler.advanceTimeBy(Duration.ofMillis(100)))
-                .as("a throwing record must not escape the tick loop")
-                .doesNotThrowAnyException();
+        scheduler.advanceTimeBy(Duration.ofMillis(100));
 
         assertThat(sink.holdsAnyStateFor("room-1"))
                 .as("a throwing record must not leak the finished room's per-room maps")
