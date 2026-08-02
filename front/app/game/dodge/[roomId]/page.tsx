@@ -103,6 +103,23 @@ function DodgeRoomScreen() {
         setGuestParticipantId(readStoredGuestIdentity(roomId)?.participantId ?? null)
     }, [roomId, token])
 
+    /**
+     * I3: 화면을 정말로 떠날 때만 LEAVE 를 보낸다. 오목 화면과 같은 배치이며 이유도 같지만,
+     * 여기서 얻는 것이 더 크다 — 그냥 닫으면 서버는 30초의 재접속 유예를 두므로, 8인
+     * 장애물피하기에서는 그동안 <b>움직이지 않으면서 여전히 부딪히는 유령</b>을 나머지
+     * 일곱이 피해 다녀야 한다.
+     *
+     * <p>소켓 이펙트의 정리 함수가 아니라 여기인 이유: 그쪽은 `inviteCode` 나 `token` 이
+     * 바뀔 때도 도는데 그건 떠나는 것이 아니라 같은 방에 다시 붙는 것이다. 그리고 소켓
+     * 이펙트보다 먼저 선언해야 한다 — 정리 함수는 선언 순서대로 돌아서, 뒤에 두면 소켓이
+     * 먼저 닫히고 보낼 소켓이 남지 않는다.
+     */
+    useEffect(() => {
+        return () => {
+            socketRef.current?.leave()
+        }
+    }, [roomId])
+
     useEffect(() => {
         if (!token || !tokenSource) {
             return

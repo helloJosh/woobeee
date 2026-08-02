@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
     BASE_DELAY_MS,
     MAX_RETRIES,
     NORMAL_CLOSURE,
+    createGameSocket,
     encodeClientMessage,
     isServerMessage,
     parseServerMessage,
@@ -11,6 +12,7 @@ import {
     type DodgeSnapshotPayload,
     type OmokSnapshotPayload,
     type ServerMessage,
+    type SocketStatus,
 } from "./game-socket"
 
 /**
@@ -146,5 +148,184 @@ describe("socket plumbing", () => {
         expect(parseServerMessage('{"payload":{}}')).toBeNull()
         expect(parseServerMessage('["ROOM_STATE"]')).toBeNull()
         expect(parseServerMessage(42)).toBeNull()
+    })
+})
+
+// ---------------------------------------------------------------------------
+// createGameSocket — I3: 즉시 이탈
+// ---------------------------------------------------------------------------
+
+/**
+ * 최소한의 WebSocket 대역. jsdom 을 끌어오지 않는 이유는 이 모듈이 브라우저에 기대는 것이
+ * `new WebSocket(url)` · `send` · `close` · 네 개의 콜백 · `WebSocket.OPEN` 뿐이기 때문이다.
+ */
+class FakeWebSocket {
+    static readonly CONNECTING = 0
+    static readonly OPEN = 1
+    static readonly CLOSING = 2
+    static readonly CLOSED = 3
+
+    static instances: FakeWebSocket[] = []
+
+    readyState = FakeWebSocket.CONNECTING
+    readonly sent: string[] = []
+    /** send 순서와 close 순서를 같은 눈금 위에서 보기 위한 기록. */
+    readonly log: string[] = []
+
+    onopen: (() => void) | null = null
+    onmessage: ((event: { data: string }) => void) | null = null
+    onclose: ((event: { code: number }) => void) | null = null
+    onerror: (() => void) | null = null
+
+    constructor(readonly url: string) {
+        FakeWebSocket.instances.push(this)
+    }
+
+    send(data: string): void {
+        this.sent.push(data)
+        this.log.push(`SEND ${JSON.parse(data).type}`)
+    }
+
+    close(): void {
+        this.log.push("CLOSE")
+        this.readyState = FakeWebSocket.CLOSED
+        this.onclose?.({ code: 1005 })
+    }
+
+    /** 서버가 핸드셰이크를 받아 준다. 소켓은 여기서 JOIN 을 보낸다. */
+    handshake(): void {
+        this.readyState = FakeWebSocket.OPEN
+        this.onopen?.()
+    }
+
+    /** 첫 ROOM_STATE 가 참가 확정 신호다. */
+    confirmJoin(): void {
+        this.onmessage?.({ data: JSON.stringify({ type: "ROOM_STATE", payload: { participants: [] } }) })
+    }
+
+    typesSent(): string[] {
+        return this.sent.map((raw) => JSON.parse(raw).type)
+    }
+}
+
+describe("createGameSocket leave", () => {
+    let originalWebSocket: unknown
+
+    beforeEach(() => {
+        FakeWebSocket.instances = []
+        originalWebSocket = (globalThis as { WebSocket?: unknown }).WebSocket
+        ;(globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket
+        // 재접속 백오프를 실제로 기다리지 않는다. 이 스위트에 실시간 대기는 두지 않는다.
+        vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+        vi.useRealTimers()
+        ;(globalThis as { WebSocket?: unknown }).WebSocket = originalWebSocket
+    })
+
+    function joinedSocket() {
+        const statuses: SocketStatus[] = []
+        const socket = createGameSocket({
+            roomId: "room-1",
+            inviteCode: "code",
+            token: () => "tok",
+            onMessage: () => {},
+            onStatusChange: (status) => statuses.push(status),
+        })
+        const wire = FakeWebSocket.instances[0]
+        wire.handshake()
+        wire.confirmJoin()
+        return { socket, wire, statuses }
+    }
+
+    /**
+     * GAME-AC-09 의 클라이언트 쪽 절반. 서버는 LEAVE 를 유예 없이 처리하지만
+     * (`GameWebSocketHandler` → `dispatcher.leaveNow`), 화면이 그냥 닫기만 하면 그 경로에
+     * 닿지 않고 30초짜리 끊김 유예를 탄다.
+     */
+    it("announces the departure before closing", () => {
+        const { socket, wire } = joinedSocket()
+
+        expect(socket.leave()).toBe(true)
+
+        expect(wire.typesSent()).toEqual(["JOIN", "LEAVE"])
+        // 순서가 요점이다. 닫은 뒤에 보내면 프레임이 버려진다.
+        expect(wire.log).toEqual(["SEND JOIN", "SEND LEAVE", "CLOSE"])
+    })
+
+    /** 대조군 — 그냥 닫으면 서버는 이탈이 아니라 끊김으로 본다. 그것이 기존 동작이다. */
+    it("close() still says nothing, which is what makes leave() necessary", () => {
+        const { socket, wire } = joinedSocket()
+
+        socket.close()
+
+        expect(wire.typesSent()).toEqual(["JOIN"])
+    })
+
+    /**
+     * StrictMode 가 이펙트를 두 번 돌리거나, 붙는 도중에 화면을 떠나는 경우. 서버에 아직 우리
+     * 자리가 없으므로 보낼 것이 없고, JOIN 전의 메시지는 어차피 서버가 버린다.
+     */
+    it("says nothing when the server never confirmed the join", () => {
+        const socket = createGameSocket({
+            roomId: "room-1",
+            inviteCode: "code",
+            token: () => "tok",
+            onMessage: () => {},
+        })
+        const wire = FakeWebSocket.instances[0]
+        wire.handshake()
+
+        expect(socket.leave()).toBe(false)
+        expect(wire.typesSent()).toEqual(["JOIN"])
+    })
+
+    it("says nothing when the handshake never completed", () => {
+        const socket = createGameSocket({
+            roomId: "room-1",
+            inviteCode: "code",
+            token: () => "tok",
+            onMessage: () => {},
+        })
+
+        expect(socket.leave()).toBe(false)
+        expect(FakeWebSocket.instances[0].typesSent()).toEqual([])
+    })
+
+    it("settles the caller on closed exactly once", () => {
+        const { socket, statuses } = joinedSocket()
+
+        socket.leave()
+        socket.leave()
+
+        expect(statuses).toEqual(["connecting", "open", "joined", "closed"])
+    })
+
+    /**
+     * I7 의 배선 쪽 절반. JOIN 마다 공급자를 다시 부르지 않으면, 게이트가 넘긴 토큰이
+     * 만료된 뒤의 모든 재접속이 인증에서 막힌다.
+     */
+    it("asks the token supplier again on every JOIN", () => {
+        const tokens = ["first", "second"]
+        createGameSocket({
+            roomId: "room-1",
+            inviteCode: "code",
+            token: () => tokens.shift() ?? "exhausted",
+            onMessage: () => {},
+        })
+
+        const first = FakeWebSocket.instances[0]
+        first.handshake()
+        // 네트워크가 끊겼다(1006) — 재접속 대상이다.
+        first.readyState = FakeWebSocket.CLOSED
+        first.onclose?.({ code: 1006 })
+
+        vi.advanceTimersByTime(BASE_DELAY_MS)
+        const second = FakeWebSocket.instances[1]
+        second.handshake()
+
+        expect(JSON.parse(first.sent[0]).payload.token).toBe("first")
+        expect(JSON.parse(second.sent[0]).payload.token).toBe("second")
     })
 })

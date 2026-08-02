@@ -335,6 +335,20 @@ export interface GameSocket {
      * 기다리게 되고, 그 번호는 나중에 상대의 같은 번호와 겹친다.
      */
     send: (type: string, payload?: unknown) => number | null
+    /**
+     * 즉시 이탈을 알리고 닫는다. 실제로 LEAVE 프레임을 내보냈으면 `true`.
+     *
+     * <p>{@link close} 와의 차이가 서버에서 30초다. 그냥 닫으면 서버는 이탈이 아니라 **연결
+     * 끊김**으로 본다(GameWebSocketHandler:80-90) — `disconnected` 로 방에 알린 뒤 30초의
+     * 재접속 유예를 두고서야 `confirmLeave` 한다. 새로고침한 사람의 자리를 지켜 주는 그
+     * 유예가, 정말로 떠나는 사람에게는 그대로 해가 된다: 8인 장애물피하기에서는 30초 동안
+     * <b>움직이지 않으면서 여전히 부딪히는 유령</b>을 나머지 일곱이 피해 다녀야 하고,
+     * 오목에서는 기권으로 나야 할 GAME_END 가 30초 늦는다.
+     *
+     * <p>참가가 확정되기 전에는 프레임을 보내지 않는다 — 서버에 아직 우리 자리가 없으므로
+     * 보낼 것이 없고, JOIN 전의 메시지는 어차피 버려진다.
+     */
+    leave: () => boolean
     close: () => void
 }
 
@@ -399,6 +413,15 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
     let closedByCaller = false
     let settled = false
     let retryTimer: ReturnType<typeof setTimeout> | undefined
+    /**
+     * 지금 열려 있는 연결에서 서버가 참가를 확정했는지(첫 ROOM_STATE 도착). 연결마다 새로
+     * 판정되므로 {@link open} 이 매번 false 로 되돌린다.
+     *
+     * <p>연결 안이 아니라 여기 있는 이유는 {@link GameSocket.leave} 가 이 값을 봐야 하기
+     * 때문이다 — 아직 방에 들어가지도 않았는데 LEAVE 를 보내는 것은 의미가 없고,
+     * StrictMode 가 이펙트를 두 번 돌리는 개발 환경에서 특히 그렇다.
+     */
+    let joinConfirmed = false
 
     /** 종단 상태는 한 번만 알린다 — 나중의 close() 가 rejected 를 closed 로 덮어쓰지 않게. */
     const setStatus = (status: SocketStatus, errorCode?: string) => {
@@ -435,7 +458,7 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
         socket = current
 
         // 이 연결에서 서버가 참가를 확정했는지. 확정 전까지는 재시도 카운터를 되돌리지 않는다.
-        let joinConfirmed = false
+        joinConfirmed = false
         // 참가 확정 전에 받은 ERROR 의 코드. 서버가 거절 직전에 보내 주는 그 프레임이다.
         let rejectionCode: string | undefined
 
@@ -535,26 +558,36 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
         return seq
     }
 
+    const close = () => {
+        closedByCaller = true
+        if (retryTimer !== undefined) {
+            clearTimeout(retryTimer)
+            retryTimer = undefined
+        }
+
+        // 백오프 대기 중이라면 살아 있는 소켓이 없어 onclose 가 다시 불리지 않는다.
+        // 그 경우에도 호출자는 종료 상태를 한 번은 받아야 한다.
+        const pending = socket
+        if (!pending || pending.readyState === WebSocket.CLOSED) {
+            detach(pending)
+            setStatus("closed")
+            return
+        }
+        pending.close()
+    }
+
+    /**
+     * LEAVE 를 먼저 보내고 닫는다. 순서가 요점이다 — 닫은 뒤에 보내면 프레임이 버려진다.
+     * `WebSocket.close()` 는 이미 큐에 들어간 데이터를 흘려보낸 뒤에 Close 프레임을 내므로,
+     * 바로 이어서 닫아도 LEAVE 는 나간다.
+     */
+    const leave = (): boolean => {
+        const announced = joinConfirmed && send("LEAVE") !== null
+        close()
+        return announced
+    }
+
     open()
 
-    return {
-        send,
-        close: () => {
-            closedByCaller = true
-            if (retryTimer !== undefined) {
-                clearTimeout(retryTimer)
-                retryTimer = undefined
-            }
-
-            // 백오프 대기 중이라면 살아 있는 소켓이 없어 onclose 가 다시 불리지 않는다.
-            // 그 경우에도 호출자는 종료 상태를 한 번은 받아야 한다.
-            const pending = socket
-            if (!pending || pending.readyState === WebSocket.CLOSED) {
-                detach(pending)
-                setStatus("closed")
-                return
-            }
-            pending.close()
-        },
-    }
+    return { send, leave, close }
 }

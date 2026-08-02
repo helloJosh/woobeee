@@ -89,6 +89,27 @@ function OmokRoomScreen() {
         setGuestParticipantId(readStoredGuestIdentity(roomId)?.participantId ?? null)
     }, [roomId, token])
 
+    /**
+     * I3: 화면을 정말로 떠날 때만 LEAVE 를 보낸다.
+     *
+     * <p>소켓 이펙트의 정리 함수에 넣으면 안 된다. 그쪽은 `inviteCode` 나 `token` 이 바뀔
+     * 때도 도는데, 그건 떠나는 것이 아니라 같은 방에 다시 붙는 것이다 — 거기서 LEAVE 를
+     * 보내면 자리를 스스로 반납한 뒤 새 참가자로 들어가게 된다(진행 중인 판이면 아예 못
+     * 들어간다). 그래서 <b>방이 바뀌거나 화면이 사라질 때만</b> 도는 별도 이펙트로 둔다.
+     *
+     * <p>소켓 이펙트보다 <b>먼저</b> 선언해야 한다. 정리 함수는 선언 순서대로 실행되므로,
+     * 뒤에 두면 소켓이 먼저 닫히고 socketRef 가 비어 LEAVE 를 보낼 소켓이 남지 않는다.
+     *
+     * <p>StrictMode 의 이중 호출은 여기 걸리지 않는다. 마운트 직후에는 아직 게이트가 토큰을
+     * 넘기기 전이라 소켓 자체가 없고, 설령 있더라도 `leave()` 는 참가가 확정된(첫 ROOM_STATE
+     * 가 도착한) 연결에서만 프레임을 보낸다 — 그 왕복이 동기적으로 끝날 수는 없다.
+     */
+    useEffect(() => {
+        return () => {
+            socketRef.current?.leave()
+        }
+    }, [roomId])
+
     useEffect(() => {
         if (!token || !tokenSource) {
             return
