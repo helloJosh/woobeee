@@ -149,6 +149,12 @@ function applyServerMessage(state: OmokRoomState, message: ServerMessage): OmokR
             //
             // 반면 pendingPlaceSeq 는 비운다. 내가 재접속한 경우 끊기기 전에 보낸 착수의
             // 응답은 영영 오지 않으므로, 남겨 두면 그 seq 가 다음 착수를 막는 잠금으로 굳는다.
+            //
+            // 이 비우기는 상대가 재접속할 때도 같이 일어난다 — 스냅샷은 방 전체로 나가니까.
+            // 내 착수가 정말 날아가는 중이었다면 뒤늦게 온 OMOK_REJECTED 가 더 이상 매칭되지
+            // 않아 금수 안내 하나를 놓친다. 판이 틀어지거나 이중 착수가 되지는 않는다
+            // (OMOK_MOVED 는 ackSeq 를 보지 않고, 차례는 서버가 쥔다). 안내 한 번을 놓치는
+            // 쪽이 보드가 잠겨 죽는 쪽보다 낫다.
             pendingPlaceSeq: null,
         }
     }
