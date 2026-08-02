@@ -141,6 +141,62 @@ export interface DodgeTickPayload {
 }
 
 /**
+ * GAME_SNAPSHOT 의 오목 착수 하나. OMOK_MOVED 와 달리 participantId 가 없다
+ * (OmokGameSink.onRejoin:200-206 은 x·y·color 만 싣는다) — 판을 다시 세우는 데에는 색이면
+ * 충분하고, 누가 뒀는지는 이미 지나간 정보이기 때문이다. 그래서 {@link OmokMoveBase} 를
+ * 재사용하지 않는다. 그쪽을 재사용하면 스냅샷의 착수에서 존재하지 않는 participantId 를
+ * 읽는 코드가 통과한다.
+ */
+export interface OmokSnapshotMove {
+    x: number
+    y: number
+    color: OmokMoveBase["color"]
+}
+
+/**
+ * OmokGameSink.onRejoin — 착수 목록은 완전하고 둔 순서대로다. 클라이언트는 이것을 처음부터
+ * 재생해 판을 세운다. <b>기보 형식이 아니다</b>: OmokReplayWriter 는 색을 헤더의 players[] 에
+ * 한 번만 선언하고 각 수를 {t, p, x, y} 로 적는다. 스냅샷은 자기 자신을 설명하므로 헤더가
+ * 없다 — 두 형식의 파서를 합치려 하지 말 것.
+ *
+ * <p>싱크는 이미 끝난 판에는 스냅샷을 내지 않는다(`game.finished()` 가드). 그래서 nextTurn 과
+ * turnDeadline 은 OMOK_MOVED 의 승리 착수와 달리 언제나 실려 온다.
+ */
+export interface OmokSnapshotPayload {
+    /** Extract 로 {@link GameType} 에 묶어 둔다 — 서버가 이름을 바꾸면 여기서 깨져야 한다. */
+    gameType: Extract<GameType, "OMOK">
+    moves: OmokSnapshotMove[]
+    nextTurn: string
+    turnDeadline: string
+}
+
+/**
+ * DodgeGameSink.onRejoin — 평소 DODGE_TICK 이 싣는 프레임과 같은 내용이되
+ * <b>eliminated 가 없다</b>(onRejoin:249-254 는 tick·positions·obstacles 만 싣는다).
+ * "이번 틱에 탈락한 사람" 은 그 틱에만 뜻이 있는 증분이라 전체 상태에는 들어갈 자리가 없다.
+ * 그래서 {@link DodgeTickPayload} 를 그대로 쓰지 않는다.
+ */
+export interface DodgeSnapshotPayload {
+    gameType: Extract<GameType, "DODGE">
+    tick: number
+    positions: DodgePosition[]
+    obstacles: DodgeCell[]
+}
+
+/**
+ * RoomCommandDispatcher 가 재접속(ROOM_STATE 직후)에 방 전체로 내보내는 전체 상태.
+ * 두 게임이 같은 타입 이름을 쓰고 gameType 으로 갈린다 — 판별 유니온이므로
+ * `payload.gameType === "OMOK"` 으로 좁히기 전에는 moves 도 tick 도 읽을 수 없다:
+ *
+ * ```ts
+ * if (isServerMessage(message, "GAME_SNAPSHOT") && message.payload.gameType === "OMOK") {
+ *     replaceBoard(message.payload.moves)
+ * }
+ * ```
+ */
+export type GameSnapshotPayload = OmokSnapshotPayload | DodgeSnapshotPayload
+
+/**
  * RoomCommandDispatcher.guard 가 예외를 흡수해 내보내는 모양. code 는 HTTP 상태 코드이고
  * (알 수 없는 런타임 예외는 500), 게임 명령에서 비롯된 실패라면 그 명령의 seq 가 ackSeq 로
  * 돌아온다.
@@ -161,6 +217,8 @@ export interface ServerMessagePayloads {
     OMOK_MOVED: OmokMovedPayload
     OMOK_REJECTED: OmokRejectedPayload
     DODGE_TICK: DodgeTickPayload
+    /** 재접속한 참가자를 위한 전체 상태. 방 전체가 받는다. */
+    GAME_SNAPSHOT: GameSnapshotPayload
     ERROR: ErrorPayload
 }
 
@@ -355,9 +413,10 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
 
             // 재접속도 JOIN 이다. 서버는 이미 아는 participantId 면 정원·진행 상태 검사를
             // 건너뛰고 연결만 CONNECTED 로 되돌린다(RoomService.join -> Room.admit ->
-            // RECONNECTED). 다만 되돌아오는 것은 ROOM_STATE 뿐이다 — 오목의 판이나
-            // 장애물피하기의 현재 틱을 다시 보내 주지는 않으므로, 판이 진행 중이었다면
-            // 화면은 끊긴 시점의 낡은 상태로 남는다. 화면 쪽에서 감안해야 한다.
+            // RECONNECTED). 진행 중인 판이었다면 ROOM_STATE 뒤에 GAME_SNAPSHOT 이 이어 온다
+            // (RoomCommandDispatcher:65 -> 각 싱크의 onRejoin). 그것이 판/틱을 되돌려 주는
+            // 유일한 메시지이므로, 화면은 GAME_SNAPSHOT 을 반드시 처리해야 한다 —
+            // 무시하면 재접속한 화면이 끊긴 시점의 낡은 상태로 남는다.
             send("JOIN", {
                 roomId: options.roomId,
                 inviteCode: options.inviteCode,
