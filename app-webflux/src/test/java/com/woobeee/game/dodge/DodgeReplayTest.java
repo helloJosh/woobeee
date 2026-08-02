@@ -43,11 +43,79 @@ class DodgeReplayTest {
         assertThat(original.finished()).isTrue();
 
         DodgeGame replayed = new DodgeReplayRunner()
-                .rerun(new DodgeReplay(seed, players, inputs));
+                .rerun(new DodgeReplay(seed, players, inputs, Map.of()));
 
         assertThat(replayed.finalRanks()).isEqualTo(original.finalRanks());
         assertThat(replayed.eliminationOrder()).isEqualTo(original.eliminationOrder());
         assertThat(replayed.tick()).isEqualTo(original.tick());
+    }
+
+    /**
+     * F1 — a game that ends by departure must replay to the same result as the original.
+     * {@code eliminate()} mutates game state outside the recorded input stream, so
+     * {@link DodgeReplay} carries a {@code departuresByTick} channel alongside
+     * {@code inputsByTick}: the tick each departure happened at, in call order. Before this fix
+     * (see the removed pre-fix version of this test in the fix report), a replay built from
+     * seed + moves alone kept the departed players alive and dodging real obstacles, producing a
+     * different winner. Reusing the exact live sequence — no ticks elapse, both non-hosts depart
+     * immediately, same as {@code DodgeGameSinkTest.theGameEndsAndRecordsAResult} — pins that the
+     * departures channel, not luck, is what makes this deterministic.
+     */
+    @Test
+    void rerunningADepartureEndedReplayReproducesTheOriginalRanks() {
+        int seed = 12345;
+        List<String> players = List.of(A, B, "g:c");
+
+        DodgeGame original = new DodgeGame(players, seed);
+        original.eliminate(B);
+        original.eliminate("g:c");
+
+        assertThat(original.finished()).isTrue();
+        assertThat(original.tick()).isZero();
+
+        Map<Integer, List<String>> departures = Map.of(0, List.of(B, "g:c"));
+
+        DodgeGame replayed = new DodgeReplayRunner(50)
+                .rerun(new DodgeReplay(seed, players, Map.of(), departures));
+
+        assertThat(replayed.finalRanks()).isEqualTo(original.finalRanks());
+        assertThat(replayed.eliminationOrder()).isEqualTo(original.eliminationOrder());
+        assertThat(replayed.tick()).isEqualTo(original.tick());
+    }
+
+    /**
+     * F1 — the ndjson carries departures as their own field on the tick line (not a separate
+     * line type): a tick can have moves and a departure together (someone moves the same tick a
+     * different participant leaves), and one line per tick avoids the reader having to re-merge
+     * two lines sharing a tick number.
+     */
+    @Test
+    void ndjsonCarriesDeparturesOnTheirOwnFieldOfTheTickLine() throws Exception {
+        Map<Integer, Map<String, Direction>> inputs = new LinkedHashMap<>();
+        inputs.put(2, Map.of(A, Direction.LEFT));
+        Map<Integer, List<String>> departures = new LinkedHashMap<>();
+        departures.put(2, List.of(B));
+        departures.put(5, List.of("g:c", "g:d"));
+
+        String ndjson = new DodgeReplayWriter(new ObjectMapper()).toNdjson(
+                new DodgeReplay(1, List.of(A, B, "g:c", "g:d"), inputs, departures),
+                Map.of()
+        );
+
+        String[] lines = ndjson.strip().split("\n");
+        assertThat(lines).hasSize(3); // header + tick 2 (moves+departure) + tick 5 (departure only)
+
+        ObjectMapper mapper = new ObjectMapper();
+        var tick2 = mapper.readTree(lines[1]);
+        assertThat(tick2.get("tick").asInt()).isEqualTo(2);
+        assertThat(tick2.get("moves").get(A).asText()).isEqualTo("LEFT");
+        assertThat(tick2.get("departures").get(0).asText()).isEqualTo(B);
+
+        var tick5 = mapper.readTree(lines[2]);
+        assertThat(tick5.get("tick").asInt()).isEqualTo(5);
+        assertThat(tick5.has("moves")).isFalse();
+        assertThat(tick5.get("departures").get(0).asText()).isEqualTo("g:c");
+        assertThat(tick5.get("departures").get(1).asText()).isEqualTo("g:d");
     }
 
     @Test
@@ -57,7 +125,7 @@ class DodgeReplayTest {
         inputs.put(7, Map.of(A, Direction.UP, B, Direction.RIGHT));
 
         String ndjson = new DodgeReplayWriter(new ObjectMapper()).toNdjson(
-                new DodgeReplay(8412739, List.of(A, B), inputs),
+                new DodgeReplay(8412739, List.of(A, B), inputs, Map.of()),
                 Map.of(A, "host", B, "손님")
         );
 
@@ -102,7 +170,7 @@ class DodgeReplayTest {
     @Test
     void ticksWithNoInputAreNotWritten() {
         String ndjson = new DodgeReplayWriter(new ObjectMapper()).toNdjson(
-                new DodgeReplay(1, List.of(A), Map.of()),
+                new DodgeReplay(1, List.of(A), Map.of(), Map.of()),
                 Map.of(A, "host")
         );
 
@@ -129,7 +197,7 @@ class DodgeReplayTest {
      */
     @Test
     void rerunThrowsWhenTheReplayNeverTerminatesWithinTheTickCap() {
-        DodgeReplay replay = new DodgeReplay(42, List.of(A, B), Map.of());
+        DodgeReplay replay = new DodgeReplay(42, List.of(A, B), Map.of(), Map.of());
 
         assertThatThrownBy(() -> new DodgeReplayRunner(5).rerun(replay))
                 .isInstanceOf(IllegalStateException.class)
@@ -140,7 +208,7 @@ class DodgeReplayTest {
     @Test
     void headerCarriesTheRulesSoTheClientCanReproduceThem() throws Exception {
         String ndjson = new DodgeReplayWriter(new ObjectMapper()).toNdjson(
-                new DodgeReplay(1, List.of(A), Map.of()),
+                new DodgeReplay(1, List.of(A), Map.of(), Map.of()),
                 Map.of(A, "host")
         );
 

@@ -41,13 +41,22 @@ import java.util.concurrent.ConcurrentHashMap;
  * 실제로 읽거나 바꾸는 코드(틱 진행, 이탈 처리, 종료 판정)는 전부 그 게임 객체 자체를 모니터로
  * 동기화해 직렬화한다 — {@link OmokGameSink} 와 같은 패턴이다.
  *
- * <p>종료 판정과 방별 맵(games/pendingInputs/recordedInputs/displayNames/memberIds/startedAt/
- * timers) 퇴출은 그 동기화 블록 안에서 {@link Map#remove(Object, Object)} 로 원자적으로 실행한다
- * — 같은 방에 대해 동시에 도착한 틱과 이탈 통지가 게임을 두 번 끝내 결과를 두 번 남기는 일을
- * 막는다. {@link #onParticipantGone} 은 마지막 한 명의 이탈을 포함해 모든 실제 이탈에 대해
- * 불리고, 게임이 이미 끝난 뒤에도 불릴 수 있다 — {@link DodgeGame#eliminate(String)} 자체가
- * 이미 끝난 게임에서는 아무 일도 하지 않는 멱등 연산이고, 종료 판정과 결과 기록은 오직
+ * <p>종료 판정과 방별 맵(games/pendingInputs/recordedInputs/departuresByTick/displayNames/
+ * memberIds/startedAt/timers) 퇴출은 그 동기화 블록 안에서 {@link Map#remove(Object, Object)} 로
+ * 원자적으로 실행한다 — 같은 방에 대해 동시에 도착한 틱과 이탈 통지가 게임을 두 번 끝내 결과를
+ * 두 번 남기는 일을 막는다. {@link #onParticipantGone} 은 마지막 한 명의 이탈을 포함해 모든 실제
+ * 이탈에 대해 불리고, 게임이 이미 끝난 뒤에도 불릴 수 있다 — {@link DodgeGame#eliminate(String)}
+ * 자체가 이미 끝난 게임에서는 아무 일도 하지 않는 멱등 연산이고, 종료 판정과 결과 기록은 오직
  * {@link #tick} 에서만 하므로 두 번째 이탈 통지가 결과를 다시 남기지 않는다.
+ *
+ * <p><b>이탈로 끝난 게임의 재생 가능성(F1).</b> {@link DodgeGame#eliminate(String)} 은
+ * {@code advanceOneTick} 이 읽는 입력 스트림 밖에서 게임 상태를 바꾼다 — 이 싱크의 주된 종료
+ * 경로가 바로 이것이다(참가자 전원이 이탈해 한 명만 남는 경우). 그 이탈을 기보에 싣지 않으면
+ * {@link DodgeReplayRunner} 는 이탈한 참가자를 계속 살려 둔 채로 재생하게 되어 원본과 다른
+ * 결과가 나온다. 그래서 {@code onParticipantGone} 은 이탈이 실제로 게임 상태를 바꿨을 때만(게임이
+ * 아직 안 끝났고 그 참가자가 아직 생존해 있었을 때만) 그 순간의 틱 번호로
+ * {@link #departuresByTick} 에 기록한다 — {@link DodgeReplay#departuresByTick()} 로 실려
+ * {@link DodgeReplayRunner} 가 각 틱을 진행하기 전에 그대로 재현한다.
  */
 @Component
 public class DodgeGameSink implements GameCommandSink {
@@ -56,6 +65,7 @@ public class DodgeGameSink implements GameCommandSink {
     private final Map<String, DodgeGame> games = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Direction>> pendingInputs = new ConcurrentHashMap<>();
     private final Map<String, Map<Integer, Map<String, Direction>>> recordedInputs = new ConcurrentHashMap<>();
+    private final Map<String, Map<Integer, List<String>>> departuresByTick = new ConcurrentHashMap<>();
     private final Map<String, Map<String, String>> displayNames = new ConcurrentHashMap<>();
     private final Map<String, Map<String, Long>> memberIds = new ConcurrentHashMap<>();
     private final Map<String, Instant> startedAt = new ConcurrentHashMap<>();
@@ -89,14 +99,23 @@ public class DodgeGameSink implements GameCommandSink {
         return GameType.DODGE;
     }
 
-    /** 테스트에서 상태를 들여다보기 위한 접근자. */
-    public DodgeGame gameOf(String roomId) {
+    /** 테스트에서 상태를 들여다보기 위한 접근자. 프로덕션 코드는 부르지 않는다. */
+    DodgeGame gameOf(String roomId) {
         return games.get(roomId);
     }
 
-    /** 테스트에서 아직 소비되지 않은 입력을 들여다보기 위한 접근자. */
-    public Direction pendingInputOf(String roomId, String participantId) {
+    /** 테스트에서 아직 소비되지 않은 입력을 들여다보기 위한 접근자. 프로덕션 코드는 부르지 않는다. */
+    Direction pendingInputOf(String roomId, String participantId) {
         return pendingInputs.getOrDefault(roomId, Map.of()).get(participantId);
+    }
+
+    /**
+     * 테스트에서 방별 틱 타이머의 구독을 직접 들여다보기 위한 접근자. 프로덕션 코드는 부르지
+     * 않는다. {@code gameOf(roomId)} 가 null 이 되는 것(={@link #tick} 이 {@code games} 맵에서
+     * 뺀 것)과 실제로 타이머가 {@code dispose()} 된 것은 별개다 — 이 둘을 혼동하면 안 된다.
+     */
+    Disposable timerOf(String roomId) {
+        return timers.get(roomId);
     }
 
     @Override
@@ -125,6 +144,7 @@ public class DodgeGameSink implements GameCommandSink {
         games.put(roomId, new DodgeGame(participantIds, idGenerator.nextSeed()));
         pendingInputs.put(roomId, new ConcurrentHashMap<>());
         recordedInputs.put(roomId, new LinkedHashMap<>());
+        departuresByTick.put(roomId, new LinkedHashMap<>());
         displayNames.put(roomId, names);
         memberIds.put(roomId, memberIdsByParticipant);
         startedAt.put(roomId, clock.instant());
@@ -156,7 +176,8 @@ public class DodgeGameSink implements GameCommandSink {
 
     @Override
     public void onParticipantGone(Room room, String participantId) {
-        DodgeGame game = games.get(room.roomId());
+        String roomId = room.roomId();
+        DodgeGame game = games.get(roomId);
         if (game == null) {
             return;
         }
@@ -168,7 +189,22 @@ public class DodgeGameSink implements GameCommandSink {
         // arrives after the game has already ended, harmless here. The actual end-of-game
         // decision and result recording only ever happen from tick() below.
         synchronized (game) {
+            // Only an eliminate() call that actually changes state is a real departure worth
+            // replaying — recording a no-op (already finished, already gone, unknown id) would
+            // make DodgeReplayRunner try to eliminate an already-absent participant, which is
+            // harmless but pollutes the replay with an event that never really happened live.
+            boolean isARealDeparture = !game.finished() && game.survivors().contains(participantId);
+            int tickOfDeparture = game.tick();
+
             game.eliminate(participantId);
+
+            if (isARealDeparture) {
+                Map<Integer, List<String>> departures = departuresByTick.get(roomId);
+                if (departures != null) {
+                    departures.computeIfAbsent(tickOfDeparture, ignored -> new ArrayList<>())
+                            .add(participantId);
+                }
+            }
         }
     }
 
@@ -182,10 +218,25 @@ public class DodgeGameSink implements GameCommandSink {
         DodgeFrame frame;
         boolean justFinished;
         synchronized (game) {
+            // Drain by removing each currently-present key individually (each pendingInputs
+            // value is a ConcurrentHashMap) rather than copy-then-clear: a copy followed by a
+            // clear has a window between the two where an onGameCommand put for a brand-new
+            // key would be wiped by the clear without ever being read by this tick — silently
+            // dropped rather than merely deferred to the next one. Removing key-by-key means a
+            // key not yet present when we snapshot the key set is untouched here and survives
+            // for the next tick's drain instead.
             Map<String, Direction> buffer = pendingInputs.get(roomId);
-            Map<String, Direction> inputs = buffer == null ? Map.of() : new LinkedHashMap<>(buffer);
-            if (buffer != null) {
-                buffer.clear();
+            Map<String, Direction> inputs;
+            if (buffer == null) {
+                inputs = Map.of();
+            } else {
+                inputs = new LinkedHashMap<>();
+                for (String participantId : List.copyOf(buffer.keySet())) {
+                    Direction direction = buffer.remove(participantId);
+                    if (direction != null) {
+                        inputs.put(participantId, direction);
+                    }
+                }
             }
 
             int tickBeforeAdvance = game.tick();
@@ -244,10 +295,12 @@ public class DodgeGameSink implements GameCommandSink {
         Map<String, Integer> ranks;
         int seed;
         Map<Integer, Map<String, Direction>> inputsByTick;
+        Map<Integer, List<String>> departures;
         synchronized (game) {
             ranks = game.finalRanks();
             seed = game.seed();
             inputsByTick = recordedInputs.getOrDefault(roomId, Map.of());
+            departures = departuresByTick.getOrDefault(roomId, Map.of());
         }
 
         String winner = ranks.entrySet().stream()
@@ -279,7 +332,7 @@ public class DodgeGameSink implements GameCommandSink {
                 participants
         );
 
-        DodgeReplay replay = new DodgeReplay(seed, new ArrayList<>(names.keySet()), inputsByTick);
+        DodgeReplay replay = new DodgeReplay(seed, new ArrayList<>(names.keySet()), inputsByTick, departures);
         String ndjson = replayWriter.toNdjson(replay, names);
 
         gameResultService.record(finished, ndjson).subscribe(
@@ -289,6 +342,7 @@ public class DodgeGameSink implements GameCommandSink {
 
         pendingInputs.remove(roomId);
         recordedInputs.remove(roomId);
+        departuresByTick.remove(roomId);
         displayNames.remove(roomId);
         memberIds.remove(roomId);
         startedAt.remove(roomId);

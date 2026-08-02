@@ -1,5 +1,6 @@
 package com.woobeee.game.dodge;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -8,6 +9,12 @@ import java.util.Map;
  * <p>같은 시드로 {@link DodgeGame} 을 새로 만들고, 기록된 입력만 틱 순서대로 적용한다.
  * 입력이 없는 틱은 빈 입력으로 진행한다 — 기보에 없는 틱은 "그 틱에 아무도 입력하지 않았다"는
  * 뜻이지 재생을 멈추라는 뜻이 아니다.
+ *
+ * <p>이탈은 그 틱의 입력을 적용하기 <b>전에</b> 먼저 반영한다 — 실제 게임에서도
+ * {@link DodgeGame#eliminate(String)} 은 타이머가 그 틱을 돌리기 전, 틱 사이 어느 시점에든
+ * 불릴 수 있는 별개의 사건이었다. 이탈이 게임을 끝냈다면(생존자 1명 이하) 그 틱의
+ * {@code advanceOneTick} 은 원본에서도 실행되지 않았으므로(끝난 게임에서 호출은 아무 일도 하지
+ * 않는 no-op이다) 여기서도 건너뛴다 — 그래야 틱 카운트가 원본과 정확히 같게 남는다.
  */
 public class DodgeReplayRunner {
     /**
@@ -35,8 +42,17 @@ public class DodgeReplayRunner {
         DodgeGame game = new DodgeGame(replay.participantIds(), replay.seed());
 
         while (!game.finished() && game.tick() < maxTicks) {
-            Map<String, Direction> inputs =
-                    replay.inputsByTick().getOrDefault(game.tick(), Map.of());
+            int currentTick = game.tick();
+
+            for (String participantId : replay.departuresByTick().getOrDefault(currentTick, List.of())) {
+                game.eliminate(participantId);
+            }
+
+            if (game.finished()) {
+                break;
+            }
+
+            Map<String, Direction> inputs = replay.inputsByTick().getOrDefault(currentTick, Map.of());
             game.advanceOneTick(inputs);
         }
 
