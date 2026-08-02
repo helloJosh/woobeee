@@ -379,6 +379,26 @@ function requireParticipantIds(value: unknown): string[] {
     })
 }
 
+/**
+ * 중복 participantId 를 거른다. 이것도 "서버가 쓸 수 없는 값" 이다 —
+ * {@code DodgeReplay.participantIds} 는 방의 멤버 목록에서 오고 participantId 는 방 안에서
+ * 유일하다.
+ *
+ * <p>거르지 않으면 조용히 다른 게임이 된다. 중복이 둘 있으면 명단 길이는 2라
+ * {@link startingCells} 가 <b>두 개</b>의 시작 칸을 만드는데, 위치 맵의 키는 하나뿐이라 두
+ * 번째가 첫 번째를 덮어쓴다 — 첫 프레임부터 사람 수가 원본과 다르고, 종료 조건
+ * (`participantIds.length > 1 && positions.size <= 1`)까지 갈린다. 예외도 경고도 없다.
+ */
+function requireDistinct(participantIds: string[]): string[] {
+    if (new Set(participantIds).size !== participantIds.length) {
+        throw new Error(
+            "Dodge replay header players contains duplicate participantIds;" +
+                " the seat count and the position map would disagree from the first frame"
+        )
+    }
+    return participantIds
+}
+
 export function parseReplayNdjson(text: string): DodgeReplayData {
     const lines = text.trim().split("\n")
     const header = JSON.parse(lines[0])
@@ -399,7 +419,7 @@ export function parseReplayNdjson(text: string): DodgeReplayData {
     // 규칙 상수를 대조한 다음, 재생의 두 뼈대(난수 씨앗·참가자 명단)를 검사한다. 둘 다
     // 틀리면 예외 없이 다른 게임이 그려지는 값이므로 여기서 막는 것 말고는 방법이 없다.
     const seed = requireSeed(header.seed)
-    const participantIds = requireParticipantIds(header.players)
+    const participantIds = requireDistinct(requireParticipantIds(header.players))
 
     const inputsByTick: Record<number, Record<string, DirectionName>> = {}
     const departuresByTick: Record<number, string[]> = {}

@@ -9,10 +9,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import DodgeGrid, { DODGE_PLAYER_COLORS } from "@/components/game/dodge-grid"
 import RoomJoinGate from "@/components/game/room-join-gate"
 import RoomSidebar from "@/components/game/room-sidebar"
-import { tokenManager } from "@/lib/api"
 import { createGameSocket, type GameSocket, type SocketStatus } from "@/lib/game-socket"
 import {
     discardGuestTokenOnRejection,
+    discardMemberTokenOnRejection,
     readStoredGuestIdentity,
     resolveJoinToken,
     roomPath,
@@ -84,6 +84,9 @@ function DodgeRoomScreen() {
     // 마지막으로 실제로 나간 이동. shouldSendMove 의 주석 참고 — send 가 null 을 돌려준
     // (=버려진) 프레임은 여기 기록하지 않는다.
     const lastSentMoveRef = useRef<SentMove | null>(null)
+    // 소켓 이펙트의 의존성에서 초대 코드를 뺀 대신 여기로 읽는다 — 아래 이펙트의 설명 참고.
+    const inviteCodeRef = useRef(inviteCode)
+    inviteCodeRef.current = inviteCode
 
     useEffect(() => {
         stateRef.current = state
@@ -104,22 +107,16 @@ function DodgeRoomScreen() {
     }, [roomId, token])
 
     /**
-     * I3: 화면을 정말로 떠날 때만 LEAVE 를 보낸다. 오목 화면과 같은 배치이며 이유도 같지만,
-     * 여기서 얻는 것이 더 크다 — 그냥 닫으면 서버는 30초의 재접속 유예를 두므로, 8인
-     * 장애물피하기에서는 그동안 <b>움직이지 않으면서 여전히 부딪히는 유령</b>을 나머지
-     * 일곱이 피해 다녀야 한다.
+     * I3: 소켓의 수명을 다루는 이펙트는 <b>이것 하나뿐</b>이다. 오목 화면과 같은 구조이고
+     * 이유도 같지만, 여기서 걸린 것이 더 크다 — 그냥 닫으면 서버는 30초의 재접속 유예를
+     * 두므로, 8인 장애물피하기에서는 그동안 <b>움직이지 않으면서 여전히 부딪히는 유령</b>을
+     * 나머지 일곱이 피해 다녀야 한다.
      *
-     * <p>소켓 이펙트의 정리 함수가 아니라 여기인 이유: 그쪽은 `inviteCode` 나 `token` 이
-     * 바뀔 때도 도는데 그건 떠나는 것이 아니라 같은 방에 다시 붙는 것이다. 그리고 소켓
-     * 이펙트보다 먼저 선언해야 한다 — 정리 함수는 선언 순서대로 돌아서, 뒤에 두면 소켓이
-     * 먼저 닫히고 보낼 소켓이 남지 않는다.
+     * <p>왜 이펙트를 나누지 않았는지, 왜 `inviteCode` 가 의존성에 없는지는 오목 화면의
+     * 같은 이펙트에 자세히 적어 두었다. 요점은 순서로 지키는 불변식을 없앤 것이다: 정리
+     * 함수가 하나뿐이라 순서를 틀릴 수 없고, {@link GameSocket} 의 종료 방법이 `leave()`
+     * 하나뿐이라 조용히 닫는 쪽을 고를 수도 없다.
      */
-    useEffect(() => {
-        return () => {
-            socketRef.current?.leave()
-        }
-    }, [roomId])
-
     useEffect(() => {
         if (!token || !tokenSource) {
             return
@@ -132,7 +129,7 @@ function DodgeRoomScreen() {
         setSocketErrorCode(undefined)
         lastSentMoveRef.current = null
 
-        // 버린 소켓의 뒤늦은 콜백을 막는다. close() 는 곧바로 종료 상태를 알리는 것이
+        // 버린 소켓의 뒤늦은 콜백을 막는다. leave() 는 곧바로 종료 상태를 알리는 것이
         // 아니라 onclose 를 기다리므로, 방을 옮기거나 StrictMode 가 이펙트를 두 번 돌릴 때
         // 새 소켓이 이미 connecting 을 올린 뒤에 옛 소켓의 "closed" 가 도착해 그 위를
         // 덮어쓴다 — 멀쩡히 붙는 중인 화면에 "연결이 끊어졌습니다" 가 뜨는 경로다.
@@ -140,10 +137,10 @@ function DodgeRoomScreen() {
 
         const socket = createGameSocket({
             roomId,
-            inviteCode,
-            // 문자열이 아니라 공급자를 넘긴다 — 재접속 JOIN 은 그때그때 저장소에서 다시 읽은
-            // 토큰을 실어야 한다. 문자열로 고정하면 액세스 토큰의 TTL 이 판 도중에 지나는
-            // 순간부터 모든 재접속이 종단 rejected 가 된다(I7).
+            // 초대 코드도 토큰도 공급자로 넘긴다. 재접속 JOIN 은 그때그때의 값을 실어야 하고,
+            // 문자열로 고정하면 액세스 토큰의 TTL 이 판 도중에 지나는 순간부터 모든 재접속이
+            // 종단 rejected 가 된다(I7).
+            inviteCode: () => inviteCodeRef.current,
             token: () => resolveJoinToken(roomId, tokenSource, token),
             onMessage: (message) => {
                 if (active) {
@@ -162,10 +159,10 @@ function DodgeRoomScreen() {
 
         return () => {
             active = false
-            socket.close()
+            socket.leave()
             socketRef.current = null
         }
-    }, [token, tokenSource, roomId, inviteCode])
+    }, [token, tokenSource, roomId])
 
     // 거절당한 게스트 토큰은 버린다. 어떤 상태에서 버려야 하는지는 discardGuestTokenOnRejection
     // 이 안다(그 판단이 여기 있으면 테스트가 닿지 않는다).
@@ -174,20 +171,23 @@ function DodgeRoomScreen() {
     }, [socketStatus, roomId])
 
     // C1: 죽은 회원 토큰으로 거절당했다면 그 토큰을 버리고 게이트로 되돌아간다. 오목 화면과
-    // 같은 판단이며, 모든 거절이 아니라 신원 판정이 실패한 셋에만 해당한다.
-    const memberTokenIsDead = shouldDiscardMemberToken({
+    // 같은 판단이며, 모든 거절이 아니라 신원 판정이 실패한 셋에만 해당한다. 버리는 것은
+    // 액세스 토큰뿐이다 — 리프레시 토큰까지 지우면 blog·auth 세션까지 조용히 끊긴다.
+    const rejection = {
         source: tokenSource,
         status: socketStatus,
         errorCode: socketErrorCode,
-    })
+    }
+    const memberTokenIsDead = shouldDiscardMemberToken(rejection)
 
     useEffect(() => {
-        if (!memberTokenIsDead) {
+        if (!discardMemberTokenOnRejection(rejection)) {
             return
         }
-        tokenManager.removeToken()
         setToken(null)
         setTokenSource(null)
+        // rejection 은 매 렌더 새 객체다. 판정 결과만 의존성에 둔다.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [memberTokenIsDead])
 
     const selfParticipantId = resolveSelfParticipantId({

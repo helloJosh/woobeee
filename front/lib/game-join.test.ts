@@ -21,7 +21,12 @@ const api = vi.hoisted(() => ({
  * `resolveJoinToken` 이 회원 토큰을 읽는 유일한 문. localStorage 스텁을 세우는 대신 여기서
  * 갈아 끼운다 — 이 모듈이 tokenManager 에 기대는 것이 `getToken()` 하나뿐임이 드러난다.
  */
-const tokens = vi.hoisted(() => ({ getToken: vi.fn<() => string | null>(() => null) }))
+const tokens = vi.hoisted(() => ({
+    getToken: vi.fn<() => string | null>(() => null),
+    removeAccessToken: vi.fn(),
+    // 실수로 이쪽이 불리는 것을 잡기 위해 함께 둔다 — 세션 전체를 끝내는 쪽이다.
+    removeToken: vi.fn(),
+}))
 
 vi.mock("@/lib/api", () => ({ gameAPI: api, tokenManager: tokens }))
 
@@ -30,6 +35,7 @@ import {
     checkNickname,
     clearStoredGuestToken,
     decideJoinGate,
+    discardMemberTokenOnRejection,
     describeJoinBlock,
     discardGuestTokenOnRejection,
     joinRoomAsGuest,
@@ -84,6 +90,8 @@ beforeEach(() => {
     api.issueGuestToken.mockReset()
     tokens.getToken.mockReset()
     tokens.getToken.mockReturnValue(null)
+    tokens.removeAccessToken.mockReset()
+    tokens.removeToken.mockReset()
     vi.spyOn(console, "error").mockImplementation(() => {})
 })
 
@@ -504,6 +512,51 @@ describe("shouldDiscardMemberToken", () => {
         expect(
             shouldDiscardMemberToken({ source: null, status: "rejected", errorCode: DEAD[0] })
         ).toBe(false)
+    })
+
+    /**
+     * <b>액세스 토큰만</b> 버린다. `tokenManager.removeToken()` 은 리프레시 토큰과
+     * memberId·role 까지 함께 지우는데, C1 이 다루는 사건은 액세스 토큰 하나가 죽은 것이고
+     * 그건 리프레시 토큰이 고칠 수 있었던 상태다 — 함께 지우면 고칠 수단까지 없애고 blog·auth
+     * 세션에서도 조용히 로그아웃시킨다.
+     *
+     * <p>실제로 겹치는 순서가 있다: `useVerifiedMemberId` 의 `gameAPI.me()` 가 401 을 받아
+     * <b>갱신에 성공해</b> 새 토큰을 저장한 직후, 낡은 토큰으로 보낸 JOIN 의 거절이 뒤늦게
+     * 도착한다. 전부 지우면 방금 받아 온 멀쩡한 리프레시 토큰까지 날아간다.
+     */
+    it.each(DEAD)("drops only the access token for %s, never the whole session", (code) => {
+        expect(
+            discardMemberTokenOnRejection({ source: "member", status: "rejected", errorCode: code })
+        ).toBe(true)
+
+        expect(tokens.removeAccessToken).toHaveBeenCalledTimes(1)
+        // 리프레시 토큰까지 지우면 고칠 수 있었던 만료가 로그아웃이 된다.
+        expect(tokens.removeToken).not.toHaveBeenCalled()
+    })
+
+    it("touches no storage at all when the rejection is not the token's fault", () => {
+        expect(
+            discardMemberTokenOnRejection({
+                source: "member",
+                status: "rejected",
+                errorCode: "game_roomFull",
+            })
+        ).toBe(false)
+
+        expect(tokens.removeAccessToken).not.toHaveBeenCalled()
+        expect(tokens.removeToken).not.toHaveBeenCalled()
+    })
+
+    it("touches no storage for a guest session", () => {
+        expect(
+            discardMemberTokenOnRejection({
+                source: "guest-session",
+                status: "rejected",
+                errorCode: DEAD[0],
+            })
+        ).toBe(false)
+
+        expect(tokens.removeAccessToken).not.toHaveBeenCalled()
     })
 
     /**

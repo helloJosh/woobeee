@@ -317,7 +317,13 @@ export type SocketStatus =
 
 export interface GameSocketOptions {
     roomId: string
-    inviteCode: string
+    /**
+     * token 과 같은 이유로 함수도 받는다. 화면 쪽에서 더 중요한 이유가 하나 더 있다:
+     * 함수로 넘기면 초대 코드가 바뀌어도 소켓을 다시 만들 필요가 없어, "이 소켓을 놓는다"
+     * 는 사건이 <b>정말 떠날 때만</b> 일어난다. 문자열로 고정하면 URL 의 invite 쿼리 하나가
+     * 바뀌는 것만으로 이탈 처리가 돌아 진행 중인 판에서 자리를 잃는다.
+     */
+    inviteCode: string | (() => string)
     /**
      * 재접속마다 다시 읽는다. 세션 도중 만료되는 액세스 토큰을 쓴다면 함수를 넘겨,
      * 그때그때 갱신된 토큰이 JOIN 에 실리게 한다 — 문자열로 고정하면 만료된 뒤의 모든
@@ -344,20 +350,29 @@ export interface GameSocket {
      */
     send: (type: string, payload?: unknown) => number | null
     /**
-     * 즉시 이탈을 알리고 닫는다. 실제로 LEAVE 프레임을 내보냈으면 `true`.
+     * 이 소켓을 놓는다. 참가가 확정돼 있었다면 LEAVE 를 먼저 보내고 닫는다.
+     * 실제로 LEAVE 프레임을 내보냈으면 `true`.
      *
-     * <p>{@link close} 와의 차이가 서버에서 30초다. 그냥 닫으면 서버는 이탈이 아니라 **연결
-     * 끊김**으로 본다(GameWebSocketHandler:80-90) — `disconnected` 로 방에 알린 뒤 30초의
-     * 재접속 유예를 두고서야 `confirmLeave` 한다. 새로고침한 사람의 자리를 지켜 주는 그
-     * 유예가, 정말로 떠나는 사람에게는 그대로 해가 된다: 8인 장애물피하기에서는 30초 동안
-     * <b>움직이지 않으면서 여전히 부딪히는 유령</b>을 나머지 일곱이 피해 다녀야 하고,
-     * 오목에서는 기권으로 나야 할 GAME_END 가 30초 늦는다.
+     * <p><b>종료 방법이 이것 하나뿐인 것은 의도다.</b> 예전에는 `close()` 도 함께 있었고,
+     * 화면이 그쪽을 부르면 서버는 이탈이 아니라 <b>연결 끊김</b>으로 본다
+     * (GameWebSocketHandler:80-90) — `disconnected` 로 방에 알린 뒤 30초의 재접속 유예를
+     * 두고서야 `confirmLeave` 한다. 새로고침한 사람의 자리를 지켜 주는 그 유예가, 정말로
+     * 떠나는 사람에게는 그대로 해가 된다: 8인 장애물피하기에서는 30초 동안 <b>움직이지
+     * 않으면서 여전히 부딪히는 유령</b>을 나머지 일곱이 피해 다녀야 하고, 오목에서는
+     * 기권으로 나야 할 GAME_END 가 30초 늦는다.
      *
-     * <p>참가가 확정되기 전에는 프레임을 보내지 않는다 — 서버에 아직 우리 자리가 없으므로
-     * 보낼 것이 없고, JOIN 전의 메시지는 어차피 버려진다.
+     * <p>둘 중 하나를 고를 수 있는 한 잘못 고를 수 있고, 실제로 그렇게 됐다. 그래서 고를 수
+     * 없게 만들었다 — 놓는 방법은 이것뿐이고, "알리면 안 되는" 경우는 아래 규칙이 알아서
+     * 처리한다.
+     *
+     * <p>참가가 확정되기 전에는 프레임을 보내지 않고 그냥 닫는다. 서버에 아직 우리 자리가
+     * 없으므로 보낼 것이 없고, JOIN 전의 메시지는 어차피 서버가 버린다. 거절당한 소켓을
+     * 놓을 때(C1) 이 규칙이 그대로 적용된다.
+     *
+     * <p>두 번 불러도 안전하다. 두 번째는 소켓이 이미 닫혀 있어 프레임이 나가지 않고
+     * `false` 를 돌려준다.
      */
     leave: () => boolean
-    close: () => void
 }
 
 export const MAX_RETRIES = 5
@@ -445,6 +460,9 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
     const resolveToken = (): string =>
         typeof options.token === "function" ? options.token() : options.token
 
+    const resolveInviteCode = (): string =>
+        typeof options.inviteCode === "function" ? options.inviteCode() : options.inviteCode
+
     /**
      * 버릴 소켓의 핸들러는 반드시 떼어 낸다. 안 그러면 이미 대체된 소켓의 뒤늦은 onclose 가
      * 재접속을 한 번 더 예약해 연결이 둘로 갈라진다.
@@ -484,7 +502,7 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
             // 무시하면 재접속한 화면이 끊긴 시점의 낡은 상태로 남는다.
             send("JOIN", {
                 roomId: options.roomId,
-                inviteCode: options.inviteCode,
+                inviteCode: resolveInviteCode(),
                 token: resolveToken(),
             })
         }
@@ -566,7 +584,8 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
         return seq
     }
 
-    const close = () => {
+    /** 내부 전용. 밖으로는 {@link GameSocket#leave} 하나만 내보낸다. */
+    const closeQuietly = () => {
         closedByCaller = true
         if (retryTimer !== undefined) {
             clearTimeout(retryTimer)
@@ -591,11 +610,11 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
      */
     const leave = (): boolean => {
         const announced = joinConfirmed && send("LEAVE") !== null
-        close()
+        closeQuietly()
         return announced
     }
 
     open()
 
-    return { send, leave, close }
+    return { send, leave }
 }

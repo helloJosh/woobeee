@@ -168,16 +168,27 @@ public class RoomCommandDispatcher {
     }
 
     /**
-     * 이탈 정리의 실패는 계속 방으로 간다 — 여기에는 알릴 세션이 없다. 유예 만료 타이머가
-     * 부르는 시점에 그 소켓은 이미 사라진 뒤이고, 무엇보다 {@link #settle} 이 실패했다는 것은
-     * 방의 명단·방장·게임 상태가 어긋났을 수 있다는 뜻이라 실제로 방의 소식이다.
+     * 이탈 정리의 실패는 방으로 간다.
+     *
+     * <p>이유는 <b>목적지가 없어서가 아니라 내용 때문</b>이다. {@link #settle} 이 실패했다는
+     * 것은 방의 명단·방장·게임 상태가 어긋났을 수 있다는 뜻이고, 그건 남은 사람들이 알아야 할
+     * 일이다 — 떠나는 당사자에게 알려 봐야 아무 소용이 없다.
+     *
+     * <p>{@code confirmLeave} 는 거기에 더해 알릴 세션 자체가 없다. 유예 만료 타이머가 부르는
+     * 시점에 그 소켓은 이미 사라진 뒤다.
      */
     public void confirmLeave(String roomId, String participantId) {
         guard(roomHubChannel(roomId), null,
                 () -> settle(roomId, participantId, () -> roomService.confirmLeave(roomId, participantId)));
     }
 
-    /** {@link #confirmLeave} 와 같다. 명시적 LEAVE 를 낸 세션은 곧바로 닫히는 중이다. */
+    /**
+     * {@link #confirmLeave} 와 같은 이유로 방으로 보낸다 — <b>다만 목적지가 없어서는 아니다</b>.
+     * 이쪽은 {@code GameWebSocketHandler} 가 살아 있는 세션에서 부르므로 {@code caller} 를
+     * 넘길 수 있었다. 넘기지 않는 것은 선택이다: 이 실패가 말하는 것은 "네 LEAVE 가 거절됐다"
+     * 가 아니라 "이 방의 상태가 어긋났다" 이고, 그 소식이 필요한 쪽은 <b>남는 사람들</b>이다.
+     * 떠나는 세션은 프레임을 읽기도 전에 닫힌다.
+     */
     public void leaveNow(String roomId, String participantId) {
         guard(roomHubChannel(roomId), null,
                 () -> settle(roomId, participantId, () -> roomService.leaveNow(roomId, participantId)));

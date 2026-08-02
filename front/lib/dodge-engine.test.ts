@@ -494,6 +494,41 @@ describe("parseReplayNdjson", () => {
                 .participantIds
         ).toEqual(["m:11", "g:a"])
     })
+
+    /**
+     * 같은 부류의 "서버가 쓸 수 없는 값" 이다 — participantId 는 방 안에서 유일하다. 중복이
+     * 통과하면 명단 길이는 2인데 위치 맵의 키는 하나라, 시작 칸 두 개 중 하나가 즉시 다른
+     * 하나를 덮어쓴다: 첫 프레임부터 사람 수가 원본과 다르고 종료 조건까지 갈린다.
+     */
+    it("refuses duplicate participantIds", () => {
+        const withPlayers = (players: unknown) =>
+            JSON.stringify({ ...header, players }) + "\n"
+
+        expect(() =>
+            parseReplayNdjson(withPlayers([{ participantId: "dup" }, { participantId: "dup" }]))
+        ).toThrow(/duplicate/)
+        expect(() =>
+            parseReplayNdjson(
+                withPlayers([
+                    { participantId: "m:11" },
+                    { participantId: "g:a" },
+                    { participantId: "m:11" },
+                ])
+            )
+        ).toThrow(/duplicate/)
+    })
+
+    /**
+     * 중복이 통과했을 때의 관찰 가능한 증상. 이 테스트가 없으면 위 테스트는 "그냥 던진다"
+     * 이상을 말하지 않는다 — 왜 위험한지가 여기 있다.
+     */
+    it("shows why a duplicate matters: the seat count and the position map disagree", () => {
+        const twoSeats = createDodgeGame(["dup", "dup"], 7)
+        const frame = twoSeats.advanceOneTick({})
+
+        expect(startingCells(2)).toHaveLength(2)
+        expect(Object.keys(frame.positions).length).toBeLessThan(2)
+    })
 })
 
 /**

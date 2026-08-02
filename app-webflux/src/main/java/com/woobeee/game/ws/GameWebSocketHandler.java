@@ -13,6 +13,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
+import reactor.util.concurrent.Queues;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -28,6 +29,9 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class GameWebSocketHandler implements WebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(GameWebSocketHandler.class);
+
+    /** 세션별 직통 버퍼의 크기. {@code RoomHub} 의 방별 버퍼와 같은 값으로 맞춘다. */
+    private static final int PERSONAL_BUFFER_SIZE = 256;
 
     private final JoinAuthenticator joinAuthenticator;
     private final RoomCommandDispatcher dispatcher;
@@ -67,7 +71,14 @@ public class GameWebSocketHandler implements WebSocketHandler {
         // 이 세션에게만 가는 프레임(명령 실패 사유). 허브 구독과 **합쳐서** 하나의 send 에
         // 물린다 — 세션에 직접 쓰면 outbound 가 이미 흐르는 중이라 writer 가 둘이 된다.
         // unicast 는 구독 전에 낸 것도 버퍼에 담아 두므로, JOIN 직후의 프레임도 잃지 않는다.
-        Sinks.Many<ServerMessage> personal = Sinks.many().unicast().onBackpressureBuffer();
+        //
+        // 버퍼는 RoomHub 와 같은 256 으로 묶는다. 무제한으로 두면, 실패하는 명령을 자기 소켓이
+        // 비워 내는 속도보다 빠르게 쏟아내는 클라이언트 하나가 이 큐를 끝없이 키운다 — 방을
+        // 막지는 못하지만 그 세션 하나로 힙을 갉아먹을 수 있다. 가득 차면 tryEmitNext 가
+        // FAIL_OVERFLOW 를 돌려주고 아래 caller 가 그것을 로그로 남긴다.
+        Sinks.Many<ServerMessage> personal = Sinks.many()
+                .unicast()
+                .onBackpressureBuffer(Queues.<ServerMessage>get(PERSONAL_BUFFER_SIZE).get());
         SessionChannel caller = message -> {
             Sinks.EmitResult result = personal.tryEmitNext(message);
             if (result != Sinks.EmitResult.OK) {

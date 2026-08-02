@@ -100,6 +100,25 @@ export const tokenManager = {
         return null
     },
 
+    /**
+     * 액세스 토큰만 버린다. 리프레시 토큰과 신원(memberId·role)은 남긴다.
+     *
+     * <p>{@link removeToken} 과 나눠 둔 이유: "이 액세스 토큰은 죽었다" 와 "이 세션은 끝났다"
+     * 는 전혀 다른 사건인데, 하나뿐이던 시절에는 앞엣것을 만날 때마다 뒤엣것을 실행했다.
+     * 만료된 액세스 토큰은 <b>리프레시 토큰이 고칠 수 있는</b> 상태다 — 함께 지워 버리면
+     * 고칠 수단까지 없애고 사용자를 blog·auth 에서도 조용히 로그아웃시킨다.
+     *
+     * <p>이것만 지우면 다음 인증 요청이 401 을 받고 {@code refreshAccessToken} 이 리프레시
+     * 토큰으로 새 액세스 토큰을 받아 온다 — 사용자는 아무것도 눈치채지 못한다. 리프레시까지
+     * 죽어 있었다면 그때 {@code handleUnauthorized} 가 정식으로 세션을 끝낸다.
+     */
+    removeAccessToken: () => {
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("accessToken")
+        }
+    },
+
+    /** 세션 전체를 끝낸다. 로그아웃과 갱신까지 실패한 401 이 쓴다. */
     removeToken: () => {
         if (typeof window !== "undefined") {
             localStorage.removeItem("accessToken")

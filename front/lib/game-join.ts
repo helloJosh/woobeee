@@ -235,6 +235,30 @@ export function shouldDiscardMemberToken(input: MemberTokenDiscardInput): boolea
 }
 
 /**
+ * 위 판정에 따라 실제로 버린다. 돌려주는 값은 버렸는지다.
+ * {@link discardGuestTokenOnRejection} 과 같은 자리, 같은 이유로 여기 있다 — 저장소를
+ * 건드리는 일이 컴포넌트 안에 있으면 테스트가 닿지 않는다.
+ *
+ * <p><b>액세스 토큰만 버린다.</b> {@code tokenManager.removeToken()} 은 리프레시 토큰과
+ * memberId·role 까지 함께 지우는데, 그러면 만료된 액세스 토큰 하나 때문에 blog·auth 세션까지
+ * 조용히 로그아웃된다 — 정작 그 만료는 리프레시 토큰이 고칠 수 있었던 것이다. 특히 나쁜
+ * 순서가 실제로 있다: `useVerifiedMemberId` 의 `gameAPI.me()` 가 401 을 받아 <b>갱신에
+ * 성공해</b> 새 토큰을 저장한 직후, 낡은 토큰으로 보낸 JOIN 의 거절이 뒤늦게 도착한다.
+ * 전부 지우면 방금 받아 온 멀쩡한 토큰까지 날아간다.
+ *
+ * <p>액세스 토큰만 지워도 게이트로 돌아가는 것은 그대로다 — `decideJoinGate` 는
+ * `memberToken` 이 null 이면 `needs-identity` 를 내주므로 닉네임 폼에 닿는다. 그리고 다음
+ * 인증 요청이 401 을 받는 순간 `refreshAccessToken` 이 세션을 조용히 되살린다.
+ */
+export function discardMemberTokenOnRejection(input: MemberTokenDiscardInput): boolean {
+    if (!shouldDiscardMemberToken(input)) {
+        return false
+    }
+    tokenManager.removeAccessToken()
+    return true
+}
+
+/**
  * JOIN 마다 다시 읽는 토큰. {@code createGameSocket} 의 `token` 에 <b>함수로</b> 넘긴다.
  *
  * <p>게이트가 넘긴 문자열을 그대로 고정하면(I7), 액세스 토큰의 TTL 이 판 도중에 지나는 순간

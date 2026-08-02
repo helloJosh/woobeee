@@ -9,10 +9,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import OmokBoard from "@/components/game/omok-board"
 import RoomJoinGate from "@/components/game/room-join-gate"
 import RoomSidebar from "@/components/game/room-sidebar"
-import { tokenManager } from "@/lib/api"
 import { createGameSocket, type GameSocket, type SocketStatus } from "@/lib/game-socket"
 import {
     discardGuestTokenOnRejection,
+    discardMemberTokenOnRejection,
     readStoredGuestIdentity,
     resolveJoinToken,
     roomPath,
@@ -74,6 +74,10 @@ function OmokRoomScreen() {
     const [state, dispatch] = useReducer(reduceOmokRoom, initialOmokRoomState)
 
     const socketRef = useRef<GameSocket | null>(null)
+    // 소켓 이펙트의 의존성에서 초대 코드를 뺀 대신 여기로 읽는다 — 위 이펙트의 설명 참고.
+    // 렌더 중 대입은 안전하다: 이 ref 는 렌더 결과에 쓰이지 않고, JOIN 시점에만 읽힌다.
+    const inviteCodeRef = useRef(inviteCode)
+    inviteCodeRef.current = inviteCode
 
     // 초대 링크의 모양을 아는 곳은 roomPath 하나뿐이다 — 여기서 다시 조립하면 인코딩이
     // 어긋나 로그인 후 돌아오는 경로와 달라진다.
@@ -90,26 +94,34 @@ function OmokRoomScreen() {
     }, [roomId, token])
 
     /**
-     * I3: 화면을 정말로 떠날 때만 LEAVE 를 보낸다.
+     * I3: 소켓의 수명을 다루는 이펙트는 <b>이것 하나뿐</b>이다.
      *
-     * <p>소켓 이펙트의 정리 함수에 넣으면 안 된다. 그쪽은 `inviteCode` 나 `token` 이 바뀔
-     * 때도 도는데, 그건 떠나는 것이 아니라 같은 방에 다시 붙는 것이다 — 거기서 LEAVE 를
-     * 보내면 자리를 스스로 반납한 뒤 새 참가자로 들어가게 된다(진행 중인 판이면 아예 못
-     * 들어간다). 그래서 <b>방이 바뀌거나 화면이 사라질 때만</b> 도는 별도 이펙트로 둔다.
+     * <p>처음에는 LEAVE 를 별도 이펙트의 정리 함수에 두고 "소켓 이펙트보다 먼저 선언해야
+     * 한다"고 주석으로 못 박았다. 정리 함수는 선언 순서대로 도니까 뒤에 두면 소켓이 먼저
+     * 닫히고 socketRef 가 비기 때문인데 — 그 규칙을 어겨도 타입 검사도 테스트도 빌드도
+     * 전부 통과했다. 즉 30초 유령 버그가 이펙트 두 개의 순서를 바꾸는 것만으로 조용히
+     * 되살아났다. 주석으로 지키는 불변식이었다.
      *
-     * <p>소켓 이펙트보다 <b>먼저</b> 선언해야 한다. 정리 함수는 선언 순서대로 실행되므로,
-     * 뒤에 두면 소켓이 먼저 닫히고 socketRef 가 비어 LEAVE 를 보낼 소켓이 남지 않는다.
+     * <p>그래서 순서가 <b>존재할 수 없게</b> 고쳤다. 정리 함수가 하나뿐이니 순서를 틀릴 수
+     * 없고, {@link GameSocket} 에는 종료 방법이 `leave()` 하나뿐이니 조용히 닫는 쪽을 고를
+     * 수도 없다.
      *
-     * <p>StrictMode 의 이중 호출은 여기 걸리지 않는다. 마운트 직후에는 아직 게이트가 토큰을
-     * 넘기기 전이라 소켓 자체가 없고, 설령 있더라도 `leave()` 는 참가가 확정된(첫 ROOM_STATE
-     * 가 도착한) 연결에서만 프레임을 보낸다 — 그 왕복이 동기적으로 끝날 수는 없다.
+     * <p>그러려면 이 이펙트가 도는 이유가 전부 "정말 떠나는 것" 이어야 한다. 의존성이
+     * `[token, tokenSource, roomId]` 인 것은 그 때문이다.
+     * <ul>
+     *   <li>`roomId` 변경·언마운트 — 진짜 이탈. LEAVE 가 맞다.
+     *   <li>`token` 이 null→값 — 게이트의 인계. 그 전에는 소켓이 없었으므로 정리 자체가 없다.
+     *   <li>`token` 이 값→null — C1 이 죽은 토큰을 버린 경우. 그 소켓은 이미 종단
+     *       `rejected` 라 참가가 확정된 적이 없고, `leave()` 는 그때 프레임을 보내지 않는다.
+     *   <li>`inviteCode` — <b>일부러 뺐다.</b> 초대 코드만 바뀌는 것은 이탈이 아닌데
+     *       의존성에 두면 LEAVE 가 나가 진행 중인 판에서 자리를 잃는다. 소켓에는 공급자로
+     *       넘겨, 다음 JOIN 이 최신 값을 싣는다.
+     * </ul>
+     *
+     * <p>StrictMode 의 이중 호출도 안전하다. 마운트 직후에는 게이트가 아직 토큰을 넘기기
+     * 전이라 소켓이 없고, 있더라도 `leave()` 는 참가가 확정된(첫 ROOM_STATE 가 도착한)
+     * 연결에서만 프레임을 보낸다 — 그 왕복이 동기적으로 끝날 수는 없다.
      */
-    useEffect(() => {
-        return () => {
-            socketRef.current?.leave()
-        }
-    }, [roomId])
-
     useEffect(() => {
         if (!token || !tokenSource) {
             return
@@ -121,7 +133,7 @@ function OmokRoomScreen() {
         setSocketStatus("connecting")
         setSocketErrorCode(undefined)
 
-        // 버린 소켓의 뒤늦은 콜백을 막는다. close() 는 곧바로 종료 상태를 알리는 것이
+        // 버린 소켓의 뒤늦은 콜백을 막는다. leave() 는 곧바로 종료 상태를 알리는 것이
         // 아니라 onclose 를 기다리므로, 방을 옮기거나 StrictMode 가 이펙트를 두 번 돌릴 때
         // 새 소켓이 이미 connecting 을 올린 뒤에 옛 소켓의 "closed" 가 도착해 그 위를
         // 덮어쓴다 — 멀쩡히 붙는 중인 화면에 "연결이 끊어졌습니다" 가 뜨는 경로다.
@@ -129,10 +141,10 @@ function OmokRoomScreen() {
 
         const socket = createGameSocket({
             roomId,
-            inviteCode,
-            // 문자열이 아니라 공급자를 넘긴다 — 재접속 JOIN 은 그때그때 저장소에서 다시 읽은
-            // 토큰을 실어야 한다. 문자열로 고정하면 액세스 토큰의 TTL 이 판 도중에 지나는
-            // 순간부터 모든 재접속이 종단 rejected 가 된다(I7).
+            // 초대 코드도 토큰도 공급자로 넘긴다. 재접속 JOIN 은 그때그때의 값을 실어야 하고,
+            // 문자열로 고정하면 액세스 토큰의 TTL 이 판 도중에 지나는 순간부터 모든 재접속이
+            // 종단 rejected 가 된다(I7).
+            inviteCode: () => inviteCodeRef.current,
             token: () => resolveJoinToken(roomId, tokenSource, token),
             onMessage: (message) => {
                 if (active) {
@@ -151,10 +163,10 @@ function OmokRoomScreen() {
 
         return () => {
             active = false
-            socket.close()
+            socket.leave()
             socketRef.current = null
         }
-    }, [token, tokenSource, roomId, inviteCode])
+    }, [token, tokenSource, roomId])
 
     // 거절당한 게스트 토큰은 버린다. 어떤 상태에서 버려야 하는지는 discardGuestTokenOnRejection
     // 이 안다 — 그 판단이 이 이펙트 안에 있으면 테스트가 닿지 않는다.
@@ -164,21 +176,23 @@ function OmokRoomScreen() {
 
     // C1: 죽은 회원 토큰으로 거절당했다면 그 토큰을 버리고 게이트로 되돌아간다. 종단 패널에
     // 남겨 두면 "다시 참가" 버튼이 새로고침으로 같은 거절을 재현할 뿐이고, 게스트 갈림길에
-    // 닿을 방법이 없다. 어떤 거절이 그에 해당하는지는 shouldDiscardMemberToken 이 안다 —
-    // 모든 거절이 아니다(방이 가득 찬 것은 토큰의 문제가 아니다).
-    const memberTokenIsDead = shouldDiscardMemberToken({
+    // 닿을 방법이 없다. 어떤 거절이 그에 해당하는지, 그리고 무엇을 지울지(액세스 토큰만이다 —
+    // 리프레시 토큰까지 지우면 blog·auth 세션까지 조용히 끊긴다)는 game-join.ts 가 안다.
+    const rejection = {
         source: tokenSource,
         status: socketStatus,
         errorCode: socketErrorCode,
-    })
+    }
+    const memberTokenIsDead = shouldDiscardMemberToken(rejection)
 
     useEffect(() => {
-        if (!memberTokenIsDead) {
+        if (!discardMemberTokenOnRejection(rejection)) {
             return
         }
-        tokenManager.removeToken()
         setToken(null)
         setTokenSource(null)
+        // rejection 은 매 렌더 새 객체다. 판정 결과만 의존성에 둔다.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [memberTokenIsDead])
 
     const selfParticipantId = resolveSelfParticipantId({

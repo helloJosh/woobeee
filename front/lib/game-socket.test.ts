@@ -228,7 +228,7 @@ describe("createGameSocket leave", () => {
         const statuses: SocketStatus[] = []
         const socket = createGameSocket({
             roomId: "room-1",
-            inviteCode: "code",
+            inviteCode: () => "code",
             token: () => "tok",
             onMessage: () => {},
             onStatusChange: (status) => statuses.push(status),
@@ -238,6 +238,23 @@ describe("createGameSocket leave", () => {
         wire.confirmJoin()
         return { socket, wire, statuses }
     }
+
+    /**
+     * I3 (수정 2회차) — <b>종료 방법은 하나뿐이어야 한다.</b>
+     *
+     * <p>예전에는 `close()` 와 `leave()` 가 둘 다 있었고, 화면이 `close()` 를 부르면 30초
+     * 유령 버그가 조용히 되살아났다. 리뷰어가 이펙트 두 개의 순서만 바꿔 그 상태를 재현했고
+     * 320개 테스트가 전부 통과했다 — 주석으로만 지키던 불변식이었다.
+     *
+     * <p>그래서 고를 수 없게 만들었다. 이 테스트는 그 결정 자체를 고정한다: 표면에 `close`
+     * 가 다시 생기면 여기서 깨진다.
+     */
+    it("offers exactly one way to let go of the socket", () => {
+        const { socket } = joinedSocket()
+
+        expect(Object.keys(socket).sort()).toEqual(["leave", "send"])
+        expect((socket as unknown as Record<string, unknown>).close).toBeUndefined()
+    })
 
     /**
      * GAME-AC-09 의 클라이언트 쪽 절반. 서버는 LEAVE 를 유예 없이 처리하지만
@@ -254,15 +271,6 @@ describe("createGameSocket leave", () => {
         expect(wire.log).toEqual(["SEND JOIN", "SEND LEAVE", "CLOSE"])
     })
 
-    /** 대조군 — 그냥 닫으면 서버는 이탈이 아니라 끊김으로 본다. 그것이 기존 동작이다. */
-    it("close() still says nothing, which is what makes leave() necessary", () => {
-        const { socket, wire } = joinedSocket()
-
-        socket.close()
-
-        expect(wire.typesSent()).toEqual(["JOIN"])
-    })
-
     /**
      * StrictMode 가 이펙트를 두 번 돌리거나, 붙는 도중에 화면을 떠나는 경우. 서버에 아직 우리
      * 자리가 없으므로 보낼 것이 없고, JOIN 전의 메시지는 어차피 서버가 버린다.
@@ -270,7 +278,7 @@ describe("createGameSocket leave", () => {
     it("says nothing when the server never confirmed the join", () => {
         const socket = createGameSocket({
             roomId: "room-1",
-            inviteCode: "code",
+            inviteCode: () => "code",
             token: () => "tok",
             onMessage: () => {},
         })
@@ -284,13 +292,71 @@ describe("createGameSocket leave", () => {
     it("says nothing when the handshake never completed", () => {
         const socket = createGameSocket({
             roomId: "room-1",
-            inviteCode: "code",
+            inviteCode: () => "code",
             token: () => "tok",
             onMessage: () => {},
         })
 
         expect(socket.leave()).toBe(false)
         expect(FakeWebSocket.instances[0].typesSent()).toEqual([])
+    })
+
+    /**
+     * C1 이 죽은 회원 토큰을 버릴 때 소켓을 놓는 경로. 그 소켓은 종단 `rejected` 이므로
+     * 참가가 확정된 적이 없고, 따라서 LEAVE 가 나가면 안 된다.
+     *
+     * <p>이 성질이 화면 쪽 구조를 떠받친다. 소켓 이펙트의 정리 함수 하나가 <b>모든</b>
+     * 해제를 담당할 수 있는 것은, 토큰이 바뀌어 도는 해제가 이렇게 조용하기 때문이다.
+     * 여기가 깨지면 게이트로 돌아가는 것만으로 방에서 이탈 처리가 된다.
+     */
+    it("says nothing when releasing a socket the server rejected", () => {
+        const statuses: SocketStatus[] = []
+        const socket = createGameSocket({
+            roomId: "room-1",
+            inviteCode: () => "code",
+            token: () => "dead-token",
+            onMessage: () => {},
+            onStatusChange: (status) => statuses.push(status),
+        })
+        const wire = FakeWebSocket.instances[0]
+        wire.handshake()
+        // 서버가 거절 직전에 이유를 써 주고 정상 종료(1000)로 닫는다.
+        wire.onmessage?.({
+            data: JSON.stringify({ type: "ERROR", payload: { code: "game_invalidGameToken" } }),
+        })
+        wire.readyState = FakeWebSocket.CLOSED
+        wire.onclose?.({ code: NORMAL_CLOSURE })
+
+        expect(statuses).toContain("rejected")
+        expect(socket.leave()).toBe(false)
+        expect(wire.typesSent()).toEqual(["JOIN"])
+    })
+
+    /**
+     * I3 — 초대 코드도 JOIN 마다 다시 읽는다. 화면이 이것을 공급자로 넘기는 덕분에 초대
+     * 코드가 바뀌어도 소켓을 다시 만들 필요가 없고, 그래서 "이 소켓을 놓는다" 는 사건이
+     * 정말 떠날 때만 일어난다.
+     */
+    it("asks the invite-code supplier again on every JOIN", () => {
+        const codes = ["first", "second"]
+        createGameSocket({
+            roomId: "room-1",
+            inviteCode: () => codes.shift() ?? "exhausted",
+            token: () => "tok",
+            onMessage: () => {},
+        })
+
+        const first = FakeWebSocket.instances[0]
+        first.handshake()
+        first.readyState = FakeWebSocket.CLOSED
+        first.onclose?.({ code: 1006 })
+
+        vi.advanceTimersByTime(BASE_DELAY_MS)
+        const second = FakeWebSocket.instances[1]
+        second.handshake()
+
+        expect(JSON.parse(first.sent[0]).payload.inviteCode).toBe("first")
+        expect(JSON.parse(second.sent[0]).payload.inviteCode).toBe("second")
     })
 
     it("settles the caller on closed exactly once", () => {
@@ -310,7 +376,7 @@ describe("createGameSocket leave", () => {
         const tokens = ["first", "second"]
         createGameSocket({
             roomId: "room-1",
-            inviteCode: "code",
+            inviteCode: () => "code",
             token: () => tokens.shift() ?? "exhausted",
             onMessage: () => {},
         })

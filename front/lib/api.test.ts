@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { authAPI, gameAPI } from "./api"
+import { authAPI, gameAPI, tokenManager } from "./api"
 
 /**
  * `apiRequest` 의 401 처리 하나만 본다 — 그 경로가 <b>플레이 중인 판을 날릴 수 있는</b>
@@ -135,5 +135,36 @@ describe("401 handling", () => {
         expect(alertSpy).toHaveBeenCalled()
         expect(reloadSpy).toHaveBeenCalled()
         expect(store.has("accessToken")).toBe(false)
+    })
+})
+
+/**
+ * "이 액세스 토큰은 죽었다" 와 "이 세션은 끝났다" 는 다른 사건이다. 하나뿐이던 시절에는
+ * 앞엣것을 만날 때마다 뒤엣것을 실행했고, 그래서 C1 의 첫 수정판은 만료된 액세스 토큰 하나
+ * 때문에 blog·auth 세션까지 조용히 끊었다.
+ */
+describe("token removal", () => {
+    beforeEach(() => {
+        store.set("authMemberId", "11")
+        store.set("authRole", "ROLE_MEMBER")
+    })
+
+    it("removeAccessToken keeps what refreshAccessToken needs to recover", () => {
+        tokenManager.removeAccessToken()
+
+        expect(store.has("accessToken")).toBe(false)
+        // 이 셋이 남아 있어야 다음 401 에서 갱신이 조용히 세션을 되살린다.
+        expect(store.get("refreshToken")).toBe("stale-refresh")
+        expect(store.get("authMemberId")).toBe("11")
+        expect(store.get("authRole")).toBe("ROLE_MEMBER")
+    })
+
+    it("removeToken still ends the whole session, which is what logout needs", () => {
+        tokenManager.removeToken()
+
+        expect(store.has("accessToken")).toBe(false)
+        expect(store.has("refreshToken")).toBe(false)
+        expect(store.has("authMemberId")).toBe(false)
+        expect(store.has("authRole")).toBe(false)
     })
 })
