@@ -30,6 +30,7 @@ import {
 } from "@/lib/dodge-play"
 import type { DirectionName } from "@/lib/dodge-engine"
 import { useAuth } from "@/hooks/use-auth"
+import { useVerifiedMemberId } from "@/hooks/use-verified-member-id"
 
 /**
  * useSearchParams 를 쓰는 클라이언트 컴포넌트는 Suspense 경계 안에 있어야 한다 — 없으면
@@ -49,7 +50,10 @@ function DodgeRoomScreen() {
     const roomId = params.roomId
     const inviteCode = searchParams.get("invite") ?? ""
 
-    const { memberId } = useAuth()
+    // 오목 화면과 같은 이유로 게임 서버가 확인해 준 memberId 를 쓴다(useVerifiedMemberId 참고).
+    // 여기서 신원이 어긋나면 여덟 명 중 남의 말이 내 말로 표시되고 탈락 판정까지 뒤바뀐다.
+    const { memberId: storedMemberId } = useAuth()
+    const memberId = useVerifiedMemberId(storedMemberId)
 
     // 게이트가 넘겨 준 토큰. 이것이 생기기 전에는 소켓을 열지 않는다.
     const [token, setToken] = useState<string | null>(null)

@@ -23,6 +23,31 @@ export interface SelfIdentityInput {
 }
 
 /**
+ * 회원의 participantId. 서버 `GameParticipant.member` 가 `"m:" + memberId` 로 만든다.
+ *
+ * <p>규칙을 아는 곳은 여기 하나다 — 기보 다시보기(lib/replay-view.ts)도 같은 규칙으로 내
+ * 말을 찾으므로, 문자열을 여기저기서 다시 조립하면 한쪽만 고쳐진 채 남는다.
+ */
+export function memberParticipantId(memberId: number | null): string | null {
+    return memberId === null ? null : `m:${memberId}`
+}
+
+/**
+ * 내 memberId 로 무엇을 믿을 것인가.
+ *
+ * <p>`localStorage.authMemberId`(useAuth().memberId)는 로그인할 때 우리가 적어 둔 값이라
+ * 토큰과 어긋날 수 있다. `GET /api/game/me` 는 게임 서버가 <b>소켓 JOIN 과 같은 검증기</b>로
+ * 토큰에서 뽑아 준 값이라 구조적으로 정확하다 — 그래서 그쪽이 오면 그쪽을 쓴다.
+ *
+ * <p>다만 그 호출은 실패할 수 있고(게임 서버가 죽어 있어도 오목 화면 자체는 웹소켓으로
+ * 돌아간다) 게스트에게는 애초에 부를 수 없다(`GamePrincipals.require` 가 던진다). 그때는
+ * 저장된 값으로 되돌아간다 — 신원을 아예 잃는 것보다 낫다.
+ */
+export function chooseMemberId(verified: number | null, stored: number | null): number | null {
+    return verified !== null ? verified : stored
+}
+
+/**
  * 명단에서 "나" 를 찾는다.
  *
  * <p>서버는 내 participantId 를 따로 알려주지 않지만 규칙으로 계산할 수 있다 —
@@ -39,8 +64,7 @@ export interface SelfIdentityInput {
  * 실제로 JOIN 에 실려 간 토큰이 게스트 토큰이므로 서버가 보는 나도 그쪽이다.
  */
 export function resolveSelfParticipantId(input: SelfIdentityInput): string | null {
-    const candidate = input.guestParticipantId
-        ?? (input.memberId !== null ? `m:${input.memberId}` : null)
+    const candidate = input.guestParticipantId ?? memberParticipantId(input.memberId)
 
     if (candidate && input.participants.some((p) => p.participantId === candidate)) {
         return candidate

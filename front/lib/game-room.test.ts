@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { describeSocketStatus, isSocketSettled, resolveSelfParticipantId } from "./game-room"
+import {
+    chooseMemberId,
+    describeSocketStatus,
+    isSocketSettled,
+    memberParticipantId,
+    resolveSelfParticipantId,
+} from "./game-room"
 import type { ParticipantView } from "./types"
 
 /**
@@ -104,5 +110,26 @@ describe("socket status", () => {
         expect(withCode).toBeTruthy()
         expect(withoutCode).toBe("방에 입장할 수 없습니다. 링크를 다시 확인해 주세요.")
         expect(withCode).not.toBe(withoutCode)
+    })
+})
+
+describe("member identity", () => {
+    // 서버 GameParticipant.member 와 같은 규칙. 기보 뷰어도 이 함수로 내 말을 찾으므로
+    // 접두사를 여기서 바꾸면 플레이 화면과 다시보기가 함께 움직인다.
+    it("builds the member participant id and nothing at all for a guest", () => {
+        expect(memberParticipantId(7)).toBe("m:7")
+        expect(memberParticipantId(null)).toBeNull()
+    })
+
+    /**
+     * localStorage 의 authMemberId 는 우리가 적어 둔 값이고, `/api/game/me` 는 게임 서버가
+     * 토큰에서 뽑아 준 값이다. 뒤엣것이 오면 그쪽을 쓴다 — 다만 그 호출은 실패할 수 있고
+     * 게스트에게는 아예 부를 수 없으므로, 없을 때 신원을 통째로 잃으면 안 된다.
+     */
+    it("prefers the server's answer but never loses the stored one", () => {
+        expect(chooseMemberId(11, 7)).toBe(11)
+        expect(chooseMemberId(null, 7)).toBe(7)
+        expect(chooseMemberId(11, null)).toBe(11)
+        expect(chooseMemberId(null, null)).toBeNull()
     })
 })

@@ -4,6 +4,7 @@ import {
     ApiResponse,
     CartResponse,
     CreateRoomResult,
+    GamePrincipalView,
     GameResultSummary,
     GameType,
     GetCommentResponse,
@@ -417,6 +418,19 @@ export const gameAPI = {
         const json: ApiResponse<GuestTokenResult> = await response.json()
         if (!isApiSuccessful(json)) {
             throw new Error(json.header.message || "닉네임으로 참가하지 못했습니다.")
+        }
+        return json.data
+    },
+
+    /**
+     * 토큰이 말하는 나. 회원 전용이다 — 게임 서버의 `GamePrincipals.require` 는 인증이
+     * 없으면 던지므로, 로그인하지 않은 방문자(게스트)에게는 부르면 안 된다.
+     */
+    me: async (): Promise<GamePrincipalView> => {
+        const response = await apiRequest("/api/game/me", {}, true, { suppressAlert: true })
+        const json: ApiResponse<GamePrincipalView> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "내 정보를 불러오지 못했습니다.")
         }
         return json.data
     },

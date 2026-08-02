@@ -26,6 +26,7 @@ import {
     resolveSelfParticipantId,
 } from "@/lib/game-room"
 import { useAuth } from "@/hooks/use-auth"
+import { useVerifiedMemberId } from "@/hooks/use-verified-member-id"
 
 /**
  * useSearchParams 를 쓰는 클라이언트 컴포넌트는 Suspense 경계 안에 있어야 한다 — 없으면
@@ -45,7 +46,10 @@ function OmokRoomScreen() {
     const roomId = params.roomId
     const inviteCode = searchParams.get("invite") ?? ""
 
-    const { memberId } = useAuth()
+    // 저장해 둔 authMemberId 대신 게임 서버가 토큰에서 뽑아 준 값을 쓴다(회원일 때만).
+    // 소켓 JOIN 을 통과시키는 검증기와 같은 것이라 신원이 어긋날 수 없다.
+    const { memberId: storedMemberId } = useAuth()
+    const memberId = useVerifiedMemberId(storedMemberId)
 
     // 게이트가 넘겨 준 토큰. 이것이 생기기 전에는 소켓을 열지 않는다.
     const [token, setToken] = useState<string | null>(null)
