@@ -272,10 +272,16 @@ export function stepReplay(game: DodgeGameInstance, replay: DodgeReplayData): Do
     return game.advanceOneTick(replay.inputsByTick[currentTick] ?? {})
 }
 
-export function rerunReplay(replay: DodgeReplayData) {
+/**
+ * @param maxTicks 테스트 전용 이음매. 서버의 `DodgeReplayRunner(int maxTicks)` 패키지 전용
+ *   생성자와 같은 목적이다 — 상한에 실제로 도달하는 경로를 십만 틱을 돌리지 않고 검증하기
+ *   위한 것이고, 그 경로(끝나지 않는 기보를 조용히 "짧은 정상 게임"으로 돌려주지 않는다)는
+ *   이 이음매 없이는 실행으로 확인할 방법이 없다. 기본값은 프로덕션 상한 그대로다.
+ */
+export function rerunReplay(replay: DodgeReplayData, maxTicks: number = REPLAY_MAX_TICKS) {
     const game = createDodgeGame(replay.participantIds, replay.seed)
 
-    while (!game.finished && game.tick < REPLAY_MAX_TICKS) {
+    while (!game.finished && game.tick < maxTicks) {
         if (stepReplay(game, replay) === null) {
             break
         }
@@ -285,7 +291,7 @@ export function rerunReplay(replay: DodgeReplayData) {
     // 확인하지 않은 호출자가 손상된/무한한 기보를 "짧은 정상 게임"으로 취급한다.
     if (!game.finished) {
         throw new Error(
-            `Dodge replay for seed ${replay.seed} did not finish within ${REPLAY_MAX_TICKS} ticks` +
+            `Dodge replay for seed ${replay.seed} did not finish within ${maxTicks} ticks` +
                 " — likely a malformed or non-terminating replay"
         )
     }

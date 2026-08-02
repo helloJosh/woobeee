@@ -31,6 +31,8 @@ const ISO_CONTROL = /[\u0000-\u001F\u007F-\u009F]/
  * - `javascript:alert(1)` — 같은 이유로 거절.
  * - `//evil.example` — 스킴 상대 URL. 브라우저는 이것을 외부 호스트로 읽는다. 거절.
  * - `/\evil.example` — 백슬래시는 브라우저가 `/` 로 정규화하므로 위와 같다. 거절.
+ * - `/..//evil.example` — 앞의 네 규칙을 전부 통과하지만 점 세그먼트를 지우고 나면 경로가
+ *   `//evil.example` 이 된다. 아래 PROBE 참고.
  *
  * 거절한 것은 전부 홈으로 떨어뜨린다 — 오류를 보여줄 만한 상황이 아니고, 홈은 항상 안전하다.
  */
@@ -49,8 +51,46 @@ export function sanitizeNextPath(raw: string | null | undefined): string {
     if (value.startsWith("//") || value.startsWith("/\\")) {
         return HOME_PATH
     }
+    if (!normalisesToASamePathOnThisOrigin(value)) {
+        return HOME_PATH
+    }
 
     return value
+}
+
+/**
+ * 임의의 오리진. 값 자체는 아무 의미가 없고, 상대 참조를 해석해 볼 기준점으로만 쓴다.
+ */
+const PROBE_ORIGIN = "https://probe.invalid"
+
+/**
+ * 위의 네 규칙을 통과하고도 남는 구멍 하나를 막는다: **점 세그먼트를 지운 뒤의 경로**.
+ *
+ * `/..//evil.example` 은 `/` 하나로 시작하고 `//` 로도 `/\` 로도 시작하지 않으므로 앞의 검사를
+ * 전부 통과한다. 그런데 RFC 3986 의 점 세그먼트 제거를 거치면 경로가 `//evil.example` 가 된다.
+ *
+ * 참조를 통째로 해석하는 한 이것은 새는 구멍이 아니다 — 호스트는 참조를 *파싱하는 시점*에
+ * 이미 이 오리진으로 확정되고, 그 뒤의 정규화는 호스트를 바꾸지 못한다
+ * (`new URL("/..//evil.example", origin).origin === origin`). 문제는 값을 **먼저 정규화하고
+ * 나중에 이동에 쓰는** 소비자다. Next 의 App Router 가 정확히 그렇게 한다: `new URL` 로 풀어
+ * `pathname + search + hash` 를 다시 만든 뒤 `history.pushState` 에 넘긴다. 그 시점의 문자열은
+ * `//evil.example` 이고, 그것만 놓고 보면 스킴 상대 URL 이다. 브라우저가 교차 오리진
+ * `pushState` 를 막으므로 실제로는 외부로 나가는 대신 SecurityError 가 나지만, 어느 쪽이든
+ * 여기서 통과시킬 이유가 없는 값이다.
+ *
+ * 그래서 점 세그먼트를 지운 결과를 직접 본다. `/a/../b` 처럼 `/b` 로 얌전히 접히는 경로는
+ * 그대로 통과하고, `//` 로 시작하도록 접히는 것만 걸린다.
+ */
+function normalisesToASamePathOnThisOrigin(value: string): boolean {
+    let resolved: URL
+    try {
+        resolved = new URL(value, PROBE_ORIGIN)
+    } catch {
+        return false
+    }
+    // origin 검사는 위의 문자열 규칙을 한 번 더 받쳐 주는 것이다 — 문자열로 놓친 스킴 상대
+    // 표기가 있어도 여기서 오리진이 달라지므로 걸린다.
+    return resolved.origin === PROBE_ORIGIN && !resolved.pathname.startsWith("//")
 }
 
 /**

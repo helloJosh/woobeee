@@ -6,8 +6,10 @@ import type { GameType, RoomStatus, RoomSummary } from "@/lib/types"
  * `tsc` 로 컴파일한 모듈을 node 에서 직접 돌렸고, `vitest` 를 import 하는 파일을 두면
  * 유일한 게이트였던 `tsc --noEmit` 이 깨졌다. 이제 러너가 있으므로 원래 있어야 할 곳에 둔다.
  *
- * 다섯 묶음이다: checkNickname(12) · describeJoinBlock(4) · 게스트 토큰 저장(7) ·
- * decideJoinGate(14) · joinRoomAsGuest(3).
+ * 다섯 묶음이다: checkNickname(12) · describeJoinBlock(4) · 게스트 토큰 저장(8) ·
+ * decideJoinGate(14) · joinRoomAsGuest(3). 저장 묶음만 Task 6 의 7개보다 하나 많다 —
+ * 그 사이에 participantId 가 생겼고, "옛 형식 항목은 토큰만이라도 계속 쓴다" 는 의도된
+ * 동작을 고정하는 것이 없었다.
  */
 
 const api = vi.hoisted(() => ({

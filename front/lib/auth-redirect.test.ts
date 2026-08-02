@@ -16,10 +16,9 @@ import {
  * 단언을 두 종류로 나눈 것은 의도적이다.
  *
  * - **거절되어야 하는 것**은 `HOME_PATH` 와 정확히 같아야 한다.
- * - **통과하지만 오리진을 벗어나면 안 되는 것**(퍼센트 인코딩, `/..//` 류)은 반환값 자체가
- *   아니라 *성질*을 고정한다: 그 값을 이 사이트 기준으로 해석했을 때 오리진이 그대로여야 한다.
- *   반환값을 박아 두면 나중에 가드를 더 좁게 조이는 정당한 변경이 테스트를 깨뜨린다 —
- *   여기서 지켜야 하는 것은 "무엇을 돌려주느냐" 가 아니라 "오리진을 벗어날 수 없다" 이다.
+ * - **통과해야 하는 것**은 반환값을 그대로 고정한다. 여기에 "오리진을 벗어나지 않는다" 같은
+ *   성질만 적으면 반증 불가능한 테스트가 된다 — 자세한 사정은 ACCEPTED_ENCODED 위의 주석에
+ *   적어 두었다.
  */
 
 const ORIGIN = "https://woobeee.example"
@@ -36,6 +35,9 @@ const REJECTED: Array<[label: string, payload: string]> = [
     ["file:", "file:///etc/passwd"],
     ["mailto:", "mailto:a@b.example"],
     ["scheme with a single slash", "https:/evil.example"],
+    // 아래 둘은 trim 과 무관하게 "`/` 로 시작해야 한다" 규칙에 걸린다. trim 이 실제로
+    // 하는 일은 ACCEPTED_AFTER_TRIM 에서 따로 고정한다 — 여기에 두고 trim 을 검증한다고
+    // 적으면 trim 을 지워도 초록인 채로 남는다.
     ["scheme behind leading whitespace", "   https://evil.example"],
 
     // --- 스킴 상대 URL. 브라우저는 이것을 외부 호스트로 읽는다 ---
@@ -45,8 +47,17 @@ const REJECTED: Array<[label: string, payload: string]> = [
     ["mixed slash-backslash", "/\\/evil.example"],
     ["double backslash", "/\\\\evil.example"],
     ["leading double backslash", "\\\\evil.example"],
+    // 이 둘은 trim 이 없으면 `/` 로 시작하지 않아 어차피 걸린다. trim 이 하는 일은
+    // "공백을 벗겨 낸 뒤에도 여전히 위험한가" 를 보게 만드는 것이다.
     ["protocol-relative behind whitespace", "  //evil.example"],
     ["protocol-relative behind a tab", "\t//evil.example"],
+
+    // --- 점 세그먼트를 지우고 나면 스킴 상대가 되는 것. 앞의 네 문자열 규칙을 전부
+    //     통과하므로 정규화한 경로를 직접 봐야만 걸린다 ---
+    ["parent-segment normalisation", "/..//evil.example"],
+    ["repeated parent segments", "/../..//evil.example"],
+    ["current-segment normalisation", "/.//evil.example"],
+    ["parent segments with a query", "/..//evil.example?next=/"],
 
     // --- 제어문자. 브라우저는 URL 안의 이것들을 조용히 빼고 해석하므로
     //     `/<TAB>/evil.example` 이 `//evil.example` 이 된다 ---
@@ -74,21 +85,29 @@ const REJECTED: Array<[label: string, payload: string]> = [
 ]
 
 /**
- * 가드가 통과시키는 값들. 통과 자체는 옳다 — 퍼센트 인코딩된 슬래시와 `..` 는 URL 해석
- * 단계에서 호스트로 승격되지 않기 때문이다. 여기서 고정하는 것은 바로 그 사실이다.
+ * 퍼센트 인코딩된 위험 문자들. 이것들은 **통과하는 것이 옳다** — `%2F` 는 URL 해석 단계에서
+ * 디코드되지 않으므로 호스트로 승격될 수 없다.
+ *
+ * <p>여기서 단언을 **반환값 자체**로 잡는 것이 핵심이다. 처음에는 "이 오리진을 벗어나지
+ * 않는다" 로 썼는데, 그 형태는 반증 불가능했다: 이 페이로드들에 대해 함수가 낼 수 있는 값은
+ * `"/"` 아니면 페이로드 자신뿐이고 둘 다 같은 오리진으로 풀리므로, 가드를 통째로 들어내도
+ * 이 블록은 초록으로 남는다(리뷰가 네 규칙을 다 지우고 확인했다 — 실패 36건 중 이 블록은
+ * 0건이었다). 반환값을 고정하면 가드의 어떤 변화든 여기서 드러난다.
  */
-const STAYS_ON_ORIGIN: Array<[label: string, payload: string]> = [
+const ACCEPTED_ENCODED: Array<[label: string, payload: string]> = [
     ["single-encoded slashes", "/%2F%2Fevil.example"],
     ["double-encoded slashes", "/%252F%252Fevil.example"],
     ["encoded backslashes", "/%5C%5Cevil.example"],
     ["encoded tab", "/%09/evil.example"],
-    // `/..//evil.example` 는 점 세그먼트 제거 뒤 경로가 `//evil.example` 가 되지만, 스킴
-    // 상대로 승격되지는 않는다 — 호스트는 참조를 *파싱할 때* 정해지고 그때 이미 이 오리진으로
-    // 확정돼 있다. 실측: new URL("/..//evil.example", ORIGIN).origin === ORIGIN.
-    ["parent-segment normalisation", "/..//evil.example"],
-    ["repeated parent segments", "/../..//evil.example"],
-    ["current-segment normalisation", "/.//evil.example"],
     ["interior space", "/ /evil.example"],
+    ["dot segments that fold back onto a normal path", "/game/../blog/posts/1"],
+]
+
+/** trim 이 실제로 하는 일. 이 셋이 없으면 `.trim()` 을 지워도 아무 테스트도 깨지지 않는다. */
+const ACCEPTED_AFTER_TRIM: Array<[payload: string, expected: string]> = [
+    ["  /game/dodge/R1  ", "/game/dodge/R1"],
+    ["\t/game", "/game"],
+    ["/blog\n", "/blog"],
 ]
 
 /** 정상 목적지는 한 글자도 바뀌지 않고 그대로 나와야 한다. */
@@ -105,12 +124,37 @@ describe("sanitizeNextPath", () => {
         expect(sanitizeNextPath(payload)).toBe(HOME_PATH)
     })
 
-    it.each(STAYS_ON_ORIGIN)("cannot leave the origin via %s", (_label, payload) => {
-        expect(new URL(sanitizeNextPath(payload), ORIGIN).origin).toBe(ORIGIN)
+    it.each(ACCEPTED_ENCODED)("accepts %s unchanged, and it stays on this origin", (_label, payload) => {
+        // 두 단언은 서로 다른 것을 지킨다. 첫째는 가드의 판정 자체(반증 가능), 둘째는 그
+        // 판정이 옳다는 근거 — 정규화한 **경로**가 여전히 이 오리진의 경로다.
+        expect(sanitizeNextPath(payload)).toBe(payload)
+        expect(new URL(new URL(payload, ORIGIN).pathname, ORIGIN).origin).toBe(ORIGIN)
+    })
+
+    it.each(ACCEPTED_AFTER_TRIM)("trims %j down to %j", (payload, expected) => {
+        expect(sanitizeNextPath(payload)).toBe(expected)
     })
 
     it.each(PASSED_THROUGH)("passes %s through unchanged", (payload) => {
         expect(sanitizeNextPath(payload)).toBe(payload)
+    })
+
+    /**
+     * 거절 목록의 마지막 넷(`/..//…`)이 왜 거절인지의 근거. 참조를 통째로 해석하면 오리진이
+     * 유지되지만, **정규화한 경로만** 떼어 보면 스킴 상대 URL 이 된다 — 값을 먼저 정규화하고
+     * 나중에 이동에 쓰는 소비자(Next App Router 가 그렇다)가 밟는 것이 이 경로다.
+     */
+    it("would have been a same-origin answer to the wrong question", () => {
+        const payload = "/..//evil.example"
+
+        // 참조 전체를 해석하면 오리진은 그대로다 — 그래서 "오리진이 유지되는가" 만 묻는
+        // 테스트는 이 값을 위험하다고 말해 주지 못했다.
+        expect(new URL(payload, ORIGIN).origin).toBe(ORIGIN)
+        // 그런데 정규화된 경로는 `//evil.example` 이고, 그것만 놓고 해석하면 남의 오리진이다.
+        expect(new URL(payload, ORIGIN).pathname).toBe("//evil.example")
+        expect(new URL(new URL(payload, ORIGIN).pathname, ORIGIN).origin).not.toBe(ORIGIN)
+        // 그래서 가드는 이 값을 통과시키지 않는다.
+        expect(sanitizeNextPath(payload)).toBe(HOME_PATH)
     })
 
     it("treats non-strings as no destination", () => {
@@ -121,7 +165,7 @@ describe("sanitizeNextPath", () => {
     })
 
     it("is idempotent — sanitizing its own output changes nothing", () => {
-        for (const [, payload] of [...REJECTED, ...STAYS_ON_ORIGIN]) {
+        for (const [, payload] of [...REJECTED, ...ACCEPTED_ENCODED]) {
             const once = sanitizeNextPath(payload)
             expect(sanitizeNextPath(once)).toBe(once)
         }

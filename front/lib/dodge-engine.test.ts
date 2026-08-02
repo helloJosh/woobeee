@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest"
 import {
     DODGE_RULES,
     createDodgeGame,
+    REPLAY_MAX_TICKS,
     parseReplayNdjson,
     rerunReplay,
     spawnProbability,
     startingCells,
     stepReplay,
     xorshift32,
+    type Cell,
     type DirectionName,
 } from "./dodge-engine"
 
@@ -61,6 +63,163 @@ describe("dodge grid", () => {
     })
 })
 
+/**
+ * 이동·충돌·종료의 규칙. 아래 골든은 입력 없이 도는 판만 재현하므로 **입력 경로 전체가 그
+ * 바깥**이고, 실제로 리뷰의 변이 실험에서 `DELTAS.DOWN` 과 `DELTAS.RIGHT` 를 뒤집어도 모든
+ * 테스트가 초록이었다. 서버와 한 칸이라도 다르게 움직이면 그 뒤 충돌 판정 전체가 갈라지는
+ * 포트에서 그것은 이 파일이 존재하는 이유 자체가 비어 있었다는 뜻이다.
+ */
+describe("movement", () => {
+    /** 스폰과 장애물이 없는 조용한 판. 이동만 남는다. */
+    function quietGame(start: Cell) {
+        const game = createDodgeGame(["m:11", "g:a"], 1)
+        game.disableSpawning()
+        game.forceObstacles([])
+        game.forcePosition("m:11", start)
+        game.forcePosition("g:a", { x: 0, y: 0 })
+        return game
+    }
+
+    it.each([
+        ["UP", { x: 5, y: 7 }],
+        ["DOWN", { x: 5, y: 9 }],
+        ["LEFT", { x: 4, y: 8 }],
+        ["RIGHT", { x: 6, y: 8 }],
+    ] as Array<[DirectionName, Cell]>)("moves one cell %s", (direction, expected) => {
+        const game = quietGame({ x: 5, y: 8 })
+
+        expect(game.advanceOneTick({ "m:11": direction }).positions["m:11"]).toEqual(expected)
+    })
+
+    // 서버 DodgeGame.applyInputs 는 격자를 벗어나는 이동을 그 틱에서 통째로 버린다(클램프가
+    // 아니라 무시다). 이 가드를 지우면 참가자가 판 밖으로 걸어 나간다.
+    it.each([
+        ["LEFT", { x: 0, y: 8 }],
+        ["RIGHT", { x: DODGE_RULES.cols - 1, y: 8 }],
+        ["UP", { x: 5, y: 0 }],
+        ["DOWN", { x: 5, y: DODGE_RULES.rows - 1 }],
+    ] as Array<[DirectionName, Cell]>)("refuses to step off the grid going %s", (direction, edge) => {
+        const game = quietGame(edge)
+
+        expect(game.advanceOneTick({ "m:11": direction }).positions["m:11"]).toEqual(edge)
+    })
+
+    it("ignores an input from someone who is no longer on the board", () => {
+        const game = createDodgeGame(["m:11", "g:a", "g:b"], 1)
+        game.disableSpawning()
+        game.forceObstacles([])
+        game.eliminate("g:b")
+
+        const frame = game.advanceOneTick({ "g:b": "UP", "m:11": "UP" })
+
+        expect(game.finished).toBe(false)
+        expect(frame.positions["g:b"]).toBeUndefined()
+        expect(frame.positions["m:11"]).toEqual({ x: 2, y: DODGE_RULES.rows - 2 })
+    })
+})
+
+describe("obstacles", () => {
+    // 바닥 행에 닿은 장애물은 사라진다. 이 컬링을 지우면 격자 밖으로 계속 내려가며 영원히
+    // 쌓인다 — 아래 골든의 3틱 창으로는 구조적으로 볼 수 없다(장애물이 바닥까지 16틱 걸린다).
+    it("drops an obstacle that falls past the bottom row", () => {
+        const game = createDodgeGame(["m:11", "g:a"], 1)
+        game.disableSpawning()
+        game.forcePosition("m:11", { x: 0, y: 0 })
+        game.forcePosition("g:a", { x: 11, y: 0 })
+        game.forceObstacles([{ x: 5, y: DODGE_RULES.rows - 1 }])
+
+        expect(game.advanceOneTick({}).obstacles).toEqual([])
+    })
+
+    it("moves an obstacle down exactly one row", () => {
+        const game = createDodgeGame(["m:11", "g:a"], 1)
+        game.disableSpawning()
+        game.forcePosition("m:11", { x: 0, y: 0 })
+        game.forcePosition("g:a", { x: 11, y: 0 })
+        game.forceObstacles([{ x: 5, y: 3 }])
+
+        expect(game.advanceOneTick({}).obstacles).toEqual([{ x: 5, y: 4 }])
+    })
+})
+
+/**
+ * 1인 게임의 종료 조건. 서버 DodgeGame:130 은 `positions.isEmpty() || (참가자 2명 이상 && 남은
+ * 1명 이하)` 다. 이것을 `positions.size <= 1` 하나로 줄이면 1인 기보가 틱 1에서 끝나 버려
+ * 서버와 길이가 달라지는데, 1인 게임을 만드는 테스트가 하나도 없었다.
+ */
+describe("a solo game", () => {
+    it("does not end merely because one player is the only player", () => {
+        const game = createDodgeGame(["solo"], 42)
+        game.disableSpawning()
+        game.forceObstacles([])
+
+        game.advanceOneTick({})
+
+        expect(game.tick).toBe(1)
+        expect(game.finished).toBe(false)
+    })
+
+    it("ends when that one player is hit", () => {
+        const game = createDodgeGame(["solo"], 42)
+        game.disableSpawning()
+        game.forcePosition("solo", { x: 5, y: 5 })
+        game.forceObstacles([{ x: 5, y: 4 }])
+
+        const frame = game.advanceOneTick({})
+
+        expect(frame.eliminatedThisTick).toEqual(["solo"])
+        expect(game.finished).toBe(true)
+        expect(game.finalRanks()).toEqual({ solo: 1 })
+    })
+})
+
+/**
+ * `eliminate` 는 v2 기보의 departures 가 지나가는 길이다. 멱등하지 않으면 같은 이탈이 두 번
+ * 기록된 기보(또는 재접속 유예와 겹친 중복 이탈)가 유령 순위 버킷을 하나 더 쌓아 순위가
+ * 통째로 밀린다.
+ */
+describe("eliminate", () => {
+    it("is idempotent for a participant who already left", () => {
+        const game = createDodgeGame(["a", "b", "c"], 42)
+
+        game.eliminate("c")
+        game.eliminate("c")
+        game.eliminate("nobody")
+        game.eliminate("b")
+
+        expect(game.finished).toBe(true)
+        expect(game.finalRanks()).toEqual({ a: 1, b: 2, c: 3 })
+    })
+
+    it("does nothing once the game is over", () => {
+        const game = createDodgeGame(["a", "b"], 42)
+
+        game.eliminate("b")
+        game.eliminate("a")
+
+        expect(game.finalRanks()).toEqual({ a: 1, b: 2 })
+    })
+})
+
+/**
+ * 끝난 판에서 `advanceOneTick` 은 아무 일도 하지 않는다. 이 no-op 은 기보 재생의 틱 수가
+ * 원본과 정확히 같기 위한 조건이라 `stepReplay` 의 docblock 이 이미 근거로 삼고 있다.
+ */
+describe("a finished game", () => {
+    it("does not advance, spawn or eliminate any further", () => {
+        const game = createDodgeGame(["a", "b"], 42)
+        game.eliminate("b")
+
+        const before = game.tick
+        const frame = game.advanceOneTick({ a: "LEFT" })
+
+        expect(game.tick).toBe(before)
+        expect(frame.tick).toBe(before)
+        expect(frame.eliminatedThisTick).toEqual([])
+        expect(frame.finished).toBe(true)
+    })
+})
+
 describe("replay", () => {
     it("is deterministic for the same seed and inputs", () => {
         const players = ["m:11", "g:a", "g:b"]
@@ -102,6 +261,27 @@ describe("replay", () => {
         expect(game.tick).toBe(0)
         expect(game.finished).toBe(true)
         expect(game.finalRanks()).toEqual({ "m:11": 1, "g:c": 2, "g:a": 3 })
+    })
+
+    // 끝나지 않은 판을 조용히 돌려주면, finished 를 확인하지 않은 호출자가 손상된 기보를
+    // "짧은 정상 게임" 으로 그린다 — 서버 DodgeReplayRunner:59 가 던지는 것과 같은 이유다.
+    // 상한을 낮춰 부르는 것은 서버의 패키지 전용 DodgeReplayRunner(maxTicks) 와 같은 이음매다.
+    it("refuses to return a game that never finished", () => {
+        const replay = {
+            seed: 42,
+            participantIds: ["m:11", "g:a"],
+            inputsByTick: {},
+            departuresByTick: {},
+        }
+
+        // 이 판은 19틱짜리다(위 골든). 3틱에서 잘리면 아직 끝나지 않았다.
+        expect(() => rerunReplay(replay, 3)).toThrow(/did not finish within 3 ticks/)
+        // 상한을 주지 않으면 프로덕션 상한이고, 같은 판이 정상적으로 끝난다.
+        expect(rerunReplay(replay).finished).toBe(true)
+    })
+
+    it("uses the server's safety limit by default", () => {
+        expect(REPLAY_MAX_TICKS).toBe(100_000)
     })
 })
 
@@ -151,20 +331,30 @@ describe("stepReplay", () => {
  *
  * <p>아래 문자열은 실제 서버 코드에서 뽑았다. `app-webflux/target/classes` 에 대고 jshell 로
  * `new DodgeGame(ids, seed)` 를 입력 없이 끝까지 돌려 틱 수 · 시작 칸 · 최종 순위(공동 순위
- * 포함) · 처음 세 틱의 장애물 목록을 찍은 것을 그대로 옮긴 것이고, 아홉 조합 전부 이 포트와
+ * 포함) · 처음 세 틱의 장애물 목록을 찍은 것을 그대로 옮긴 것이고, 열두 조합 전부 이 포트와
  * 바이트 단위로 같았다. 서버를 고쳤는데 여기를 안 고치면 이 테스트가 먼저 깨진다 — 그게 목적이다.
  *
- * <p>재현:
- * `jshell --class-path app-webflux/target/classes` 로 같은 루프를 돌린다.
+ * <p><b>재현은 한 줄이다</b> — 이 문자열들을 손으로 맞춰 보게 두면 안 된다:
+ *
+ * <pre>
+ * jshell --class-path app-webflux/target/classes -q scripts/dodge-parity-trace.jsh
+ * </pre>
+ *
+ * <p>1인 판이 목록에 있는 것은 장식이 아니다. 서버의 종료 조건은 "아무도 없거나, <b>둘 이상으로
+ * 시작한 판</b>에서 한 명 남음" 이라 1인 판은 그 한 명이 맞을 때까지 계속된다 — 조건을
+ * `positions.size <= 1` 하나로 줄이면 아래 세 줄이 전부 `ticks=1` 로 무너진다.
  */
 describe("parity with the server DodgeGame", () => {
     const GOLDEN = [
+        "seed=42 n=1 | ticks=23 | starts=p0=6,15 | ranks={p0=1} | obs=t1:(0,0)(2,0)|t2:(0,1)(2,1)(4,0)(5,0)|t3:(0,2)(2,2)(4,1)(5,1)(1,0)",
         "seed=42 n=2 | ticks=19 | starts=p0=3,15 p1=9,15 | ranks={p0=1, p1=2} | obs=t1:(0,0)(2,0)|t2:(0,1)(2,1)(4,0)(5,0)|t3:(0,2)(2,2)(4,1)(5,1)(1,0)",
         "seed=42 n=5 | ticks=24 | starts=p0=1,15 p1=3,15 p2=6,15 p3=8,15 p4=10,15 | ranks={p0=5, p1=1, p2=3, p3=2, p4=4} | obs=t1:(0,0)(2,0)|t2:(0,1)(2,1)(4,0)(5,0)|t3:(0,2)(2,2)(4,1)(5,1)(1,0)",
         "seed=42 n=8 | ticks=24 | starts=p0=0,15 p1=2,15 p2=3,15 p3=5,15 p4=6,15 p5=8,15 p6=9,15 p7=11,15 | ranks={p0=7, p1=7, p2=1, p3=6, p4=3, p5=2, p6=5, p7=3} | obs=t1:(0,0)(2,0)|t2:(0,1)(2,1)(4,0)(5,0)|t3:(0,2)(2,2)(4,1)(5,1)(1,0)",
+        "seed=12345 n=1 | ticks=17 | starts=p0=6,15 | ranks={p0=1} | obs=t1:(11,0)|t2:(11,1)(1,0)(4,0)(6,0)(8,0)|t3:(11,2)(1,1)(4,1)(6,1)(8,1)(5,0)",
         "seed=12345 n=2 | ticks=19 | starts=p0=3,15 p1=9,15 | ranks={p0=2, p1=1} | obs=t1:(11,0)|t2:(11,1)(1,0)(4,0)(6,0)(8,0)|t3:(11,2)(1,1)(4,1)(6,1)(8,1)(5,0)",
         "seed=12345 n=5 | ticks=19 | starts=p0=1,15 p1=3,15 p2=6,15 p3=8,15 p4=10,15 | ranks={p0=3, p1=2, p2=3, p3=3, p4=1} | obs=t1:(11,0)|t2:(11,1)(1,0)(4,0)(6,0)(8,0)|t3:(11,2)(1,1)(4,1)(6,1)(8,1)(5,0)",
         "seed=12345 n=8 | ticks=21 | starts=p0=0,15 p1=2,15 p2=3,15 p3=5,15 p4=6,15 p5=8,15 p6=9,15 p7=11,15 | ranks={p0=1, p1=3, p2=4, p3=5, p4=6, p5=6, p6=2, p7=8} | obs=t1:(11,0)|t2:(11,1)(1,0)(4,0)(6,0)(8,0)|t3:(11,2)(1,1)(4,1)(6,1)(8,1)(5,0)",
+        "seed=987654321 n=1 | ticks=54 | starts=p0=6,15 | ranks={p0=1} | obs=t1:(0,0)(4,0)|t2:(0,1)(4,1)|t3:(0,2)(4,2)",
         "seed=987654321 n=2 | ticks=20 | starts=p0=3,15 p1=9,15 | ranks={p0=1, p1=2} | obs=t1:(0,0)(4,0)|t2:(0,1)(4,1)|t3:(0,2)(4,2)",
         "seed=987654321 n=5 | ticks=43 | starts=p0=1,15 p1=3,15 p2=6,15 p3=8,15 p4=10,15 | ranks={p0=3, p1=2, p2=1, p3=3, p4=3} | obs=t1:(0,0)(4,0)|t2:(0,1)(4,1)|t3:(0,2)(4,2)",
         "seed=987654321 n=8 | ticks=43 | starts=p0=0,15 p1=2,15 p2=3,15 p3=5,15 p4=6,15 p5=8,15 p6=9,15 p7=11,15 | ranks={p0=8, p1=4, p2=2, p3=5, p4=1, p5=6, p6=6, p7=3} | obs=t1:(0,0)(4,0)|t2:(0,1)(4,1)|t3:(0,2)(4,2)",
@@ -197,10 +387,11 @@ describe("parity with the server DodgeGame", () => {
             + ` | ranks={${sorted}} | obs=${obstacleTrace.join("|")}`
     }
 
-    it("reproduces the server's trace for three seeds by three player counts", () => {
+    // 갱신 방법: jshell --class-path app-webflux/target/classes -q scripts/dodge-parity-trace.jsh
+    it("reproduces the server's trace for three seeds by four player counts", () => {
         const traces: string[] = []
         for (const seed of [42, 12345, 987654321]) {
-            for (const playerCount of [2, 5, 8]) {
+            for (const playerCount of [1, 2, 5, 8]) {
                 traces.push(traceOf(seed, playerCount))
             }
         }
