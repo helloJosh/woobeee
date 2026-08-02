@@ -213,9 +213,11 @@ export const apiRequest = async (
     endpoint: string,
     options: RequestInit = {},
     retryOnUnauthorized = true,
-    // 기본값 false로 기존 호출부(blog/auth/cart/product) 동작은 그대로 유지한다.
-    // game API처럼 화면에 인라인 에러를 직접 그리는 호출부만 true를 넘겨 이 alert를 끈다.
-    suppressAlert = false
+    // 옵션 객체로 받는다 — 불리언 두 개가 나란히 놓이면(`true, true`) 호출부에서 어느 쪽이
+    // 무엇인지 알 수 없고, 플래그가 하나 더 늘 때마다 나빠진다.
+    // 기본값은 기존 호출부(blog/auth/cart/product) 동작을 그대로 유지한다.
+    // game API처럼 화면에 인라인 에러를 직접 그리는 호출부만 suppressAlert 를 켠다.
+    { suppressAlert = false }: { suppressAlert?: boolean } = {}
 ) => {
     const url = `${API_BASE_URL}${endpoint}`
     const token = tokenManager.getToken()
@@ -242,7 +244,7 @@ export const apiRequest = async (
                 if (retryOnUnauthorized && canRefresh) {
                     const refreshed = await refreshAccessToken()
                     if (refreshed) {
-                        return apiRequest(endpoint, options, false, suppressAlert)
+                        return apiRequest(endpoint, options, false, { suppressAlert })
                     }
                 }
 
@@ -375,7 +377,7 @@ export const gameAPI = {
                 body: JSON.stringify({ gameType }),
             },
             true,
-            true
+            { suppressAlert: true }
         )
         const json: ApiResponse<CreateRoomResult> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -389,7 +391,7 @@ export const gameAPI = {
             `/api/game/rooms/${encodeURIComponent(roomId)}?invite=${encodeURIComponent(inviteCode)}`,
             {},
             true,
-            true
+            { suppressAlert: true }
         )
         const json: ApiResponse<RoomSummary> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -410,7 +412,7 @@ export const gameAPI = {
                 body: JSON.stringify({ inviteCode, nickname }),
             },
             true,
-            true
+            { suppressAlert: true }
         )
         const json: ApiResponse<GuestTokenResult> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -424,7 +426,7 @@ export const gameAPI = {
             `/api/game/me/results?limit=${limit}&offset=${offset}`,
             {},
             true,
-            true
+            { suppressAlert: true }
         )
         const json: ApiResponse<GameResultSummary[]> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -434,7 +436,7 @@ export const gameAPI = {
     },
 
     replayUrl: async (gameResultId: number): Promise<string> => {
-        const response = await apiRequest(`/api/game/results/${gameResultId}/replay`, {}, true, true)
+        const response = await apiRequest(`/api/game/results/${gameResultId}/replay`, {}, true, { suppressAlert: true })
         const json: ApiResponse<{ replayUrl: string }> = await response.json()
         if (!isApiSuccessful(json)) {
             throw new Error(json.header.message || "기보를 불러오지 못했습니다.")
