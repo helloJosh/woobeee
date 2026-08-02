@@ -1,6 +1,7 @@
 package com.woobeee.game.dodge;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -124,7 +125,9 @@ public final class DodgeGame {
         }
 
         tick++;
-        if (participantIds.size() > 1 && positions.size() <= 1) {
+        // 아무도 안 남으면 무조건 끝이다. 한 명만 남는 것은 원래 둘 이상으로 시작한
+        // 게임에서만 "생존"의 의미가 있다 — 1인 게임은 시작부터 이미 한 명이었다.
+        if (positions.isEmpty() || (participantIds.size() > 1 && positions.size() <= 1)) {
             finished = true;
         }
 
@@ -199,16 +202,16 @@ public final class DodgeGame {
             nextRank += bucket.size();
         }
 
-        for (String id : participantIds) {
-            ranks.putIfAbsent(id, participantIds.size());
-        }
         return ranks;
     }
 
     private DodgeFrame frame(List<String> eliminated) {
+        // Map.copyOf 는 불변 맵을 돌려주지만 순회 순서는 실행마다 바뀌는 해시 솔트에 좌우된다.
+        // 리플레이 비교가 positions 를 직렬화해서 보므로, 순서가 실행마다 달라지면 안 된다 —
+        // LinkedHashMap 을 복사해 삽입 순서를 그대로 굳힌 뒤 수정 불가 뷰로 감싼다.
         return new DodgeFrame(
                 tick,
-                Map.copyOf(positions),
+                Collections.unmodifiableMap(new LinkedHashMap<>(positions)),
                 List.copyOf(obstacles),
                 List.copyOf(eliminated),
                 finished
