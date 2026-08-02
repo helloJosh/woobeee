@@ -237,13 +237,13 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 | type | payload | 언제 |
 | --- | --- | --- |
 | `ROOM_STATE` | `gameType`, `hostParticipantId`, `participants[]`, `status` | 입퇴장·READY·연결상태 변화 때마다 방 전체에 |
-| `GAME_START` | `startedAt`, 게임별 초기 상태 | 시작 시 |
+| `GAME_START` | `roomId` | 시작 시. **`startedAt` 도 게임별 초기 상태도 싣지 않는다** — `RoomCommandDispatcher.start` 가 방송하는 페이로드는 `roomId` 하나뿐이다. 그래서 클라이언트는 첫 차례를 규칙으로 세운다: 흑이 방장(`hostParticipantId`)이고 `turnDeadline` 은 첫 `OMOK_MOVED` 가 실제 값을 실어 올 때까지 비워 둔다(`omok-play.ts`) |
 | `GAME_SNAPSHOT` | `gameType` + 게임별 상태(아래) | 이미 진행 중인 게임에 기존 참가자가 다시 붙었을 때, 그 `ROOM_STATE` 바로 뒤에 |
-| `OMOK_MOVED` | `participantId`, `x`, `y`, `color`, `nextTurn`, `turnDeadline` | 착수 성공. **승리 착수는 예외** — 다음 차례가 없으므로 `nextTurn`/`turnDeadline` 없이 네 필드(`participantId`, `x`, `y`, `color`)만 싣고, 뒤이어 `GAME_END` 가 나간다 |
-| `OMOK_REJECTED` | `ackSeq`, `reason` | 금수·차례아님·이미 놓인 자리 |
+| `OMOK_MOVED` | `participantId`, `x`, `y`, `color`, `nextTurn`, `turnDeadline` | 착수 성공. 봉투의 `ackSeq` 에 그 착수를 보낸 클라이언트의 `seq` 가 실린다. **승리 착수는 예외** — 다음 차례가 없으므로 `nextTurn`/`turnDeadline` 없이 네 필드(`participantId`, `x`, `y`, `color`)만 싣고, 뒤이어 `GAME_END` 가 나간다 |
+| `OMOK_REJECTED` | `reason` | 금수·차례아님·이미 놓인 자리. 거절된 착수의 `seq` 는 페이로드가 아니라 봉투의 `ackSeq` 에 실린다 |
 | `DODGE_TICK` | `tick`, `positions[]`, `obstacles[]`, `eliminated[]` | 매 틱, 방 전체에 |
 | `GAME_END` | `winnerParticipantId`, `ranks[]` | 종료 시 |
-| `ERROR` | `ackSeq`, `status`, `code`, `message` | 처리 실패. `code` 는 HTTP 봉투와 같은 `game_*` 문자열이고(같은 `GameErrorCode` 카탈로그), 숫자 상태는 `status` 다. 참가가 거절된 세션에는 소켓을 닫기 직전에 이 프레임을 직접 한 번 써 준다(토큰 인증 실패와 방의 거절 둘 다) — 그 세션은 아직 방 허브를 구독하지 않아 브로드캐스트가 닿지 않는다. 그래서 참가 거절만은 방에 브로드캐스트하지 않고 이유를 호출자에게 돌려준다 |
+| `ERROR` | `status`, `code`, `message` | 처리 실패. `code` 는 HTTP 봉투와 같은 `game_*` 문자열이고(같은 `GameErrorCode` 카탈로그), 숫자 상태는 `status` 다. 게임 명령(`OMOK_PLACE`/`DODGE_MOVE`) 실패에는 봉투의 `ackSeq` 에 그 명령의 `seq` 가 실린다 — `JOIN`/`READY`/`START` 실패는 아직 게임 명령 이전이라 `ackSeq` 가 없다. 참가가 거절된 세션에는 소켓을 닫기 직전에 이 프레임을 직접 한 번 써 준다(토큰 인증 실패와 방의 거절 둘 다) — 그 세션은 아직 방 허브를 구독하지 않아 브로드캐스트가 닿지 않는다. 그래서 참가 거절만은 방에 브로드캐스트하지 않고 이유를 호출자에게 돌려준다 |
 
 `GAME_END` 에 `gameResultId` 를 싣지 않는다. 결과 id 는 DB 기록과 기보 업로드가 끝나야 나오는데,
 업로드가 느리거나 타임아웃 나는 동안 플레이어가 승패를 못 보는 편이 훨씬 나쁘다. 종료는 즉시

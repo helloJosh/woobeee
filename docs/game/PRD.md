@@ -32,9 +32,12 @@
 | 방 생성 | `POST /api/game/rooms` | 회원 |
 | 방 요약 | `GET /api/game/rooms/{roomId}?invite=` | 공개 |
 | 게스트 토큰 발급 | `POST /api/game/rooms/{roomId}/guest-tokens` | 공개 |
-| 내 전적 목록 | `GET /api/game/me/results` | 회원 |
+| 내 전적 목록 | `GET /api/game/me/results?limit=&offset=` | 회원 |
 | 기보 다시보기 URL | `GET /api/game/results/{gameResultId}/replay` | 회원(그 게임 참가자 본인만) |
 | 실시간 | `WS /ws/game` | 첫 JOIN 메시지의 토큰 |
+
+`limit`(기본 20, 최대 50으로 clamp)과 `offset`(기본 0)은 마이페이지의 "더 보기" 페이징이
+의존하는 값이다(`GameResultController`).
 
 ## 방 규칙
 
@@ -129,23 +132,39 @@ xorshift 는 0에서 멈춘다.
 로 클램프한 값이고(8인이면 `[0,2,3,5,6,8,9,11]`), 한 칸이라도 다르면 틱 1부터 갈린다.
 `DodgeRulesTest.startingCellsForEightPlayersAreExactlyTheseColumns` 가 서버 쪽 골든이다.
 
+`DodgeGame` 이 위치를 담는 자료구조도 이 계약의 일부다 — `positions` 는 `LinkedHashMap` 이고
+`frame(...)`(`DodgeGame.java`)이 프레임을 만들 때 그 `LinkedHashMap` 을 복사해 삽입 순서를
+그대로 굳힌다. `Map.copyOf`/평범한 `HashMap` 을 썼다면 순회 순서가 실행마다 해시 솔트에 좌우돼
+`positions[]` 직렬화 순서가 흔들리는데, 재생 비교는 그 순서까지 본다 — 조용히 다른(하지만
+"정상으로 보이는") 기보를 만들어 내고 어떤 테스트도 실패하지 않는다.
+
 ## 영속화
 
 - 종료된 게임만 남긴다. `game_results` 1행 + `game_result_participants` N행 (`V2__game.sql`).
-- 기보는 MinIO 에 `games/{gameType}/{gameResultId}.ndjson` 으로 종료 시 한 번에 올린다.
+- 기보는 MinIO 에 `games/{gameType}/{gameResultId}.ndjson` 으로 종료 시 한 번에 올린다
+  (`ReplayUploader`, `Content-Type: application/x-ndjson`).
 - 순서는 결과 행 → 참가자 행 → 업로드 → key 부착. 업로드가 실패하면 `replay_object_key` 가
   `null` 로 남을 뿐 전적은 그대로다.
 - `GAME_END` 는 이 저장을 기다리지 않고 즉시 나간다 — 승자를 알리는 데 DB/스토리지 왕복을
   강요하지 않기 위해서다. 그래서 `GAME_END` 페이로드에는 `gameResultId` 가 없다. 참가자는
   나중에 `GET /api/game/me/results` 로 결과를 찾는다.
 - `app-webflux` 는 `S3AsyncClient` 를 쓴다. `app-mvc` 의 `S3Client` 는 블로킹이라 쓸 수 없다.
+- **기보 다시보기 접근 제한은 두 겹이다.** `GameResultController.replay` 가
+  `GameResultQueryRepository.findReplayAccess` 로 `game_result_participants.member_id` 조인
+  조건을 걸어(`FIND_REPLAY_ACCESS`, GAME-AC-22) 그 회원이 실제 참가자일 때만 600초짜리
+  presigned GET URL(`ReplayUploader.presignedDownloadUrl`, `storage.s3.presigned-url-expiration-seconds`)
+  을 내준다. 이 참가자 확인은 **버킷 자체가 비공개일 때만** 의미가 있다 — 버킷이 익명
+  읽기를 허용하면 URL 을 아는 누구나 presigned 서명 없이도 오브젝트를 내려받을 수 있어
+  이 확인이 무력화된다. `.docker-compose/docker-compose.yml` 이 `mc anonymous set none` 으로
+  버킷을 비공개로 초기화해 이 조건을 만족시킨다.
 
 ## WebSocket 프로토콜
 
-봉투는 `{type, seq, payload}`. `ackSeq` 는 `ERROR` 에만, 그것도 **게임 명령이 실패했을 때만**
-실린다 — 그 경로만 클라이언트의 `seq` 를 넘겨받기 때문이다. `JOIN` / `READY` / `START` 가 실패해
-나가는 `ERROR` 에는 `ackSeq` 가 없다. `ROOM_STATE`, `GAME_START` 등 방 전체에 뿌리는 메시지도
-특정 명령의 응답이 아니므로 `ackSeq` 가 없다.
+봉투는 방향마다 모양이 다르다. 클라이언트 → 서버는 `{type, seq, payload}`, 서버 → 클라이언트는
+`{type, ackSeq?, payload}` 다. `ackSeq` 는 `OMOK_PLACE`/`DODGE_MOVE` 처리 결과인 `OMOK_MOVED`·
+`OMOK_REJECTED`·`ERROR` 에만 실린다 — 그 경로만 클라이언트의 `seq` 를 넘겨받기 때문이다.
+`JOIN` / `READY` / `START` 가 실패해 나가는 `ERROR` 에는 `ackSeq` 가 없다. `ROOM_STATE`,
+`GAME_START` 등 방 전체에 뿌리는 메시지도 특정 명령의 응답이 아니므로 `ackSeq` 가 없다.
 
 - 클라이언트 → 서버: `JOIN` `LEAVE` `READY` `START` `OMOK_PLACE` `DODGE_MOVE`
 - 서버 → 클라이언트: `ROOM_STATE` `GAME_START` `GAME_SNAPSHOT` `OMOK_MOVED` `OMOK_REJECTED`

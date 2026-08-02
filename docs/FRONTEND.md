@@ -48,8 +48,10 @@ front/
 | `/login`, `/signup`, `/logout` | 인증 |
 | `/auth/google/callback` | Google authorization callback 처리 |
 
-`app/products`, `app/cart`, `app/chat` 은 폐기된 product/cart 백엔드를 호출한다. 진입 링크는
-이미 걷어냈고 페이지 삭제는 후속 과제다 — **이 세 경로의 규칙은 더 이상 유효하지 않다.**
+`app/products`, `app/cart`, `app/chat` 은 폐기된 product/cart 백엔드를 호출한다. 살아 있는
+화면에서 이 세 경로로 들어가는 진입 링크는 걷어냈지만, 폐기 화면끼리는 아직 서로 링크한다
+(`app/products/[productId]/page.tsx` 의 상단 바가 여전히 `/cart` 로 이어진다). 페이지 삭제는
+후속 과제다 — **이 세 경로의 규칙은 더 이상 유효하지 않다.**
 
 방 경로의 모양(`/game/<segment>/<roomId>?invite=<code>`)을 아는 곳은 `lib/game-join.ts` 의
 `roomPath` 하나다. 방을 만든 사람이 가는 URL 과 로그인을 마친 초대 손님이 돌아오는 URL 이
@@ -72,7 +74,7 @@ React-free 모듈에 두고, 컴포넌트는 그 결과를 그리기만 한다.*
 | `lib/dodge-engine.ts` | 서버 `DodgeGame` 의 TypeScript 포트 (기보 재생 전용) |
 | `lib/replay-view.ts` | 기보 파싱(오목 v1 / 장애물 v2), 재생 프레임 구성, 전적 목록 페이징 |
 | `lib/auth-redirect.ts` | 로그인 후 복귀 경로 — `next` 살균, 링크 조립, OAuth 왕복 보관 |
-| `lib/game-errors.ts` | 게임 API 오류 문구, 유니온 소진 검사(`assertNever`) |
+| `lib/game-errors.ts` | 게임 API 오류 문구, 유니온 소진 검사(`assertNever`) — `lib/game-hub.ts` 가 기존 호출부(`app/game/page.tsx`)를 위해 그대로 재수출한다 |
 
 (`game-socket.ts` 만 `"use client"` 를 달고 있다. Next 의 번들링 지시어일 뿐 React 에 의존하지는
 않으며, 다른 모듈과 똑같이 테스트된다.)
@@ -92,6 +94,9 @@ React-free 모듈에 두고, 컴포넌트는 그 결과를 그리기만 한다.*
 파생 규칙 몇 가지:
 
 - 새 판단은 `lib/` 에 두고 `lib/<name>.test.ts` 를 함께 만든다. 컴포넌트는 props 와 렌더만 갖는다.
+  이 규칙이 세워지기 전에 쓰인 `game-hub.ts`·`room-sidebar.ts`·`game-errors.ts`·`game-config.ts`
+  는 아직 테스트가 없다 — 실측(다음 문단)이 다루는 뮤테이션 스윕도 이 넷은 대상이 아니었다.
+  새로 손댈 때 반드시 테스트를 채운다.
 - 게임에 국한되지 않는 것(명단에서 나 찾기, 소켓 상태 문구)은 `game-room.ts` 로 간다. 두 번째
   화면이 첫 번째 화면의 모듈을 import 하기 시작하면 그 모듈이 공용 모듈 행세를 하게 된다.
 - 예외 하나: **Tailwind 클래스 문자열은 `components/` 에 둔다.** `tailwind.config.ts` 의
@@ -135,7 +140,8 @@ React-free 모듈에 두고, 컴포넌트는 그 결과를 그리기만 한다.*
 - 회원의 `participantId` 는 `m:<memberId>`, 게스트는 발급 응답이 준 `g:<uuid>` 다. 규칙을 아는
   곳은 `lib/game-room.ts` 의 `memberParticipantId` 하나다.
 - 게스트 토큰과 `participantId` 는 `sessionStorage` 에 방 단위로 6시간 TTL 로 둔다(서버
-  `GuestIdentityService.GUEST_TOKEN_TTL` 과 같은 값). 탭 단위라 같은 브라우저의 다른 탭이 같은
+  `GuestIdentityService.GUEST_TOKEN_TTL` 과 같은 값). 키는 `woobeee:game:guest-token:<roomId>`
+  (`game-join.ts` 의 `guestTokenKey`). 탭 단위라 같은 브라우저의 다른 탭이 같은
   자리를 집어가지 않는다.
 - 게임 화면의 `memberId` 는 `GET /api/game/me` 가 준 값을 우선하고, 실패하거나 게스트면
   `localStorage` 에 적어 둔 값으로 되돌아간다(`useVerifiedMemberId` + `chooseMemberId`).
@@ -270,7 +276,10 @@ npm run build
 ## 알려진 주의사항
 
 - `next/font`가 Google Fonts를 조회하므로 네트워크가 막힌 환경에서는 `npm run build`가 실패할 수 있다.
-- `API_BASE_URL`은 `NEXT_PUBLIC_API_BASE_URL`이 없으면 `http://localhost:8000`을 사용한다.
+- `API_BASE_URL`(`lib/api.ts`)은 `NEXT_PUBLIC_API_BASE_URL`이 없으면 빈 문자열(`??  ""`)을
+  쓴다 — `http://localhost:8000`으로 폴백하지 않는다. 동일 오리진 + rewrites로 요청이 나가고,
+  개발 환경에서는 그 오리진이 결국 `:3000`의 Next 서버이므로 rewrites가 `MVC_ORIGIN`
+  (`http://localhost:8000`)으로 넘겨준다.
 - 서버는 소켓 `JOIN` 응답으로 내 `participantId` 를 알려주지 않는다. 화면은 회원/게스트 규칙으로
   계산하고 명단에 있는지 대조한다 — 서버가 `participantId` 를 실어 주면 이 계산을 없앨 수 있다.
 - 마이페이지는 프로필을 **표시만** 한다. presigned PUT 업로드 화면은 미구현이다.
