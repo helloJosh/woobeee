@@ -110,6 +110,22 @@ public class DodgeGameSink implements GameCommandSink {
     }
 
     /**
+     * 테스트에서 한 방에 대한 부수 상태가 <b>전부</b> 정리됐는지 한 번에 보기 위한 접근자.
+     * 프로덕션 코드는 부르지 않는다. 맵이 하나 늘어날 때 여기에도 추가한다 — 종료 경로가
+     * 예외로 중단돼 일부만 정리되는 누수를 잡는 것이 이 접근자의 목적이다.
+     */
+    boolean holdsAnyStateFor(String roomId) {
+        return games.containsKey(roomId)
+                || pendingInputs.containsKey(roomId)
+                || recordedInputs.containsKey(roomId)
+                || departuresByTick.containsKey(roomId)
+                || displayNames.containsKey(roomId)
+                || memberIds.containsKey(roomId)
+                || startedAt.containsKey(roomId)
+                || timers.containsKey(roomId);
+    }
+
+    /**
      * 테스트에서 방별 틱 타이머의 구독을 직접 들여다보기 위한 접근자. 프로덕션 코드는 부르지
      * 않는다. {@code gameOf(roomId)} 가 null 이 되는 것(={@link #tick} 이 {@code games} 맵에서
      * 뺀 것)과 실제로 타이머가 {@code dispose()} 된 것은 별개다 — 이 둘을 혼동하면 안 된다.
@@ -151,8 +167,28 @@ public class DodgeGameSink implements GameCommandSink {
 
         Duration period = Duration.ofMillis(DodgeRules.TICK_MILLIS);
         timers.put(roomId, Flux.interval(period, period, tickScheduler)
-                .doOnNext(ignored -> tick(room))
-                .subscribe());
+                .subscribe(
+                        ignored -> onTick(room),
+                        error -> log.error("Dodge tick loop for room {} terminated unexpectedly",
+                                roomId, error)));
+    }
+
+    /**
+     * 인터벌이 매 틱 부르는 진입점. 던져진 예외가 {@code Flux.interval} 구독까지 올라가면 안 된다 —
+     * 거기서의 {@code onError} 는 시퀀스를 영구히 끝내고 다시 구독하는 코드가 없으므로, 그 방의
+     * 게임은 아무 신호도 없이 그냥 멈춘다(에러 컨슈머조차 없으면 reactor 의 {@code onErrorDropped}
+     * 로 사라진다). {@link com.woobeee.game.room.RoomSweeper#onTick()} 과 같은 패턴이다.
+     *
+     * <p>구체적인 위험은 {@link #finish} 에 있다: {@link DodgeReplayWriter} 는 Jackson 실패를
+     * {@link IllegalStateException} 으로 감싸고, {@link GameResultService#record} 도 동기적으로
+     * 던질 수 있다. 그 예외가 이 지점을 넘어가면 해당 방의 틱 루프가 통째로 죽는다.
+     */
+    void onTick(Room room) {
+        try {
+            tick(room);
+        } catch (Exception e) {
+            log.error("Dodge tick failed for room {}; the loop continues", room.roomId(), e);
+        }
     }
 
     @Override
@@ -296,6 +332,23 @@ public class DodgeGameSink implements GameCommandSink {
             timer.dispose();
         }
 
+        // 방별 부수 상태 퇴출은 finally 에 둔다 — 아래에서 기보 직렬화(Jackson 실패를
+        // IllegalStateException 으로 감싼다)나 record 가 동기적으로 던지면, 그 예외는
+        // onTick 이 잡아 루프는 살아남지만 정리 코드는 실행되지 않은 뒤다. 그러면 끝난 방의
+        // 맵 항목이 프로세스가 죽을 때까지 남는다. 정리는 종료 경로의 성패와 무관해야 한다.
+        try {
+            recordAndBroadcastEnd(room, game, roomId);
+        } finally {
+            pendingInputs.remove(roomId);
+            recordedInputs.remove(roomId);
+            departuresByTick.remove(roomId);
+            displayNames.remove(roomId);
+            memberIds.remove(roomId);
+            startedAt.remove(roomId);
+        }
+    }
+
+    private void recordAndBroadcastEnd(Room room, DodgeGame game, String roomId) {
         Map<String, String> names = displayNames.getOrDefault(roomId, Map.of());
         Map<String, Long> memberIdsByParticipant = memberIds.getOrDefault(roomId, Map.of());
 
@@ -346,13 +399,6 @@ public class DodgeGameSink implements GameCommandSink {
                 gameResultId -> { },
                 error -> log.error("Failed to record dodge result for room {}", roomId, error)
         );
-
-        pendingInputs.remove(roomId);
-        recordedInputs.remove(roomId);
-        departuresByTick.remove(roomId);
-        displayNames.remove(roomId);
-        memberIds.remove(roomId);
-        startedAt.remove(roomId);
     }
 
     private List<Map<String, Object>> positionsOf(DodgeFrame frame) {

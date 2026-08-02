@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
 import reactor.test.StepVerifier;
 import reactor.test.scheduler.VirtualTimeScheduler;
 
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -52,7 +54,22 @@ class DodgeGameSinkTest {
         scheduler = VirtualTimeScheduler.create();
         objectMapper = new ObjectMapper();
 
-        GameIdGenerator ids = new GameIdGenerator() {
+        sink = new DodgeGameSink(
+                hub,
+                resultService,
+                new DodgeReplayWriter(objectMapper),
+                idsReturning(12345),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                scheduler
+        );
+
+        room = new Room("room-1", "code", GameType.DODGE, NOW, GameParticipant.member(11L, "host"));
+        room.addMember(GameParticipant.guest("a", "손님"));
+        room.addMember(GameParticipant.guest("b", "손님2"));
+    }
+
+    private GameIdGenerator idsReturning(int seed) {
+        return new GameIdGenerator() {
             @Override
             public String nextRoomId() {
                 return "room-1";
@@ -70,22 +87,9 @@ class DodgeGameSinkTest {
 
             @Override
             public int nextSeed() {
-                return 12345;
+                return seed;
             }
         };
-
-        sink = new DodgeGameSink(
-                hub,
-                resultService,
-                new DodgeReplayWriter(objectMapper),
-                ids,
-                Clock.fixed(NOW, ZoneOffset.UTC),
-                scheduler
-        );
-
-        room = new Room("room-1", "code", GameType.DODGE, NOW, GameParticipant.member(11L, "host"));
-        room.addMember(GameParticipant.guest("a", "손님"));
-        room.addMember(GameParticipant.guest("b", "손님2"));
     }
 
     private ClientMessage moveMessage(String direction, long seq) {
@@ -338,6 +342,78 @@ class DodgeGameSinkTest {
         JsonNode tick0 = ndjsonLineForTick(ndjsonCaptor.getValue(), 0);
         assertThat(tick0).isNotNull(); // the departures still belong on this line
         assertThat(tick0.has("moves")).isFalse();
+    }
+
+    /**
+     * I1 — the tick loop is one {@code Flux.interval} subscription for the whole life of the
+     * room. Anything thrown out of the tick body reaches that subscription as {@code onError},
+     * which terminates the sequence for good: nothing resubscribes, so the room's game simply
+     * stops advancing, in silence. {@link com.woobeee.game.room.RoomSweeper} already guards its
+     * own interval exactly this way; this sink must too.
+     *
+     * <p>A throwing {@code roomHub.broadcast} stands in for "anything thrown from the tick body"
+     * on a tick that does <b>not</b> end the game — that is the case where loop survival is
+     * observable, because a finishing tick disposes the timer anyway. The next tick must still
+     * run.
+     */
+    @Test
+    void aThrowingTickDoesNotStopTheFollowingTicks() {
+        RoomHub throwingHub = mock(RoomHub.class);
+        when(throwingHub.broadcast(any(), any()))
+                .thenThrow(new IllegalStateException("boom"))
+                .thenReturn(Sinks.EmitResult.OK);
+
+        DodgeGameSink guarded = new DodgeGameSink(
+                throwingHub,
+                resultService,
+                new DodgeReplayWriter(objectMapper),
+                idsReturning(12345),
+                Clock.fixed(NOW, ZoneOffset.UTC),
+                scheduler
+        );
+        guarded.onStart(room);
+        Disposable timer = guarded.timerOf("room-1");
+
+        assertThatCode(() -> scheduler.advanceTimeBy(Duration.ofMillis(100)))
+                .doesNotThrowAnyException();
+        assertThat(timer.isDisposed())
+                .as("a throwing tick must not terminate the interval subscription")
+                .isFalse();
+
+        scheduler.advanceTimeBy(Duration.ofMillis(100));
+
+        assertThat(guarded.gameOf("room-1").tick())
+                .as("the tick after a throwing one must still advance the game")
+                .isEqualTo(2);
+    }
+
+    /**
+     * I1 — the concrete hazard the review named: {@link GameResultService#record} can throw
+     * synchronously (and {@link DodgeReplayWriter} wraps Jackson failures in an
+     * {@link IllegalStateException}), and that throw happens inside {@code finish()}, past the
+     * point where the per-room maps are cleaned up. Unguarded it escapes the tick, reaches the
+     * interval as {@code onError}, and — because the subscribe had no error consumer — reactor
+     * rethrows it out of whatever thread drove the tick, while every per-room map entry for the
+     * finished room stays behind forever.
+     *
+     * <p>So: the throw must be contained and logged, and the room must leave no state behind.
+     */
+    @Test
+    void aThrowingResultRecordingIsContainedAndStillReleasesTheRoomState() {
+        when(resultService.record(any(FinishedGame.class), any()))
+                .thenThrow(new IllegalStateException("storage exploded"));
+
+        sink.onStart(room);
+        sink.onParticipantGone(room, "g:a");
+        sink.onParticipantGone(room, "g:b");
+
+        assertThatCode(() -> scheduler.advanceTimeBy(Duration.ofMillis(100)))
+                .as("a throwing record must not escape the tick loop")
+                .doesNotThrowAnyException();
+
+        assertThat(sink.holdsAnyStateFor("room-1"))
+                .as("a throwing record must not leak the finished room's per-room maps")
+                .isFalse();
     }
 
     /**
