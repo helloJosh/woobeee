@@ -28,6 +28,16 @@ public class RoomHub {
     private static final Logger log = LoggerFactory.getLogger(RoomHub.class);
     private final Map<String, Sinks.Many<ServerMessage>> sinks = new ConcurrentHashMap<>();
 
+    /**
+     * <b>구독자는 게임 코드를 다시 부르면 안 된다.</b> {@code GAME_SNAPSHOT} 은 방별 게임 모니터를
+     * 쥔 채로 브로드캐스트한다(재접속 스냅샷과 동시에 들어온 수가 먼저 나가면 방 전체가 되감기기
+     * 때문이다). 그래서 emit 은 구독자 체인을 그 모니터 안에서 인라인으로 돌린다 — 구독자가
+     * {@link GameCommandSink} 나 {@code OmokGame}/{@code DodgeGame} 을 건드리면 그 방이 교착한다.
+     *
+     * <p>지금 이 메서드를 부르는 곳은 {@code GameWebSocketHandler} 하나뿐이고, 그 체인은
+     * {@code map(session::textMessage) -> session.send} 로 게임 코드에 닿지 않는다. 관전 기록기나
+     * 메트릭 같은 서버측 구독자를 새로 붙인다면 이 제약을 먼저 확인해야 한다.
+     */
     public Flux<ServerMessage> subscribe(String roomId) {
         return sinkFor(roomId).asFlux();
     }
