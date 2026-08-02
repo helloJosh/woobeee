@@ -8,9 +8,10 @@
 
 ```text
                     Next.js (front :3000)
-        /api/auth/* /api/back/*      /api/game/*
-                    │                     │
-               [app-mvc :8000]     [app-webflux :8001]
+        /api/auth/* /api/back/*      /api/game/*        /ws/game
+                    │                     │                 │
+                    │                     │       (rewrites 우회 — 직접 연결)
+               [app-mvc :8000]     [app-webflux :8001] ◄────┘
                Tomcat / JPA         Netty / R2DBC
                     │                     │
                     └──────── core ───────┘
@@ -25,8 +26,8 @@
 | --- | --- | --- | --- |
 | `core` | 순수 라이브러리 (웹 스택 무의존) | `ApiResponse`, 토큰 계약(`AuthTokenType`/`TokenMetadata`), `RedisTokenStore` | — |
 | `app-mvc` | Boot + `starter-webmvc` + JPA | auth(토큰 발급·로그인·OAuth) + blog, Flyway 소유 | core |
-| `app-webflux` | Boot + `starter-webflux` + R2DBC | game(골격), Redis 토큰 **검증만** | core |
-| `front` | Next.js 14 | rewrites로 두 백엔드 프록시 | — |
+| `app-webflux` | Boot + `starter-webflux` + R2DBC | game(방·오목·장애물피하기·기보), Redis 토큰 **검증만** | core |
+| `front` | Next.js 14 | rewrites로 두 백엔드 프록시. 화면 전체(블로그·게임·마이페이지) | — |
 
 - 논리적으로 하나의 앱(회원·DB·Redis 공유), 물리적으로 Boot 프로세스 2개(Netty와 Tomcat은 한
   JVM에 공존 불가).
@@ -34,6 +35,29 @@
   app-webflux가 `ReactiveTokenVerifier`로 같은 키를 직접 읽어 검증. 앱 간 HTTP 호출 없음.
 - 스키마: Flyway가 단일 소스(`app-mvc/src/main/resources/db/migration/`). JPA는 `validate`
   전용이고 app-webflux는 `flyway.enabled=false`.
+- **`members` 는 app-mvc(JPA)와 app-webflux(R2DBC)가 공유하는 첫 테이블이다. 쓰기 소유권은
+  app-mvc 단독이고 app-webflux 는 게임 참가자 닉네임을 읽기만 한다.**
+
+### 단일 오리진 규칙의 예외 하나 — WebSocket
+
+프론트엔드는 `/ws/game` 에 WebFlux 오리진으로 **직접** 붙는다. Next.js rewrites 는 HTTP 전용이라
+WebSocket 업그레이드를 프록시하지 못하기 때문이다. 그래서 게임 화면만 "rewrites 로 두 백엔드를
+단일 오리진화한다" 는 규칙에서 벗어나며, 브라우저가 볼 오리진을 `NEXT_PUBLIC_WS_BASE_URL` 로
+따로 알려줘야 한다. 자세한 내용은 [`FRONTEND.md`](FRONTEND.md) 의 WebSocket 절.
+
+### 게임 흐름 (요약)
+
+1. 회원이 `POST /api/game/rooms` 로 방을 만들고 `roomId` + `inviteCode` 를 받는다.
+2. 초대 링크를 연 방문자는 `GET /api/game/rooms/{roomId}?invite=` 로 방을 확인한다. 회원이면
+   액세스 토큰으로, 비회원이면 `POST .../guest-tokens` 로 받은 게스트 토큰으로 들어간다.
+3. 화면이 `/ws/game` 에 붙어 첫 메시지로 `JOIN{roomId, inviteCode, token}` 을 보낸다. 이후
+   방 상태·게임 이벤트는 전부 이 소켓으로 오간다. 진행 중인 방으로 재접속하면 `GAME_SNAPSHOT`
+   으로 현재 판을 통째로 받는다.
+4. 게임이 끝나면 `game_results` + `game_result_participants` 에 결과를 남기고 기보를 MinIO 에
+   올린다. 마이페이지가 `GET /api/game/me/results` 로 전적을, `GET /api/game/results/{id}/replay`
+   로 presigned 기보 URL 을 가져와 다시 그린다.
+
+규칙·계약·인수 기준은 [`game/PRD.md`](game/PRD.md) 가 단일 출처다.
 
 ## 이전 구조 (art-market-place 기준 — 이하 절은 auth/blog 흐름 참고용)
 

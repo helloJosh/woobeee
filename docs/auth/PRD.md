@@ -22,6 +22,7 @@
 - 역할은 `ROLE_MEMBER` 하나다. Redis 토큰의 `role` 값에만 실려 있고 분기에 쓰이지 않는다.
 - `gameMoney`는 가입 시 0으로 생성하고 조회만 한다. 증감 경로는 게임 spec에서 정한다.
 - 저장소: `MemberRepository` (Spring Data JPA).
+- `members` 는 `app-webflux` 도 R2DBC 로 **읽는다**(게임 참가자 닉네임). 쓰기는 app-mvc 단독이다.
 
 ## 핵심 기능 (엔드포인트)
 

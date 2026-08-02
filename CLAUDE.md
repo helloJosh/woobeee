@@ -6,7 +6,7 @@
 
 - **구조**: Maven 멀티모듈 (`core` / `app-mvc` / `app-webflux` / `front`), Java 25, Spring Boot 4.0.5
 - **두 표면**: `blog`+`auth` = Spring MVC + JPA (`app-mvc` :8000) / `game` = Spring WebFlux + R2DBC (`app-webflux` :8001)
-- **프론트엔드**: `front/` Next.js 14 + React 18 + TypeScript + Tailwind (shadcn/ui, Radix). rewrites로 두 백엔드를 단일 오리진화
+- **프론트엔드**: `front/` Next.js 14 + React 18 + TypeScript + Tailwind (shadcn/ui, Radix) + vitest. rewrites로 두 백엔드를 단일 오리진화 — **단 WebSocket(`/ws/game`)은 예외로 브라우저가 WebFlux 오리진에 직접 붙는다**
 - **데이터/인프라**: PostgreSQL :9432(공유), Redis :9379(공유 토큰), MinIO :9000, Kafka :8010/8011 + UI :8090(코드 미연동), Google OAuth
 - **전신**: `art-market-place` 단일 모듈 모놀리스. product/cart 도메인은 폐기했다.
 
@@ -50,6 +50,19 @@
   - 동작/API 계약을 바꾸면 **먼저 AC 표를 갱신**하고 그 AC를 커버하는 테스트를 추가/수정한다.
   - 테스트 메서드 이름·주석에 AC ID(예: `BLOG-AC-03`)를 참조해 PRD ↔ 테스트 추적을 유지한다.
   - AC가 "미작성"인 도메인(`blog`, `game`)은 테스트 백로그다.
+- **`DodgeGame` 을 고치면 프론트 포트의 골든을 다시 뽑는다.** `front/lib/dodge-engine.ts` 는 서버
+  틱 로직의 TypeScript 포트이고 기보 재생이 여기에 걸려 있다. 한 글자만 달라져도 재생이 다른
+  게임이 되는데, 골든을 갱신하지 않으면 프론트 테스트는 낡은 기대값에 대고 계속 초록이다.
+
+  ```bash
+  ./mvnw -pl core,app-webflux -am compile -DskipTests
+  jshell --class-path app-webflux/target/classes -q scripts/dodge-parity-trace.jsh
+  ```
+
+  출력을 `front/lib/dodge-engine.test.ts` 의 `GOLDEN` 배열에 반영한다.
+- **게임 오류 코드는 양방향으로 일치해야 한다.** `app-webflux` 의 `GameErrorCode` 와
+  `front/lib/errors/error-messages.ts`(ko/en 둘 다) — 지도에 없는 코드도, 코드 없는 지도 키도
+  `GameErrorCodeTest` 가 실패시킨다.
 - 동작이나 구조가 바뀌면 해당 `docs/<domain>/*` 문서를 함께 갱신한다.
 
 ## 빌드 · 실행 · 검증
@@ -68,8 +81,17 @@ ADR을 갱신한다. 백엔드 개발에 Kafka가 필요 없으면 `up -d postgr
 
 ```bash
 ./mvnw -pl core,app-mvc,app-webflux -am test   # SchemaValidationTest는 PostgreSQL이 떠 있어야 통과
-cd front && npm run build
+cd front && npm test && npm run build          # npm test = tsc --noEmit → vitest run
 ```
+
+`front/package.json` 의 `test` 는 **타입 검사를 먼저** 돌리고 통과해야 vitest 로 넘어간다.
+`next.config.mjs` 가 `typescript.ignoreBuildErrors` 를 켜 두었으므로 `npm run build` 만으로는
+타입 검사가 되지 않는다 — `npm test`(또는 `npx tsc --noEmit`)를 반드시 함께 돌린다.
+
+프론트의 판단 로직은 컴포넌트가 아니라 `front/lib/` 의 React-free 모듈에 두고 `lib/*.test.ts`
+로 고정한다. 뮤테이션 스윕에서 그 모듈 안에 심은 변이는 전부 죽었고(11/11), 컴포넌트 안의
+판단을 죽일 수 있는 테스트는 하나도 없다 — 판단이 컴포넌트로 넘어가는 만큼 검증 밖으로
+나간다. 근거와 모듈 목록은 `docs/FRONTEND.md`.
 
 `core`의 웹 스택 무의존 확인:
 
@@ -94,7 +116,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 
 - app-mvc: `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 - app-webflux: `R2DBC_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
-- front: `MVC_ORIGIN`, `WEBFLUX_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL` (`front/.env.local.example` 참조)
+- front: `MVC_ORIGIN`, `WEBFLUX_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_WS_BASE_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`front/.env.local.example` 참조)
 
 ## API 엔드포인트
 
