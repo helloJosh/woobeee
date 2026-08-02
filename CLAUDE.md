@@ -126,7 +126,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | Kafka 미연동 | 로컬 compose에만 있고 코드 연동은 없다(ADR-003). 실제로 쓰려면 토픽 설계부터 |
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 game/blog 기준으로 새로 구성 |
 | 오목 제한시간 미강제 (G1) | `turnDeadline` 을 `OMOK_MOVED` 로 클라이언트에 알리지만 `OmokGame.timeout(...)` 을 호출하는 배선이 없다. 60초를 넘겨도 서버가 자동으로 패배 처리하지 않는다. 테스트: `OmokGameSinkTest#aStalledPlayerNeverTimesOutBecauseNothingDrivesTheDeadline` (`@Tag("known-gap")`) |
-| `RoomSweeper` 가 진행 중 게임을 정리하지 않음 (G2) | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 오목에서는 `OmokGameSink` 의 방별 상태가 메모리에 남는 정적 누수지만, **장애물피하기에서는 더 나쁘다** — `DodgeGameSink` 의 틱 타이머가 이미 사라진 방을 계속 돌리고, 끝내 존재하지 않는 방의 결과 행을 DB에 쓴다. 즉 조용한 메모리 누수가 아니라 능동적인 오염이다. 테스트: `RoomSweeperTest#sweepingAnExpiredRoomLeavesTheOmokSinkStillHoldingItsGameState` (`@Tag("known-gap")`) |
+| `RoomSweeper` 가 진행 중 게임을 정리하지 않음 (G2) | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 오목에서는 `OmokGameSink` 의 방별 상태가 메모리에 남는 정적 누수지만, **장애물피하기에서는 더 나쁘다** — `DodgeGameSink` 의 틱 타이머가 이미 사라진 방을 계속 돌리고, 끝내 존재하지 않는 방의 결과 행을 DB에 쓴다. 즉 조용한 메모리 누수가 아니라 능동적인 오염이다. 두 결과가 다르므로 테스트도 둘이다(둘 다 `@Tag("known-gap")`): 오목의 정적 누수는 `RoomSweeperTest#sweepingAnExpiredRoomLeavesTheOmokSinkStillHoldingItsGameState` 가, 장애물피하기의 능동적 오염은 `RoomSweeperTest#sweepingAnExpiredRoomLeavesTheDodgeTimerRunningUntilItRecordsAPhantomResult` 가 고정한다 — 후자는 방을 치운 뒤 시간을 더 흘려 보내면 이미 사라진 방에 대해 `GameResultService.record` 가 실제로 불리는 것(=`game_results` 행과 S3 기보가 남는 것)을 실패로 잡는다. 맵에 항목이 남았다는 것이 아니라 저장소가 오염된다는 것이 요점이다 |
 | **기보 접근 권한 실DB 테스트** | GAME-AC-22(참가자 본인만 기보 URL)를 강제하는 SQL이 **텍스트로만** 고정돼 있다. `AND p.member_id = :memberId` 를 지우면 테스트가 깨지지만, 컬럼을 바꾸거나 `AND` 를 `OR` 로 바꾸면 통과한다. 셋 중 가장 위험 — **UI가 이 엔드포인트에 붙기 전에** 실 Postgres 대상 테스트로 막아야 한다(참가자·비참가자·없는 id·게스트 4케이스) |
 | 결과 저장 롤백 미검증 | `GameResultService` 가 `insertResult`+`insertParticipants` 를 트랜잭션으로 감싸는 것은 테스트로 고정됐지만, 실제 commit/rollback 은 검증되지 않았다. 통합 테스트로 두 번째 참가자 insert 를 실패시켜 `game_results` 가 0행인지 확인해야 한다 |
 | `game_result_id` FK 없음 (G5) | `game_result_participants.game_result_id` 에 `game_results` 로의 FK 가 없다. 지금은 삭제 경로가 없어 고아 행이 생길 수 없다. 붙이려면 V2 가 이미 적용됐으므로 `V3__game_result_fk.sql` 로 `ON DELETE CASCADE` 를 추가한다. 테스트: `GameResultParticipantsForeignKeyTest#insertingAParticipantForAMissingGameResultIsRejected` (`@Tag("known-gap")`, 실 Postgres 필요) |
@@ -137,14 +137,16 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 ### 알려진 결함을 실행 가능한 테스트로 고정한 것 (`known-gap`)
 
 위 표의 G1/G2/G3/G4/G5 다섯 항목은 리뷰에서 발견됐지만 의도적으로 미루기로 한 결함이다. 각각을
-"오늘은 실패하고, 결함이 고쳐지면 통과하는" 테스트 하나로 고정해 뒀다 — 메모가 아니라 실행 가능한
-할 일이다. 다섯 테스트 모두 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test` 에서는 제외된다
-(그래서 위 기본 검증 명령은 계속 184/226개 그린을 유지한다). 루트 `pom.xml` 의
-`known.gap.excludedGroups` 프로퍼티(기본값 `known-gap`)가 surefire의 `excludedGroups` 를 구동한다.
+"오늘은 실패하고, 결함이 고쳐지면 통과하는" 테스트로 고정해 뒀다 — 메모가 아니라 실행 가능한
+할 일이다. **테스트는 여섯 개다**: G2 만 결과가 게임 종류에 따라 다르므로 둘로 나뉜다(오목은 정적
+누수, 장애물피하기는 이미 사라진 방의 결과 행을 쓰는 능동적 오염). 여섯 테스트 모두
+`@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test` 에서는 제외된다(그래서 위 기본 검증 명령은
+계속 283/289개 그린을 유지한다). 루트 `pom.xml` 의 `known.gap.excludedGroups` 프로퍼티(기본값
+`known-gap`)가 surefire의 `excludedGroups` 를 구동한다.
 
 ```bash
 ./mvnw -pl core,app-mvc,app-webflux -am test                              # 기본: known-gap 제외, 그린 유지
-./mvnw -pl core,app-mvc,app-webflux -am test -Dknown.gap.excludedGroups=   # known-gap 포함: 다섯 개가 실패해야 정상
+./mvnw -pl core,app-mvc,app-webflux -am test -Dknown.gap.excludedGroups=   # known-gap 포함: 여섯 개가 실패해야 정상
 ```
 
 G5 테스트(`GameResultParticipantsForeignKeyTest`)는 `docker compose` 의 Postgres(`localhost:9432/market`,
