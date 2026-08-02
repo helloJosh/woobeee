@@ -16,6 +16,7 @@ import {
     describeRoomOccupancy,
     joinRoomAsGuest,
     loadRoomSummary,
+    readStoredGuestToken,
 } from "@/lib/game-join"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameType, RoomSummary } from "@/lib/types"
@@ -47,11 +48,37 @@ export default function RoomJoinGate({
     const [joinError, setJoinError] = useState<string | null>(null)
     const [nickname, setNickname] = useState("")
     const [joining, setJoining] = useState(false)
+    // 같은 탭에서 이 방의 게스트 토큰을 이미 받아 뒀는지. 렌더 중에 sessionStorage 를 읽지
+    // 않는 이유는 readStoredGuestToken 이 만료·손상된 항목을 지우기 때문이다 — 렌더에서
+    // 하는 쓰기는 StrictMode 나 프리렌더가 버릴 수 있다.
+    const [storedGuestToken, setStoredGuestToken] = useState<string | null>(null)
+    // 위 상태들이 어느 방의 것인지. 프롭이 바뀐 렌더에서는 아직 이전 방을 가리킨다.
+    const [loadedRoom, setLoadedRoom] = useState<string | null>(null)
+
+    // onReady 는 부모가 인라인 화살표 함수로 넘기기 쉬워 렌더마다 신원이 바뀐다. 부모는
+    // 받은 토큰을 setState 할 것이므로, 이펙트 의존성에 그대로 넣으면 호출 → 리렌더 →
+    // 새 함수 → 재호출의 루프가 된다. 최신 함수는 ref 로 들고 방마다 한 번만 넘긴다.
+    const onReadyRef = useRef(onReady)
+    useEffect(() => {
+        onReadyRef.current = onReady
+    })
+
+    // 방 단위로 기억한다. 불리언이면 다음 방으로 넘어갈 때 영원히 잠긴다.
+    const deliveredRoomRef = useRef<string | null>(null)
 
     useEffect(() => {
         let cancelled = false
+        // 방이 바뀌면 이전 방에 대해 했던 모든 판단을 버린다. App Router 는 동적 세그먼트만
+        // 바뀔 때 이 컴포넌트를 다시 마운트하지 않으므로, 여기서 지우지 않으면 이전 방의
+        // 상태가 그대로 남는다.
+        deliveredRoomRef.current = null
         setSummary(null)
         setLoadError(null)
+        setJoinError(null)
+        setJoining(false)
+        setNickname("")
+        setStoredGuestToken(readStoredGuestToken(roomId))
+        setLoadedRoom(roomId)
 
         loadRoomSummary(roomId, inviteCode).then((outcome) => {
             if (cancelled) {
@@ -70,49 +97,57 @@ export default function RoomJoinGate({
     }, [roomId, inviteCode])
 
     const stage = decideJoinGate({
+        roomId,
+        loadedRoom,
         authLoading: loading,
         isAuthenticated,
         memberToken: tokenManager.getToken(),
+        storedGuestToken,
         summary,
         expectedGameType,
         error: loadError,
     })
 
-    // onReady 는 부모가 인라인 화살표 함수로 넘기기 쉬워 렌더마다 신원이 바뀐다. 이펙트
-    // 의존성에 그대로 넣으면 렌더마다 다시 호출되므로, 최신 함수는 ref 로 들고 토큰이
-    // 정해졌을 때 딱 한 번만 넘긴다.
-    const onReadyRef = useRef(onReady)
-    onReadyRef.current = onReady
-    const deliveredRef = useRef(false)
-
-    // ref 만 닫아 잡으므로 신원이 영원히 고정된다 — 아래 이펙트의 의존성으로 안전하다.
-    const handOff = useCallback((token: string) => {
-        if (deliveredRef.current) {
-            return
+    /** 넘겼으면 true, 이미 이 방에 대해 넘긴 뒤라 아무것도 하지 않았으면 false. */
+    const handOff = useCallback((room: string, token: string) => {
+        if (deliveredRoomRef.current === room) {
+            return false
         }
-        deliveredRef.current = true
+        deliveredRoomRef.current = room
         onReadyRef.current(token)
+        return true
     }, [])
 
-    const memberToken = stage.kind === "member-ready" ? stage.token : null
+    // roomId 를 의존성에 넣어야 한다. 회원 토큰 문자열은 방이 바뀌어도 그대로라서
+    // 토큰만 보고 있으면 두 번째 방에서는 이펙트가 다시 돌지 않는다.
+    const readyToken = stage.kind === "ready" ? stage.token : null
     useEffect(() => {
-        if (memberToken) {
-            handOff(memberToken)
+        if (readyToken) {
+            handOff(roomId, readyToken)
         }
-    }, [memberToken, handOff])
+    }, [roomId, readyToken, handOff])
 
     const joinAsGuest = async () => {
         setJoining(true)
         setJoinError(null)
 
         const outcome = await joinRoomAsGuest(roomId, inviteCode, nickname)
-        if (outcome.kind === "token") {
-            // joining 을 그대로 둔 채 부모가 게임 화면으로 갈아끼우게 한다.
-            handOff(outcome.token)
+        if (outcome.kind === "error") {
+            setJoinError(outcome.message)
+            setJoining(false)
             return
         }
-        setJoinError(outcome.message)
-        setJoining(false)
+
+        // joinRoomAsGuest 가 sessionStorage 에 넣어 뒀다. 화면 상태도 맞춰 둬야 게이트가
+        // 계속 마운트된 채 다시 렌더되더라도 갈림길로 되돌아가지 않는다.
+        setStoredGuestToken(outcome.token)
+
+        // 넘겼으면 joining 을 그대로 둔 채 부모가 게임 화면으로 갈아끼우게 한다. 넘기지
+        // 못했다면 스피너를 끄고 이유를 말한다 — 아무 말 없이 계속 도는 버튼은 막다른 길이다.
+        if (!handOff(roomId, outcome.token)) {
+            setJoinError("이미 이 방에 참가했습니다. 페이지를 새로고침해 주세요.")
+            setJoining(false)
+        }
     }
 
     switch (stage.kind) {
@@ -121,9 +156,9 @@ export default function RoomJoinGate({
         case "wrong-game":
             return <GateNotice message="이 링크는 다른 게임의 방입니다." />
         case "loading":
-        // 회원 토큰은 위 이펙트가 부모에게 넘겼다. 부모가 게임 화면으로 갈아끼울 때까지
-        // 갈림길 대신 스피너를 보여 준다 — 로그인한 사람에게 로그인 버튼을 깜빡이지 않는다.
-        case "member-ready":
+        // 토큰은 위 이펙트가 부모에게 넘겼다. 부모가 게임 화면으로 갈아끼울 때까지 갈림길
+        // 대신 스피너를 보여 준다 — 로그인한 사람에게 로그인 버튼을 깜빡이지 않는다.
+        case "ready":
             return (
                 <div className="flex min-h-[50vh] items-center justify-center">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -141,7 +176,18 @@ export default function RoomJoinGate({
                         </p>
                     </div>
 
+                    {stage.block ? (
+                        <Alert variant="destructive">
+                            <AlertDescription>{stage.block.message}</AlertDescription>
+                        </Alert>
+                    ) : null}
+
                     <div className="space-y-3">
+                        {/*
+                          * 방이 막혀 있어도 로그인 링크는 남긴다. 이 방에 이미 자리가 있는
+                          * 회원이 새로고침 뒤 돌아오는 길이 이것뿐이고, 그 경우 서버는
+                          * RECONNECTED 로 받아 준다. 확실히 새 참가자인 게스트 폼만 잠근다.
+                          */}
                         <Button asChild className="w-full" variant="outline">
                             <Link href="/login">로그인하고 참가</Link>
                         </Button>
@@ -152,14 +198,16 @@ export default function RoomJoinGate({
 
                         <Input
                             value={nickname}
-                            onChange={(event) => setNickname(event.target.value)}
+                            // maxLength 는 trim 전에 걸리므로 앞쪽 공백이 20자를 갉아먹는다.
+                            // 앞 공백은 애초에 넣지 않는다.
+                            onChange={(event) => setNickname(event.target.value.replace(/^\s+/, ""))}
                             placeholder="닉네임 (필수)"
                             maxLength={NICKNAME_MAX_LENGTH}
-                            disabled={joining}
+                            disabled={joining || stage.block !== null}
                         />
                         <Button
                             className="w-full"
-                            disabled={joining || !checkNickname(nickname).ok}
+                            disabled={joining || stage.block !== null || !checkNickname(nickname).ok}
                             onClick={joinAsGuest}
                         >
                             {joining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

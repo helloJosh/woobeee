@@ -62,6 +62,95 @@ export async function loadRoomSummary(
     }
 }
 
+/**
+ * 발급받은 게스트 토큰을 탭 안에 남긴다. 새로고침하면 게이트로 되돌아오는데, 같은 닉네임을
+ * 다시 넣으면 방에 남아 있는 RoomMember 때문에 중복으로 거절되고(끊긴 뒤 30초 유예 동안
+ * displayName 이 그대로 잡혀 있다), 다른 닉네임을 넣으면 한 사람이 두 자리를 차지한다.
+ * 토큰을 재사용하면 같은 participantId 로 Room.admit 이 RECONNECTED 를 돌려준다.
+ *
+ * sessionStorage 를 쓰는 이유: 탭 단위라 같은 브라우저의 다른 탭이 같은 자리를 집어가지
+ * 않고, 탭을 닫으면 사라진다. localStorage 였다면 두 탭이 한 자리를 두고 싸운다.
+ *
+ * 만료는 서버(GuestIdentityService.GUEST_TOKEN_TTL, 6시간)와 맞춰 스스로 지운다. 그보다
+ * 먼저 토큰이 죽는 경우(방 정리 등)는 여기서 알 수 없다 — 소켓 JOIN 이 거절당한 화면이
+ * clearStoredGuestToken 을 불러야 한다.
+ */
+const GUEST_TOKEN_KEY_PREFIX = "woobeee:game:guest-token:"
+const GUEST_TOKEN_TTL_MS = 6 * 60 * 60 * 1000
+
+interface StoredGuestToken {
+    token: string
+    issuedAt: number
+}
+
+function guestTokenKey(roomId: string): string {
+    return `${GUEST_TOKEN_KEY_PREFIX}${roomId}`
+}
+
+export function storeGuestToken(roomId: string, token: string): void {
+    if (typeof window === "undefined") {
+        return
+    }
+    const entry: StoredGuestToken = { token, issuedAt: Date.now() }
+    try {
+        window.sessionStorage.setItem(guestTokenKey(roomId), JSON.stringify(entry))
+    } catch {
+        // 사파리 프라이빗 모드 등에서 저장이 막힐 수 있다. 저장 실패가 참가 자체를 막을
+        // 이유는 없으므로 새로고침 복구만 포기한다.
+    }
+}
+
+export function readStoredGuestToken(roomId: string): string | null {
+    if (typeof window === "undefined") {
+        return null
+    }
+    let raw: string | null = null
+    try {
+        raw = window.sessionStorage.getItem(guestTokenKey(roomId))
+    } catch {
+        return null
+    }
+    if (!raw) {
+        return null
+    }
+
+    let entry: unknown
+    try {
+        entry = JSON.parse(raw)
+    } catch {
+        clearStoredGuestToken(roomId)
+        return null
+    }
+
+    if (!isStoredGuestToken(entry) || Date.now() - entry.issuedAt >= GUEST_TOKEN_TTL_MS) {
+        clearStoredGuestToken(roomId)
+        return null
+    }
+    return entry.token
+}
+
+export function clearStoredGuestToken(roomId: string): void {
+    if (typeof window === "undefined") {
+        return
+    }
+    try {
+        window.sessionStorage.removeItem(guestTokenKey(roomId))
+    } catch {
+        // 위와 같다.
+    }
+}
+
+function isStoredGuestToken(value: unknown): value is StoredGuestToken {
+    if (typeof value !== "object" || value === null) {
+        return false
+    }
+    const candidate = value as Partial<StoredGuestToken>
+    return typeof candidate.token === "string"
+        && candidate.token.length > 0
+        && typeof candidate.issuedAt === "number"
+        && Number.isFinite(candidate.issuedAt)
+}
+
 export type GuestJoinOutcome =
     | { kind: "token"; token: string }
     | { kind: "error"; message: string }
@@ -78,6 +167,7 @@ export async function joinRoomAsGuest(
 
     try {
         const guest = await gameAPI.issueGuestToken(roomId, inviteCode, nickname.value)
+        storeGuestToken(roomId, guest.token)
         return { kind: "token", token: guest.token }
     } catch (error) {
         console.error("Failed to issue guest token:", error)
@@ -86,27 +176,66 @@ export async function joinRoomAsGuest(
 }
 
 /**
+ * 새 참가자를 막아야 하는 이유. 서버(Room.admit)는 정원 초과를 ROOM_FULL, 시작된 방을
+ * GAME_ALREADY_STARTED 로 거절하지만 그 판정은 WebSocket JOIN 에서만 일어난다 —
+ * GuestIdentityService.issue 는 방 존재·초대 코드·닉네임만 보고 토큰을 내준다. 그래서
+ * 게이트가 막지 않으면 게스트는 토큰을 받고 게임 화면으로 넘어간 뒤에야, 이 컴포넌트가 이미
+ * 사라진 자리에서 거절당한다. 여기서 미리 알려 주는 이유다.
+ */
+export type RoomJoinBlock = { reason: "started" | "full"; message: string }
+
+export function describeJoinBlock(summary: RoomSummary): RoomJoinBlock | null {
+    if (summary.status !== "WAITING") {
+        return {
+            reason: "started",
+            message: "이미 시작된 게임이라 새로 참가할 수 없습니다. 방장에게 새 방을 만들어 달라고 하세요.",
+        }
+    }
+    if (summary.participantCount >= summary.capacity) {
+        return {
+            reason: "full",
+            message: `정원이 찼습니다 (${summary.participantCount} / ${summary.capacity}명). 자리가 나면 다시 시도해 주세요.`,
+        }
+    }
+    return null
+}
+
+/**
  * 게이트가 지금 무엇을 그려야 하는지. 컴포넌트는 이 결과를 switch 로 받아 그리기만 한다.
- * member-ready 는 "회원 토큰이 이미 있으니 게임 화면으로 넘겨라" 는 뜻이다.
+ * ready 는 "쓸 수 있는 토큰이 있으니 게임 화면으로 넘겨라" 는 뜻이다.
  */
 export type JoinGateStage =
     | { kind: "loading" }
     | { kind: "error"; message: string }
     | { kind: "wrong-game" }
-    | { kind: "member-ready"; token: string }
-    | { kind: "needs-identity"; summary: RoomSummary }
+    | { kind: "ready"; token: string; source: "member" | "guest-session" }
+    | { kind: "needs-identity"; summary: RoomSummary; block: RoomJoinBlock | null }
 
 export interface JoinGateInput {
+    /** 지금 보고 있는 방. */
+    roomId: string
+    /**
+     * summary/error/storedGuestToken 이 설명하는 방. roomId 와 다르면 그 셋은 아직 이전
+     * 방의 것이다 — 프롭이 바뀐 렌더와 그것을 반영하는 이펙트 사이에 한 프레임이 있다.
+     * 이 프레임을 걸러내지 않으면 A 방의 게스트 토큰을 B 방으로 넘기게 된다(서버의
+     * JoinAuthenticator 가 401 로 막지만, 이유 없는 소켓 거절로 보일 뿐이다).
+     */
+    loadedRoom: string | null
     authLoading: boolean
     isAuthenticated: boolean
-    /** tokenManager.getToken() — SSR 에서는 null 이다. */
+    /** tokenManager.getToken() — SSR 에서는 null 이다. 방과 무관하다. */
     memberToken: string | null
+    /** readStoredGuestToken(roomId) — 같은 탭에서 이 방의 게스트 토큰을 이미 받았다면 그것. */
+    storedGuestToken: string | null
     summary: RoomSummary | null
     expectedGameType: GameType
     error: string | null
 }
 
 export function decideJoinGate(input: JoinGateInput): JoinGateStage {
+    if (input.loadedRoom !== input.roomId) {
+        return { kind: "loading" }
+    }
     if (input.error) {
         return { kind: "error", message: input.error }
     }
@@ -116,12 +245,30 @@ export function decideJoinGate(input: JoinGateInput): JoinGateStage {
     if (input.summary.gameType !== input.expectedGameType) {
         return { kind: "wrong-game" }
     }
+
+    // 이 방의 게스트 토큰이 이미 있으면 회원 토큰보다 먼저 쓴다. 그 토큰에 묶인 participantId
+    // 로 들어가야 Room.admit 이 RECONNECTED 를 돌려주고 원래 자리로 복귀한다 — 회원 토큰으로
+    // 바꿔 들어가면 같은 사람이 두 자리를 차지한다.
+    if (input.storedGuestToken) {
+        return { kind: "ready", token: input.storedGuestToken, source: "guest-session" }
+    }
+
     // 로그인 상태면 회원 access token 을 그대로 쓴다. isAuthenticated 가 참인데 토큰이 없는
     // 어긋난 상태(수동 삭제 등)에서는 갈림길을 보여줘 다시 로그인하거나 게스트로 들어가게 한다.
+    //
+    // 정원·상태로 막지 않는 것은 의도적이다. 새로고침한 기존 회원 참가자와 처음 온 회원을
+    // RoomSummary(인원 수만 있고 명단이 없다)로는 구분할 수 없는데, 막으면 재접속이 깨진다.
+    // Room.admit 은 이미 멤버인 경우 정원·상태 검사보다 먼저 RECONNECTED 를 돌려주므로,
+    // 판단을 서버로 넘기는 쪽이 옳다. 아래 게스트 갈림길은 반대로 확실히 새 참가자다.
     if (input.isAuthenticated && input.memberToken) {
-        return { kind: "member-ready", token: input.memberToken }
+        return { kind: "ready", token: input.memberToken, source: "member" }
     }
-    return { kind: "needs-identity", summary: input.summary }
+
+    return {
+        kind: "needs-identity",
+        summary: input.summary,
+        block: describeJoinBlock(input.summary),
+    }
 }
 
 export const GAME_TYPE_LABELS: Record<GameType, string> = {
@@ -129,8 +276,11 @@ export const GAME_TYPE_LABELS: Record<GameType, string> = {
     DODGE: "장애물피하기",
 }
 
-/** "2 / 8명 · 이미 시작된 게임입니다" */
+/**
+ * "2 / 8명". 시작 여부는 붙이지 않는다 — status 가 WAITING 이 아니면 describeJoinBlock 이
+ * 항상 같은 사실을 결과("새로 참가할 수 없습니다")까지 담아 말하므로, 여기서 또 쓰면 같은
+ * 문장이 화면에 두 번 나온다.
+ */
 export function describeRoomOccupancy(summary: RoomSummary): string {
-    const occupancy = `${summary.participantCount} / ${summary.capacity}명`
-    return summary.status === "WAITING" ? occupancy : `${occupancy} · 이미 시작된 게임입니다`
+    return `${summary.participantCount} / ${summary.capacity}명`
 }
