@@ -7,6 +7,7 @@ import PostList from "@/components/post-list"
 import { ThemeProvider } from "@/components/theme-provider"
 import { useCategories } from "@/hooks/use-categories"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useRegisterHeaderControls } from "@/hooks/use-header-controls"
 import type { Post } from "@/lib/types"
 import ChatWidget from "@/app/chat/page"
 
@@ -74,6 +75,14 @@ export default function BlogPage() {
     setSearchQuery(query)
     updateURL({ category: selectedCategory, search: query })
   }
+
+  // 전역 헤더(root layout)에 이 페이지의 사이드바 토글·검색을 등록한다.
+  // /blog를 벗어나면 훅의 클린업이 컨트롤을 비워서 헤더에 낡은 검색창이 남지 않는다.
+  useRegisterHeaderControls({
+    onToggleSidebar: () => setSidebarOpen(!sidebarOpen),
+    searchQuery,
+    onSearchChange: handleSearchChange,
+  })
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>

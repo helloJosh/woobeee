@@ -5,6 +5,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/hooks/use-auth"
+import { HeaderControlsProvider } from "@/hooks/use-header-controls"
 import Header from "@/components/header"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -47,10 +48,12 @@ export default function RootLayout({
       <body className={inter.className}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
         <AuthProvider>
-          <Suspense fallback={null}>
-            <Header />
-          </Suspense>
-          {children}
+          <HeaderControlsProvider>
+            <Suspense fallback={null}>
+              <Header />
+            </Suspense>
+            {children}
+          </HeaderControlsProvider>
         </AuthProvider>
       </ThemeProvider>
       </body>

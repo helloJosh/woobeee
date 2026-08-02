@@ -11,17 +11,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import UserMenu from "@/components/auth/user-menu"
 import { useAuth } from "@/hooks/use-auth" // Updated import
-
-interface HeaderProps {
-  /** 사이드바가 있는 페이지(예: /blog)에서만 전달됨. 없으면 모바일 메뉴 버튼을 숨긴다. */
-  onToggleSidebar?: () => void
-  /** 상위에서 관리하는 검색어(있으면 표시됨) */
-  searchQuery?: string | null
-  /** 상위에 검색어 변경/제출을 알리고 싶을 때 사용 */
-  onSearchChange?: (q: string) => void
-  /** 선택사항: 홈 버튼 눌렀을 때 */
-  onHome?: () => void
-}
+import { useHeaderControls } from "@/hooks/use-header-controls"
 
 // 디바운싱을 위한 커스텀 훅
 function useDebounce(value: string, delay: number) {
@@ -40,12 +30,10 @@ function useDebounce(value: string, delay: number) {
   return debouncedValue
 }
 
-export default function Header({
-                                 onToggleSidebar,
-                                 searchQuery: searchQueryProp,
-                                 onSearchChange,
-                                 onHome,
-                               }: HeaderProps) {
+export default function Header() {
+  // /blog처럼 사이드바·검색을 갖는 페이지가 마운트돼 있을 때만 채워진다.
+  // 다른 라우트에서는 모두 undefined라서 아래 조건부 렌더링이 탭 3개만 남긴다.
+  const { onToggleSidebar, searchQuery: searchQueryProp, onSearchChange } = useHeaderControls()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -143,21 +131,23 @@ export default function Header({
           </div>
 
           <div className="flex-1 flex items-center justify-end gap-4">
-            <form onSubmit={handleSearchSubmit} className="relative max-w-sm w-full">
-              <button
-                  type="submit"
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground"
-              >
-                <Search className="w-4 h-4" />
-              </button>
+            {onSearchChange ? (
+                <form onSubmit={handleSearchSubmit} className="relative max-w-sm w-full">
+                  <button
+                      type="submit"
+                      className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground"
+                  >
+                    <Search className="w-4 h-4" />
+                  </button>
 
-              <Input
-                  placeholder="검색..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-              />
-            </form>
+                  <Input
+                      placeholder="검색..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                  />
+                </form>
+            ) : null}
 
             {/* ▼ 여기 EN/KR 토글 버튼 추가 */}
             <Button
