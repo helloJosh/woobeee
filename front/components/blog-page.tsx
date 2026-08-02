@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import Header from "@/components/header"
 import Sidebar from "@/components/sidebar"
 import PostList from "@/components/post-list"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -79,13 +78,6 @@ export default function BlogPage() {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
       <div className="min-h-screen bg-background">
-        <Header
-          onHome={handleHome}
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        />
-
         <div className="flex">
           <Sidebar
             categories={categories}

@@ -13,7 +13,8 @@ import UserMenu from "@/components/auth/user-menu"
 import { useAuth } from "@/hooks/use-auth" // Updated import
 
 interface HeaderProps {
-  onToggleSidebar: () => void
+  /** 사이드바가 있는 페이지(예: /blog)에서만 전달됨. 없으면 모바일 메뉴 버튼을 숨긴다. */
+  onToggleSidebar?: () => void
   /** 상위에서 관리하는 검색어(있으면 표시됨) */
   searchQuery?: string | null
   /** 상위에 검색어 변경/제출을 알리고 싶을 때 사용 */
@@ -115,9 +116,11 @@ export default function Header({
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 items-center px-4">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={onToggleSidebar} className="md:hidden">
-              <Menu className="h-5 w-5" />
-            </Button>
+            {onToggleSidebar ? (
+                <Button variant="ghost" size="icon" onClick={onToggleSidebar} className="md:hidden">
+                  <Menu className="h-5 w-5" />
+                </Button>
+            ) : null}
 
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/">
