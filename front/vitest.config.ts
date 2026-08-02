@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 /**
  * 프론트의 첫 테스트 러너. 여기 있는 설정은 두 가지뿐이다.
@@ -21,6 +21,8 @@ export default defineConfig({
         },
     },
     test: {
-        exclude: ["**/node_modules/**", "**/.next/**"],
+        // 기본 exclude 를 덮어쓰지 말고 늘린다 — 통째로 갈아 끼우면 dist 같은 기본 제외가
+        // 조용히 풀린다.
+        exclude: [...configDefaults.exclude, "**/.next/**"],
     },
 })

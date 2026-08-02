@@ -88,8 +88,13 @@ function normalisesToASamePathOnThisOrigin(value: string): boolean {
     } catch {
         return false
     }
-    // origin 검사는 위의 문자열 규칙을 한 번 더 받쳐 주는 것이다 — 문자열로 놓친 스킴 상대
-    // 표기가 있어도 여기서 오리진이 달라지므로 걸린다.
+    // 실제로 막는 것은 pathname 검사다. `/..//evil.example` 처럼 문자열 규칙은 통과하지만
+    // 점 세그먼트가 접히고 나면 `//evil.example` — 프로토콜 상대 경로 — 가 되는 값이 있고,
+    // 정규화한 뒤 이동하는 소비자에게는 그게 오리진 밖으로 나가는 길이 된다.
+    //
+    // origin 검사는 남겨 두지만 도달 불가능하다: 여기까지 온 값은 이미 `/` 하나로 시작하는
+    // 절대 경로라 오리진을 바꿀 수 없다. 문자열 규칙이 느슨해질 때를 대비한 이중 안전장치일
+    // 뿐, 스킴 상대 표기를 여기서 잡는다는 뜻은 아니다.
     return resolved.origin === PROBE_ORIGIN && !resolved.pathname.startsWith("//")
 }
 
