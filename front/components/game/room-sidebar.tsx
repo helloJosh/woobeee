@@ -1,0 +1,107 @@
+"use client"
+
+import { useState } from "react"
+import { Check, Copy, Crown, WifiOff } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import type { ParticipantView, RoomStatus } from "@/lib/types"
+
+interface RoomSidebarProps {
+    participants: ParticipantView[]
+    hostParticipantId: string
+    status: RoomStatus
+    inviteUrl: string
+    selfParticipantId: string | null
+    onReadyToggle: (ready: boolean) => void
+    onStart: () => void
+}
+
+export default function RoomSidebar({
+    participants,
+    hostParticipantId,
+    status,
+    inviteUrl,
+    selfParticipantId,
+    onReadyToggle,
+    onStart,
+}: RoomSidebarProps) {
+    const [copied, setCopied] = useState(false)
+
+    const self = participants.find((p) => p.participantId === selfParticipantId)
+    const isHost = selfParticipantId !== null && selfParticipantId === hostParticipantId
+    const everyoneReady = participants.length >= 2 && participants.every((p) => p.ready)
+
+    const copyInvite = async () => {
+        await navigator.clipboard.writeText(inviteUrl)
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+    }
+
+    return (
+        <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-72">
+            <div className="space-y-2">
+                <h2 className="text-sm font-medium">초대 링크</h2>
+                <div className="flex gap-2">
+                    <input
+                        readOnly
+                        value={inviteUrl}
+                        className="min-w-0 flex-1 truncate rounded-md border bg-muted px-3 py-2 text-xs"
+                    />
+                    <Button size="icon" variant="outline" onClick={copyInvite} aria-label="초대 링크 복사">
+                        {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                </div>
+            </div>
+
+            <div className="space-y-2">
+                <h2 className="text-sm font-medium">참가자 ({participants.length})</h2>
+                <ul className="space-y-1">
+                    {participants.map((participant) => (
+                        <li
+                            key={participant.participantId}
+                            className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                        >
+                            <span className="flex min-w-0 items-center gap-1.5">
+                                {participant.participantId === hostParticipantId ? (
+                                    <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                                ) : null}
+                                <span className="truncate">{participant.displayName}</span>
+                                {participant.connection === "DISCONNECTED" ? (
+                                    <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                ) : null}
+                            </span>
+                            {status === "WAITING" ? (
+                                <span
+                                    className={
+                                        participant.ready
+                                            ? "text-xs text-emerald-600"
+                                            : "text-xs text-muted-foreground"
+                                    }
+                                >
+                                    {participant.ready ? "준비" : "대기"}
+                                </span>
+                            ) : null}
+                        </li>
+                    ))}
+                </ul>
+            </div>
+
+            {status === "WAITING" ? (
+                <div className="space-y-2">
+                    <Button
+                        variant={self?.ready ? "outline" : "default"}
+                        className="w-full"
+                        disabled={!self}
+                        onClick={() => onReadyToggle(!self?.ready)}
+                    >
+                        {self?.ready ? "준비 해제" : "준비"}
+                    </Button>
+                    {isHost ? (
+                        <Button className="w-full" disabled={!everyoneReady} onClick={onStart}>
+                            게임 시작
+                        </Button>
+                    ) : null}
+                </div>
+            ) : null}
+        </aside>
+    )
+}
