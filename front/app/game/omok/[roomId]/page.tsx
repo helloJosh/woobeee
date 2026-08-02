@@ -15,14 +15,16 @@ import {
     OMOK_BOARD_SIZE,
     canPlaceStone,
     describeGameOutcome,
-    describeSocketStatus,
     describeTurn,
     initialOmokRoomState,
-    isSocketSettled,
     myStoneColor,
     reduceOmokRoom,
-    resolveSelfParticipantId,
 } from "@/lib/omok-play"
+import {
+    describeSocketStatus,
+    isSocketSettled,
+    resolveSelfParticipantId,
+} from "@/lib/game-room"
 import { useAuth } from "@/hooks/use-auth"
 
 /**
