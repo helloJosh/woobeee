@@ -36,7 +36,10 @@
 ## 핵심 규칙
 
 - **도메인 패키지 경계를 유지**한다: `com.woobeee.mvc.{_common,auth,blog}`, `com.woobeee.game`, `com.woobeee.core`. 도메인 간 직접 의존을 늘리지 않는다.
-- **`core`는 웹 스택 무의존**을 유지한다. 공통 코드가 MVC나 WebFlux 타입을 필요로 하면 core가 아니라 해당 앱에 둔다.
+- **`core`는 웹 *스타터* 무의존**을 유지한다. `spring-web` 자체는 들어 있다 — `ApiResponse` 가
+  `HttpStatus` 를 쓴다(`core/pom.xml`). 금지 대상은 서블릿·리액티브 런타임을 끌고 오는
+  `spring-boot-starter-webmvc` / `-webflux` 이고, 아래 grep 게이트가 그것을 본다. 공통 코드가
+  MVC나 WebFlux 타입을 필요로 하면 core가 아니라 해당 앱에 둔다.
 - **쿼리 구현 규칙**:
   - 단순 조회(PK/단일 컬럼)는 Spring Data 파생 메서드.
   - 그 외 커스텀 조회(동적 조건·검색·집계·조인/서브쿼리·목록)는 **네이티브 SQL**(`@Query(nativeQuery = true)`).
@@ -116,7 +119,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 미설정 시 `application.yaml` 기본값을 쓴다.
 
 - app-mvc: `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
-- app-webflux: `R2DBC_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
+- app-webflux: `R2DBC_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (기보 업로드와 presign 에 쓴다 — 미설정이면 조용히 기본 버킷으로 간다)
 - front: `MVC_ORIGIN`, `WEBFLUX_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_WS_BASE_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`front/.env.local.example` 참조)
 
 ## API 엔드포인트
@@ -168,7 +171,8 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 할 일이다. **테스트는 여섯 개다**: G2 만 결과가 게임 종류에 따라 다르므로 둘로 나뉜다(오목은 정적
 누수, 장애물피하기는 이미 사라진 방의 결과 행을 쓰는 능동적 오염). 여섯 테스트 모두
 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test` 에서는 제외된다(그래서 위 기본 검증 명령은
-계속 283/289개 그린을 유지한다). 루트 `pom.xml` 의 `known.gap.excludedGroups` 프로퍼티(기본값
+계속 321개 그린을 유지한다 — core 6 / app-mvc 36 / app-webflux 279. 포함해서 돌리면 327개 중
+321개 통과, 6개 실패다). 루트 `pom.xml` 의 `known.gap.excludedGroups` 프로퍼티(기본값
 `known-gap`)가 surefire의 `excludedGroups` 를 구동한다.
 
 ```bash
