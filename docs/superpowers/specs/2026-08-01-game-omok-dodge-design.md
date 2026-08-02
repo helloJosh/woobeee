@@ -124,6 +124,17 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 **닉네임 검증** — 1~20자, 앞뒤 공백 제거, 제어문자 금지. 같은 방 안에서 중복이면 `409`.
 회원 닉네임과 게스트 닉네임은 같은 규칙으로 같은 공간에서 겹치는지 본다.
 
+**발급 시점에 거절한다** — 발급은 초대 코드 → 닉네임 형식 → 방 내 닉네임 중복 → **방 상태·정원**
+순으로 본다. 정원이 찼거나 이미 `IN_PROGRESS` 인 방에는 토큰을 아예 만들지 않는다(`game_roomFull`,
+`game_gameAlreadyStarted`). 이 검사가 없으면 토큰이 발급되고, 프론트는 그 토큰으로 플레이 화면까지
+넘어간 뒤 WebSocket `JOIN` 에서야 거절당한다 — 이유를 보여줄 자리가 없는 화면에서.
+
+닉네임 중복 검사를 상태·정원 검사보다 **먼저** 두는 것은 의도적이다. `issue` 는 호출될 때마다 새
+`participantId` 를 만들므로 이 지점에서 "이미 이 방에 있는 사람"을 알아볼 수단은 닉네임뿐이다.
+순서를 뒤집으면 이미 자기가 들어가 있는 방에서 "방이 꽉 찼다" 는 말을 듣게 된다. 정상적인
+재접속은 애초에 이 경로를 타지 않는다 — 저장해 둔 게스트 토큰(TTL 6시간)으로 `JOIN` 을 다시 하고,
+`Room.admit` 이 `RECONNECTED` 로 상태·정원 검사를 건너뛴다.
+
 ### 3. 방
 
 | 항목 | 오목 | 장애물피하기 |
@@ -148,6 +159,31 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
   계속된다.
 - **방 소멸** — 참가자가 0이 되면 즉시 소멸. 아무도 없는 채로 남지 않는다. 그 외에 생성 후
   6시간이 지나면 강제 소멸한다.
+
+#### HTTP 오류 봉투
+
+게임 HTTP API 의 실패 응답은 app-mvc 와 같은 `ApiResponse` 봉투로 나간다.
+
+```json
+{ "header": { "isSuccessful": false, "message": "game_roomFull", "resultCode": 409 },
+  "data": "2026-08-01T00:00:00" }
+```
+
+`header.message` 에는 사람이 읽는 문장이 아니라 **코드**가 들어간다. `front/lib/api.ts` 가 그 값을
+키로 `front/lib/errors/error-messages.ts` 에서 한국어 문구를 찾기 때문이다. 지도에 없는 코드는 전부
+"예기치 못한 오류가 발생했습니다." 한 줄로 뭉개진다 — 그래서 `GameErrorCode` 의 모든 값이 그
+파일에 있는지 `GameErrorCodeTest` 가 검사한다.
+
+- 코드 목록의 단일 출처는 `app-webflux` 의 `com.woobeee.game.api.error.GameErrorCode` 다.
+- 봉투를 씌우는 것은 `GameExceptionHandler`(`@RestControllerAdvice(basePackages = "com.woobeee.game.api")`)다.
+  전역 `ErrorWebExceptionHandler` 로 두지 않은 것은 의도적이다 — WebSocket 핸드셰이크(`/ws/game`)는
+  `@Controller` 가 아니어서 어드바이스의 사정권 밖이고, 거기에 HTTP 봉투를 씌우면 업그레이드가 깨진다.
+- 코드가 없는 `ResponseStatusException`(bean validation 실패, 405, 415 …)은 상태만 살려
+  `game_badRequest`·`game_forbidden` 같은 폴백 코드로 나간다.
+- 그 밖의 예외는 `500 game_unexpected` 하나로 뭉갠다. 예외 메시지는 본문에 싣지 않는다 —
+  접속 문자열이나 자격증명이 들어 있는 일이 흔하다. 진단은 로그에서 한다.
+- WebSocket 경로의 오류는 이 봉투가 아니라 `ERROR` 서버 메시지로 나간다. 두 통로를 합치는 것은
+  이 작업의 범위가 아니다.
 - **게임 중 이탈 확정 시** — 오목은 남은 사람의 승리로 종료. 장애물피하기는 그 참가자를 탈락
   처리하고 게임을 계속한다. 유예 중에도 게임은 멈추지 않는다: 오목의 수당 제한시간은 계속 흐르고,
   장애물피하기는 입력이 없으니 제자리에 서 있다가 대개 부딪혀 탈락한다.

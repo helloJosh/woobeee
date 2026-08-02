@@ -1,6 +1,6 @@
 package com.woobeee.game.identity;
 
-import org.springframework.http.HttpStatus;
+import com.woobeee.game.api.error.GameErrorCode;
 import org.springframework.web.server.ResponseStatusException;
 
 public final class NicknameValidator {
@@ -29,6 +29,6 @@ public final class NicknameValidator {
     }
 
     private static ResponseStatusException badRequest() {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nickname must be 1-20 visible characters");
+        return GameErrorCode.INVALID_NICKNAME.asException();
     }
 }

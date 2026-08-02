@@ -1,10 +1,10 @@
 package com.woobeee.game.ws;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.identity.GuestIdentityService;
 import com.woobeee.game.identity.MemberReader;
 import com.woobeee.game.security.ReactiveTokenVerifier;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
@@ -47,6 +47,6 @@ public class JoinAuthenticator {
     }
 
     private ResponseStatusException unauthorized() {
-        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid game token");
+        return GameErrorCode.INVALID_GAME_TOKEN.asException();
     }
 }

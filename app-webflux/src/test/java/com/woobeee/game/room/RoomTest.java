@@ -34,6 +34,26 @@ class RoomTest {
         assertThat(room.members().getFirst().ready()).isFalse();
     }
 
+    /** GAME-AC-27 — 미리보기는 판정만 하고 방을 건드리지 않는다. */
+    @Test
+    void previewAdmissionReportsTheVerdictWithoutTouchingTheRoom() {
+        Room room = newRoom();
+
+        assertThat(room.previewAdmission(RoomStatus.WAITING)).isEqualTo(Room.AdmitResult.ADMITTED);
+        assertThat(room.members()).hasSize(1);
+
+        room.addMember(GameParticipant.guest("a", "second"));
+        assertThat(room.previewAdmission(RoomStatus.WAITING)).isEqualTo(Room.AdmitResult.ROOM_FULL);
+        assertThat(room.members()).hasSize(2);
+
+        room.removeMember("g:a");
+        room.setStatus(RoomStatus.IN_PROGRESS);
+        assertThat(room.previewAdmission(RoomStatus.WAITING))
+                .isEqualTo(Room.AdmitResult.GAME_ALREADY_STARTED);
+        assertThat(room.members()).hasSize(1);
+        assertThat(room.status()).isEqualTo(RoomStatus.IN_PROGRESS);
+    }
+
     @Test
     void membersKeepJoinOrder() {
         Room room = newRoom();

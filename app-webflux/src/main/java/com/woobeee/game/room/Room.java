@@ -123,6 +123,27 @@ public final class Room {
             return AdmitResult.RECONNECTED;
         }
 
+        AdmitResult preview = previewAdmission(expectedStatus);
+        if (preview != AdmitResult.ADMITTED) {
+            return preview;
+        }
+
+        members.put(participant.participantId(), new RoomMember(participant));
+        return AdmitResult.ADMITTED;
+    }
+
+    /**
+     * <b>신규</b> 진입자 관점에서 상태·정원만 미리 본다. 아무것도 바꾸지 않는다.
+     *
+     * <p>게스트 토큰 발급이 이걸 쓴다 — 들어갈 수 없는 방의 토큰을 만들어 두면 거절이
+     * WebSocket JOIN 까지 밀리고, 그때는 이유를 보여줄 화면이 없다. 여기서 통과했다고 나중의
+     * {@link #admit} 이 반드시 성공하는 것은 아니다(그 사이에 자리가 찰 수 있다). 진짜 판정은
+     * 여전히 {@code admit} 이고, 이건 조기 거절용 예측일 뿐이다.
+     *
+     * <p>이미 멤버인 경우(재접속)는 여기서 다루지 않는다. 재접속은 {@code admit} 의
+     * {@link AdmitResult#RECONNECTED} 경로이고 상태·정원 검사를 아예 건너뛴다.
+     */
+    public synchronized AdmitResult previewAdmission(RoomStatus expectedStatus) {
         if (status != expectedStatus) {
             return AdmitResult.GAME_ALREADY_STARTED;
         }
@@ -131,7 +152,6 @@ public final class Room {
             return AdmitResult.ROOM_FULL;
         }
 
-        members.put(participant.participantId(), new RoomMember(participant));
         return AdmitResult.ADMITTED;
     }
 

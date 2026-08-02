@@ -1,9 +1,8 @@
 package com.woobeee.game.room;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.identity.GameParticipant;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Optional;
 
@@ -23,10 +22,10 @@ public class RoomService {
 
     public Room requireRoom(String roomId, String inviteCode) {
         Room room = roomRegistry.find(roomId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+                .orElseThrow(GameErrorCode.ROOM_NOT_FOUND::asException);
 
         if (!room.inviteCode().equals(inviteCode)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Invalid invite code");
+            throw GameErrorCode.INVALID_INVITE_CODE.asException();
         }
 
         return room;
@@ -52,8 +51,8 @@ public class RoomService {
         return switch (result) {
             case RECONNECTED -> new JoinOutcome(room, true);
             case ADMITTED -> new JoinOutcome(room, false);
-            case GAME_ALREADY_STARTED -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Game already started");
-            case ROOM_FULL -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Room is full");
+            case GAME_ALREADY_STARTED -> throw GameErrorCode.GAME_ALREADY_STARTED.asException();
+            case ROOM_FULL -> throw GameErrorCode.ROOM_FULL.asException();
         };
     }
 
@@ -113,11 +112,11 @@ public class RoomService {
         Room.StartResult result = room.beginGame(requesterParticipantId, MIN_PLAYERS);
         return switch (result) {
             case STARTED -> room;
-            case NOT_HOST -> throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the host can start the game");
-            case NOT_WAITING -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Game already started");
-            case NOT_ENOUGH_PLAYERS -> throw new ResponseStatusException(HttpStatus.CONFLICT, "At least two players are required");
-            case OMOK_REQUIRES_TWO -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Omok requires exactly two players");
-            case NOT_ALL_READY -> throw new ResponseStatusException(HttpStatus.CONFLICT, "All players must be ready");
+            case NOT_HOST -> throw GameErrorCode.NOT_HOST.asException();
+            case NOT_WAITING -> throw GameErrorCode.GAME_ALREADY_STARTED.asException();
+            case NOT_ENOUGH_PLAYERS -> throw GameErrorCode.NOT_ENOUGH_PLAYERS.asException();
+            case OMOK_REQUIRES_TWO -> throw GameErrorCode.OMOK_REQUIRES_TWO.asException();
+            case NOT_ALL_READY -> throw GameErrorCode.NOT_ALL_READY.asException();
         };
     }
 
@@ -138,15 +137,15 @@ public class RoomService {
 
     public Room requireRoomById(String roomId) {
         return roomRegistry.find(roomId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+                .orElseThrow(GameErrorCode.ROOM_NOT_FOUND::asException);
     }
 
     private Room requireMember(String roomId, String participantId) {
         Room room = roomRegistry.find(roomId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Room not found"));
+                .orElseThrow(GameErrorCode.ROOM_NOT_FOUND::asException);
 
         if (room.member(participantId).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this room");
+            throw GameErrorCode.NOT_A_MEMBER.asException();
         }
 
         return room;

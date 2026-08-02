@@ -1,13 +1,13 @@
 package com.woobeee.game.identity;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.room.GameIdGenerator;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomMember;
 import com.woobeee.game.room.RoomService;
+import com.woobeee.game.room.RoomStatus;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 
 import java.security.SecureRandom;
@@ -45,7 +45,19 @@ public class GuestIdentityService {
 
     /**
      * 순서가 중요하다: 초대 코드를 먼저 검증하고(잘못된 코드는 닉네임 중복 여부를 알려주지 않는다),
-     * 그다음 닉네임을 정규화하고, 마지막으로 방 내 닉네임 중복을 검사한다.
+     * 그다음 닉네임을 정규화하고, 방 내 닉네임 중복을 검사하고, 마지막으로 그 방에 실제로 들어갈
+     * 수 있는지(상태·정원)를 본다.
+     *
+     * <p><b>왜 상태·정원 검사가 여기 있는가</b> — 이게 없으면 정원이 찼거나 이미 시작된 방에도
+     * 토큰이 발급되고, 프론트는 그 토큰을 들고 플레이 화면으로 넘어간 뒤 WebSocket JOIN 에서야
+     * 거절당한다. 거절 사유를 보여줄 자리가 없는 화면에서.
+     *
+     * <p><b>왜 닉네임 검사가 상태·정원 검사보다 먼저인가</b> — {@code issue} 는 호출될 때마다 새
+     * {@code participantId} 를 만들므로, 이 지점에서 "이미 이 방에 있는 사람"을 알아볼 수단은
+     * 닉네임뿐이다. 그 검사를 먼저 두면 이미 방에 있는 이름에게는 정원·상태 오류가 절대 가지
+     * 않는다. 순서를 뒤집으면 자기가 이미 들어가 있는 방에서 "방이 꽉 찼다"는 말을 듣게 된다.
+     * (정상적인 재접속은 애초에 이 경로를 타지 않는다 — 저장해 둔 게스트 토큰으로 JOIN 을 다시
+     * 하고, {@link Room#admit} 이 {@code RECONNECTED} 로 상태·정원 검사를 건너뛴다.)
      */
     public Mono<GuestToken> issue(String roomId, String inviteCode, String rawNickname) {
         Room room = roomService.requireRoom(roomId, inviteCode);
@@ -55,7 +67,15 @@ public class GuestIdentityService {
                 .map(RoomMember::participant)
                 .anyMatch(participant -> participant.displayName().equals(nickname));
         if (taken) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Nickname is already used in this room");
+            throw GameErrorCode.NICKNAME_TAKEN.asException();
+        }
+
+        switch (room.previewAdmission(RoomStatus.WAITING)) {
+            case GAME_ALREADY_STARTED -> throw GameErrorCode.GAME_ALREADY_STARTED.asException();
+            case ROOM_FULL -> throw GameErrorCode.ROOM_FULL.asException();
+            case ADMITTED, RECONNECTED -> {
+                // 들어갈 자리가 있다. 계속 진행한다.
+            }
         }
 
         GameParticipant participant = GameParticipant.guest(idGenerator.nextGuestId(), nickname);

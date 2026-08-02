@@ -1,5 +1,6 @@
 package com.woobeee.game.api;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.core.api.ApiResponse;
 import com.woobeee.game.api.response.GameResultSummaryResponse;
 import com.woobeee.game.api.response.ReplayUrlResponse;
@@ -7,14 +8,12 @@ import com.woobeee.game.result.GameResultQueryRepository;
 import com.woobeee.game.result.ReplayUploader;
 import com.woobeee.game.security.GamePrincipal;
 import com.woobeee.game.security.GamePrincipals;
-import org.springframework.http.HttpStatus;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -57,10 +56,10 @@ public class GameResultController {
 
         return queryRepository.findReplayAccess(gameResultId, principal.memberId())
                 .switchIfEmpty(Mono.error(
-                        new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a participant of this game")))
+                        GameErrorCode.NOT_A_PARTICIPANT.asException()))
                 .flatMap(access -> {
                     if (!StringUtils.hasText(access.objectKey())) {
-                        return Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "Replay is unavailable"));
+                        return Mono.error(GameErrorCode.REPLAY_UNAVAILABLE.asException());
                     }
                     return Mono.just(ApiResponse.success(
                             new ReplayUrlResponse(replayUploader.presignedDownloadUrl(access.objectKey())),

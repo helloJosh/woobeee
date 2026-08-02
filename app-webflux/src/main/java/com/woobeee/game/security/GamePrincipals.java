@@ -1,6 +1,6 @@
 package com.woobeee.game.security;
 
-import org.springframework.http.HttpStatus;
+import com.woobeee.game.api.error.GameErrorCode;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 
@@ -17,7 +17,7 @@ public final class GamePrincipals {
     public static GamePrincipal require(ServerWebExchange exchange) {
         Object principal = exchange.getAttribute(GameAuthWebFilter.PRINCIPAL_ATTRIBUTE);
         if (!(principal instanceof GamePrincipal gamePrincipal)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Access token is required");
+            throw GameErrorCode.UNAUTHORIZED.asException();
         }
         return gamePrincipal;
     }
