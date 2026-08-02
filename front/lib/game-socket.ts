@@ -198,10 +198,11 @@ export type GameSnapshotPayload = OmokSnapshotPayload | DodgeSnapshotPayload
 
 /**
  * 서버: `com.woobeee.game.ws.payload.ErrorPayload`.
- * RoomCommandDispatcher.guard 가 예외를 흡수해 내보내는 모양이고, 참가 인증에 실패한 세션에는
- * GameWebSocketHandler 가 소켓을 닫기 직전에 같은 모양을 직접 한 프레임 써 준다(그 세션은 아직
- * 방 허브를 구독하지 않아 브로드캐스트가 닿지 않는다). 게임 명령에서 비롯된 실패라면 그 명령의
- * seq 가 ackSeq 로 돌아온다.
+ * 두 갈래로 온다. (1) 방 안에서 난 실패는 RoomCommandDispatcher.guard 가 흡수해 방 전체에
+ * 브로드캐스트한다 — 게임 명령에서 비롯된 것이면 그 명령의 seq 가 ackSeq 로 돌아온다.
+ * (2) 참가가 거절된 세션에는 GameWebSocketHandler 가 소켓을 닫기 직전에 같은 모양을 그 세션에
+ * 직접 한 프레임 써 준다. 토큰 인증 실패와 방의 거절(틀린 초대 코드·정원 초과·이미 시작) 둘 다
+ * 이쪽이다 — 그 세션은 아직 방 허브를 구독하지 않아 브로드캐스트가 닿지 않기 때문이다.
  *
  * <p><b>code 는 문자열 키다</b> — `game_roomFull` 처럼. HTTP 실패 응답의 `header.message` 와
  * 같은 값이고, 같은 지도(`lib/errors/error-messages.ts`)로 문구를 찾는다. 숫자 상태는

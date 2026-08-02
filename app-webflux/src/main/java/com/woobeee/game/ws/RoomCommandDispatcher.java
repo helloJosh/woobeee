@@ -14,6 +14,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 방 상태를 바꾸는 유일한 진입점. 실패를 예외로 던지지 않고 ERROR 메시지로 흘려보내,
@@ -51,6 +52,13 @@ public class RoomCommandDispatcher {
      * 받아 보게 된다. 그래서 이유를 호출자에게 돌려주고, 호출자가 그 세션에 직접 써 준다
      * ({@code GameWebSocketHandler.rejectWithReason}).
      *
+     * <p><b>"거절"은 입장 판정이 실패한 것만을 말한다.</b> {@code roomService.join} 이 통과한
+     * 뒤에 나는 실패(ROOM_STATE 브로드캐스트, {@code onRejoin})는 거절이 아니라 이미 방에 들어온
+     * 참가자에게 생긴 사고다. 그 시점엔 {@code onValidated} 가 이미 돌아 세션이 허브를 구독했고
+     * outbound 스트림이 살아 있으므로, 그런 실패까지 거절로 돌려주면 호출자가 살아 있는 소켓에
+     * 두 번째 writer 를 붙이게 된다. 그래서 그 경우는 빈 Optional 을 돌려주고 오류는 방으로
+     * 흘려보낸다 — 당사자는 이미 구독 중이니 그 편이 닿는다.
+     *
      * <p>{@code onValidated} 는 참가가 실제로 확정된 직후, 이 참가에 대한 ROOM_STATE 를 방에
      * 브로드캐스트하기 직전에 불린다. 호출자는 여기서 허브 구독을 열어 자신의 참가로 인한
      * ROOM_STATE 를 놓치지 않게 한다.
@@ -66,8 +74,13 @@ public class RoomCommandDispatcher {
             GameParticipant participant,
             Runnable onValidated
     ) {
-        return attempt(() -> {
+        AtomicBoolean admitted = new AtomicBoolean(false);
+
+        Optional<GameErrorCode> failure = attempt(() -> {
             RoomService.JoinOutcome outcome = roomService.join(roomId, inviteCode, participant);
+            // 입장 판정은 여기서 끝났다. 이 뒤의 실패는 더 이상 거절이 아니다.
+            admitted.set(true);
+
             Room room = outcome.room();
             onValidated.run();
             broadcastRoomState(room);
@@ -77,6 +90,12 @@ public class RoomCommandDispatcher {
                         .ifPresent(sink -> sink.onRejoin(room, participant.participantId()));
             }
         });
+
+        if (failure.isPresent() && admitted.get()) {
+            roomHub.broadcast(roomId, ServerMessage.of("ERROR", ErrorPayload.of(failure.get())));
+            return Optional.empty();
+        }
+        return failure;
     }
 
     public void ready(String roomId, String participantId, boolean ready) {
@@ -182,11 +201,9 @@ public class RoomCommandDispatcher {
         }
     }
 
-    /** @return true면 action이 예외 없이 끝났다는 뜻이다. false면 ERROR로 흡수돼 방에 나갔다는 뜻이다. */
-    private boolean guard(String roomId, Long ackSeq, Runnable action) {
-        Optional<GameErrorCode> failure = attempt(action);
-        failure.ifPresent(errorCode ->
+    /** action 을 돌리고, 실패하면 그 이유를 ERROR 로 방에 흘려보낸다. */
+    private void guard(String roomId, Long ackSeq, Runnable action) {
+        attempt(action).ifPresent(errorCode ->
                 roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.of(errorCode))));
-        return failure.isEmpty();
     }
 }

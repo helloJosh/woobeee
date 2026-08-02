@@ -12,6 +12,7 @@ import com.woobeee.game.ws.payload.ErrorPayload;
 import com.woobeee.game.ws.payload.RoomStatePayload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.Disposable;
 import reactor.test.StepVerifier;
 
 import java.time.Clock;
@@ -20,6 +21,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -133,13 +135,29 @@ class RoomCommandDispatcherTest {
      */
     @Test
     void aRejectedJoinTellsTheCallerWhyAndDoesNotBotherTheRoom() {
-        StepVerifier.create(hub.subscribe("room-1"))
-                .expectSubscription()
-                .then(() -> assertThat(dispatcher.join("room-1", "WRONG", GUEST))
-                        .contains(GameErrorCode.INVALID_INVITE_CODE))
-                .expectNoEvent(Duration.ofMillis(200))
-                .thenCancel()
-                .verify(Duration.ofSeconds(5));
+        // StepVerifier 의 expectNoEvent 로는 이걸 검사할 수 없다 — .then() 안에서 동기적으로
+        // emit 된 신호는 no-event 창이 열리기 전에 이미 지나가서 그냥 통과한다(실제로 그렇게
+        // 통과했다). 그래서 구독자를 직접 붙여 받은 것을 리스트로 확인한다.
+        List<ServerMessage> broadcasts = new CopyOnWriteArrayList<>();
+        Disposable subscription = hub.subscribe("room-1").subscribe(broadcasts::add);
+
+        try {
+            assertThat(dispatcher.join("room-1", "WRONG", GUEST))
+                    .contains(GameErrorCode.INVALID_INVITE_CODE);
+            assertThat(broadcasts)
+                    .as("a rejected join must not be announced to the room")
+                    .isEmpty();
+
+            // 대조군: 같은 구독자가 실제 브로드캐스트는 받는다는 것을 보인다. 이게 없으면
+            // 위의 isEmpty() 는 구독이 아예 붙지 않아도 통과한다.
+            dispatcher.start("room-1", GUEST.participantId());
+            assertThat(broadcasts)
+                    .as("the collector really is wired to this room")
+                    .hasSize(1);
+            assertThat(broadcasts.getFirst().type()).isEqualTo("ERROR");
+        } finally {
+            subscription.dispose();
+        }
     }
 
     /** GAME-AC-28 — 성공한 참가는 아무 이유도 돌려주지 않는다. */
@@ -361,6 +379,46 @@ class RoomCommandDispatcherTest {
         assertThat(log).isEmpty();
     }
 
+    /**
+     * GAME-AC-28 경계 — 참가가 <b>확정된 뒤</b> 후속 작업이 실패한 것은 거절이 아니다.
+     *
+     * <p>이 구분이 중요한 이유는 호출자 쪽 불변식 때문이다: 거절을 돌려받은 세션에만
+     * {@code GameWebSocketHandler.rejectWithReason} 이 세션에 직접 프레임을 쓴다. 그런데
+     * 확정 이후라면 그 세션은 이미 허브를 구독했고 outbound 스트림이 살아 있으므로, 거기에
+     * 대고 두 번째 {@code session.send} 를 걸면 같은 소켓에 두 writer 가 붙는다. 그래서
+     * 확정 이후의 실패는 이유를 돌려주지 않고 — 이미 구독 중이니 닿는다 — 방으로 흘려보낸다.
+     */
+    @Test
+    void aFailureAfterAdmissionIsNotAJoinRejectionAndGoesToTheRoomInstead() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.ready("room-1", HOST.participantId(), true);
+        dispatcher.ready("room-1", GUEST.participantId(), true);
+        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.disconnected("room-1", GUEST.participantId());
+        sink.throwOnRejoin = true;
+
+        List<ServerMessage> broadcasts = new CopyOnWriteArrayList<>();
+        Disposable subscription = hub.subscribe("room-1").subscribe(broadcasts::add);
+
+        try {
+            assertThat(dispatcher.join("room-1", "code", GUEST))
+                    .as("admission succeeded, so this is not a rejection")
+                    .isEmpty();
+            assertThat(broadcasts).extracting(ServerMessage::type).contains("ERROR");
+            ErrorPayload payload = (ErrorPayload) broadcasts.stream()
+                    .filter(message -> message.type().equals("ERROR"))
+                    .findFirst()
+                    .orElseThrow()
+                    .payload();
+            assertThat(payload.code()).isEqualTo(GameErrorCode.UNEXPECTED.code());
+        } finally {
+            subscription.dispose();
+        }
+    }
+
     /** F2 regression: a throwing sink must degrade to an ERROR broadcast, not escape the dispatcher. */
     @Test
     void aThrowingSinkOnParticipantGoneProducesAnErrorInsteadOfPropagating() {
@@ -380,6 +438,7 @@ class RoomCommandDispatcherTest {
         private final GameType gameType;
         private final List<String> log;
         boolean throwOnParticipantGone = false;
+        boolean throwOnRejoin = false;
 
         RecordingSink(GameType gameType, List<String> log) {
             this.gameType = gameType;
@@ -404,6 +463,9 @@ class RoomCommandDispatcherTest {
         @Override
         public void onRejoin(Room room, String participantId) {
             log.add("onRejoin:" + participantId);
+            if (throwOnRejoin) {
+                throw new IllegalStateException("boom");
+            }
         }
 
         @Override

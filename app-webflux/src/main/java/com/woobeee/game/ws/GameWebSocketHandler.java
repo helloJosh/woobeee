@@ -190,9 +190,15 @@ public class GameWebSocketHandler implements WebSocketHandler {
      * {@code dispatcher.join} 은 이제 방에 알리지 않고 이유만 돌려준다.
      *
      * <p>여기서 {@code session.send} 를 한 번 더 부르는 것이 바깥의 outbound 스트림과 겹치지
-     * 않는 이유: outbound 는 {@code joinedRoomId} 가 값을 낼 때까지 아무것도 쓰지 않는데,
-     * 그 값은 {@code onValidated} 안에서만 나오고 참가에 실패한 이 두 경로는 그 콜백에 닿지
-     * 못한다. 쓰는 쪽은 이 프레임 하나뿐이다.
+     * 않는 이유: outbound 는 {@code joinedRoomId} 가 값을 낼 때까지 아무것도 쓰지 않고, 그 값은
+     * {@code onValidated} 안에서만 나온다. 그리고 이 메서드에 닿는 두 경로 모두 그 콜백보다
+     * <b>앞에서</b> 끝난다 — 토큰 인증 실패는 {@code dispatcher.join} 을 부르기도 전이고,
+     * 방의 거절은 {@code roomService.join} 이 던진 것이라 {@code onValidated} 까지 가지 못한다.
+     * 입장이 확정된 뒤의 실패는 애초에 거절로 돌아오지 않는다 —
+     * {@code RoomCommandDispatcher.join} 이 그 경우를 빈 Optional 로 바꾸고 방으로 흘려보낸다.
+     * 그 분리가 여기서 writer 가 하나뿐임을 보장한다(그래서 그쪽을 바꾸면 이 불변식이 깨진다.
+     * {@code RoomCommandDispatcherTest.aFailureAfterAdmissionIsNotAJoinRejectionAndGoesToTheRoomInstead}
+     * 가 그 분리를 고정한다).
      */
     private Mono<Void> rejectWithReason(WebSocketSession session, GameErrorCode errorCode) {
         String frame = toTextMessage(ServerMessage.of("ERROR", ErrorPayload.of(errorCode)));

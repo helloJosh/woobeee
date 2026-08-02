@@ -1,7 +1,6 @@
 package com.woobeee.game.ws.payload;
 
 import com.woobeee.game.api.error.GameErrorCode;
-import org.springframework.web.server.ResponseStatusException;
 
 /**
  * WebSocket {@code ERROR} 메시지의 페이로드.
@@ -20,14 +19,5 @@ public record ErrorPayload(
 ) {
     public static ErrorPayload of(GameErrorCode errorCode) {
         return new ErrorPayload(errorCode.status().value(), errorCode.code(), errorCode.reason());
-    }
-
-    /**
-     * 코드를 달고 온 예외면 그 코드를, 아니면 상태로 유추한 폴백 코드를 쓴다.
-     * {@code exception.getReason()} 은 카탈로그가 아는 문구일 때만 신뢰할 수 있으므로,
-     * 문구도 카탈로그에서 가져온다.
-     */
-    public static ErrorPayload from(ResponseStatusException exception) {
-        return of(GameErrorCode.of(exception));
     }
 }
