@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { gameAPI } from "./api"
+import { authAPI, gameAPI } from "./api"
 
 /**
  * `apiRequest` 의 401 처리 하나만 본다 — 그 경로가 <b>플레이 중인 판을 날릴 수 있는</b>
@@ -91,11 +91,46 @@ describe("401 handling", () => {
     })
 
     /**
-     * 대조군. 이 테스트가 없으면 위 테스트는 "401 이 나면 원래 아무 일도 안 한다" 와
-     * 구별되지 않는다 — 같은 조건에서 옵트아웃하지 않은 호출은 실제로 세션을 끝낸다.
+     * `gameAPI.me()` 만이 아니라 <b>게임 API 전체</b>가 그래야 한다. 게임 화면은 전부
+     * 인라인 배너 계약 위에 지어져 있는데, 새로고침은 그 계약과 양립할 수 없다 — 방을
+     * 만들다, 방 요약을 읽다, 게스트 토큰을 받다 401 이 나면 화면이 배너를 그릴 기회조차
+     * 없이 사라진다.
+     *
+     * <p>가장 나쁜 것은 `game_memberNotFound` 다. 이 코드는 401 이라(GameErrorCode:33)
+     * 회원 행이 사라진 사람은 갱신 성공 → 재시도 401 → 세션 파기 → 새로고침 → 처음부터를
+     * 무한히 돈다. C1 의 거울상이다: 파괴적인 복구가 필요한 곳에서는 안 돌고, 필요 없는
+     * 곳에서 돈다.
+     *
+     * <p>목록을 하나씩 나열하는 것이 요점이다. 새 게임 호출이 늘 때 `it.each` 가 자동으로
+     * 따라오지 않도록 — 여기 이름을 적는 행위가 곧 "이 호출도 인라인 배너를 그린다" 는
+     * 확인이다.
      */
-    it("still ends the session for a call the user asked for", async () => {
-        await expect(gameAPI.myResults()).rejects.toThrow()
+    const GAME_CALLS: ReadonlyArray<[string, () => Promise<unknown>]> = [
+        ["me", () => gameAPI.me()],
+        ["createRoom", () => gameAPI.createRoom("OMOK")],
+        ["getRoomSummary", () => gameAPI.getRoomSummary("room-1", "code")],
+        ["issueGuestToken", () => gameAPI.issueGuestToken("room-1", "code", "손님")],
+        ["myResults", () => gameAPI.myResults()],
+        ["replayUrl", () => gameAPI.replayUrl(7)],
+    ]
+
+    it.each(GAME_CALLS)("leaves the session alone when gameAPI.%s gets a 401", async (_name, call) => {
+        await expect(call()).rejects.toThrow()
+
+        expect(alertSpy).not.toHaveBeenCalled()
+        expect(reloadSpy).not.toHaveBeenCalled()
+        expect(store.get("accessToken")).toBe("stale-access")
+        expect(store.get("refreshToken")).toBe("stale-refresh")
+    })
+
+    /**
+     * 대조군. 이 테스트가 없으면 위 테스트들은 "401 이 나면 원래 아무 일도 안 한다" 와
+     * 구별되지 않는다 — 같은 조건에서 옵트아웃하지 않은 호출은 실제로 세션을 끝낸다.
+     * 게임 밖 호출자의 동작은 <b>바뀌지 않아야 한다</b>: 사용자가 직접 누른 요청에는 세션
+     * 만료 처리가 맞는 대응이다.
+     */
+    it("still ends the session for a non-game call the user asked for", async () => {
+        await expect(authAPI.me()).rejects.toThrow()
 
         expect(alertSpy).toHaveBeenCalled()
         expect(reloadSpy).toHaveBeenCalled()

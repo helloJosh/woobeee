@@ -384,10 +384,29 @@ export const authAPI = {
     },
 }
 
+/**
+ * 게임 API 호출이 공통으로 쓰는 apiRequest 옵션.
+ *
+ * <p>`suppressAlert`: 게임 화면은 `alert()` 대신 화면에 인라인 에러를 직접 그린다. 켜 두지
+ * 않으면 같은 실패가 네이티브 대화상자와 배너로 두 번 안내된다.
+ *
+ * <p>`suppressUnauthorizedHandler`: 갱신까지 실패한 401 에 대해 전역 세션 만료 처리를
+ * 건너뛴다. 그 처리는 토큰을 전부 지우고 `alert` 를 띄운 뒤 페이지를 새로고침하는데,
+ * 게임 화면은 <b>전부</b> 인라인 배너 계약 위에 지어져 있어서 그 새로고침이 무엇을 하든
+ * 화면의 약속을 어긴다.
+ *
+ * <p>특히 나쁜 것이 `game_memberNotFound` 다 — 이 코드는 401 이므로(GameErrorCode:33,
+ * RoomController:54 에서 던진다) 회원 행이 사라진 사람은 "갱신 성공 → 재시도 401 → 세션
+ * 파기 → 새로고침 → 처음부터" 를 무한히 돈다. 401 을 만든 원인이 액세스 토큰이 아닌데
+ * 액세스 토큰을 지우는 것이라 아무리 반복해도 나아지지 않는다.
+ *
+ * <p>기본값도, 게임 밖 호출자(auth·blog)도 바꾸지 않는다. 그쪽은 사용자가 직접 누른
+ * 요청이고 세션 만료 처리가 맞는 대응이다.
+ */
+const GAME_REQUEST_OPTIONS = { suppressAlert: true, suppressUnauthorizedHandler: true } as const
+
 // 게임 API
 export const gameAPI = {
-    // game 화면은 apiRequest의 alert() 대신 화면에 직접 인라인 에러를 그리므로,
-    // 아래 호출들은 모두 suppressAlert=true를 넘겨 중복 안내를 막는다.
     createRoom: async (gameType: GameType): Promise<CreateRoomResult> => {
         const response = await apiRequest(
             "/api/game/rooms",
@@ -396,7 +415,7 @@ export const gameAPI = {
                 body: JSON.stringify({ gameType }),
             },
             true,
-            { suppressAlert: true }
+            GAME_REQUEST_OPTIONS
         )
         const json: ApiResponse<CreateRoomResult> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -410,7 +429,7 @@ export const gameAPI = {
             `/api/game/rooms/${encodeURIComponent(roomId)}?invite=${encodeURIComponent(inviteCode)}`,
             {},
             true,
-            { suppressAlert: true }
+            GAME_REQUEST_OPTIONS
         )
         const json: ApiResponse<RoomSummary> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -431,7 +450,7 @@ export const gameAPI = {
                 body: JSON.stringify({ inviteCode, nickname }),
             },
             true,
-            { suppressAlert: true }
+            GAME_REQUEST_OPTIONS
         )
         const json: ApiResponse<GuestTokenResult> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -444,16 +463,14 @@ export const gameAPI = {
      * 토큰이 말하는 나. 회원 전용이다 — 게임 서버의 `GamePrincipals.require` 는 인증이
      * 없으면 던지므로, 로그인하지 않은 방문자(게스트)에게는 부르면 안 된다.
      *
-     * <p><b>이 호출만 401 처리를 끈다.</b> 플레이 화면이 배경에서 신원을 확인하려고 부르는
-     * 것이라, 여기서 전역 세션 만료 처리가 돌면 액세스 토큰이 만료된 채 게스트 토큰으로
+     * <p>여기서 401 처리를 끄는 것이 특히 중요하다. 플레이 화면이 배경에서 신원을 확인하려고
+     * 부르는 것이라, 전역 세션 만료 처리가 돌면 액세스 토큰이 만료된 채 게스트 토큰으로
      * 멀쩡히 두고 있던 판이 alert 한 번과 새로고침으로 끝난다. 실패는 조용히 던지고,
-     * useVerifiedMemberId 가 저장된 값으로 되돌아간다.
+     * useVerifiedMemberId 가 저장된 값으로 되돌아간다. (지금은 게임 호출 전부가 그렇다 —
+     * {@link GAME_REQUEST_OPTIONS} 참고.)
      */
     me: async (): Promise<GamePrincipalView> => {
-        const response = await apiRequest("/api/game/me", {}, true, {
-            suppressAlert: true,
-            suppressUnauthorizedHandler: true,
-        })
+        const response = await apiRequest("/api/game/me", {}, true, GAME_REQUEST_OPTIONS)
         const json: ApiResponse<GamePrincipalView> = await response.json()
         if (!isApiSuccessful(json)) {
             throw new Error(json.header.message || "내 정보를 불러오지 못했습니다.")
@@ -466,7 +483,7 @@ export const gameAPI = {
             `/api/game/me/results?limit=${limit}&offset=${offset}`,
             {},
             true,
-            { suppressAlert: true }
+            GAME_REQUEST_OPTIONS
         )
         const json: ApiResponse<GameResultSummary[]> = await response.json()
         if (!isApiSuccessful(json)) {
@@ -476,7 +493,12 @@ export const gameAPI = {
     },
 
     replayUrl: async (gameResultId: number): Promise<string> => {
-        const response = await apiRequest(`/api/game/results/${gameResultId}/replay`, {}, true, { suppressAlert: true })
+        const response = await apiRequest(
+            `/api/game/results/${gameResultId}/replay`,
+            {},
+            true,
+            GAME_REQUEST_OPTIONS
+        )
         const json: ApiResponse<{ replayUrl: string }> = await response.json()
         if (!isApiSuccessful(json)) {
             throw new Error(json.header.message || "기보를 불러오지 못했습니다.")

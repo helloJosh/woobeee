@@ -9,8 +9,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import DodgeGrid, { DODGE_PLAYER_COLORS } from "@/components/game/dodge-grid"
 import RoomJoinGate from "@/components/game/room-join-gate"
 import RoomSidebar from "@/components/game/room-sidebar"
+import { tokenManager } from "@/lib/api"
 import { createGameSocket, type GameSocket, type SocketStatus } from "@/lib/game-socket"
-import { discardGuestTokenOnRejection, readStoredGuestIdentity, roomPath } from "@/lib/game-join"
+import {
+    discardGuestTokenOnRejection,
+    readStoredGuestIdentity,
+    resolveJoinToken,
+    roomPath,
+    shouldDiscardMemberToken,
+    type JoinTokenSource,
+} from "@/lib/game-join"
 import { describeSocketStatus, isSocketSettled, resolveSelfParticipantId } from "@/lib/game-room"
 import {
     attemptMove,
@@ -55,8 +63,11 @@ function DodgeRoomScreen() {
     const { memberId: storedMemberId } = useAuth()
     const memberId = useVerifiedMemberId(storedMemberId)
 
-    // 게이트가 넘겨 준 토큰. 이것이 생기기 전에는 소켓을 열지 않는다.
+    // 게이트가 넘겨 준 토큰과 그 출처. 이것이 생기기 전에는 소켓을 열지 않는다.
+    // 출처가 필요한 이유는 두 가지다: 죽은 회원 토큰을 버리고 게이트로 되돌려 보내는 판단(C1)과,
+    // 재접속마다 어느 저장소에서 토큰을 다시 읽을지(I7). 오목 화면과 같다.
     const [token, setToken] = useState<string | null>(null)
+    const [tokenSource, setTokenSource] = useState<JoinTokenSource | null>(null)
     const [socketStatus, setSocketStatus] = useState<SocketStatus>("connecting")
     const [socketErrorCode, setSocketErrorCode] = useState<string | undefined>(undefined)
     // 이 방의 게스트 토큰과 함께 저장된 participantId. sessionStorage 는 렌더 중에 읽지
@@ -93,7 +104,7 @@ function DodgeRoomScreen() {
     }, [roomId, token])
 
     useEffect(() => {
-        if (!token) {
+        if (!token || !tokenSource) {
             return
         }
 
@@ -113,7 +124,10 @@ function DodgeRoomScreen() {
         const socket = createGameSocket({
             roomId,
             inviteCode,
-            token,
+            // 문자열이 아니라 공급자를 넘긴다 — 재접속 JOIN 은 그때그때 저장소에서 다시 읽은
+            // 토큰을 실어야 한다. 문자열로 고정하면 액세스 토큰의 TTL 이 판 도중에 지나는
+            // 순간부터 모든 재접속이 종단 rejected 가 된다(I7).
+            token: () => resolveJoinToken(roomId, tokenSource, token),
             onMessage: (message) => {
                 if (active) {
                     dispatch({ type: "message", message })
@@ -134,13 +148,30 @@ function DodgeRoomScreen() {
             socket.close()
             socketRef.current = null
         }
-    }, [token, roomId, inviteCode])
+    }, [token, tokenSource, roomId, inviteCode])
 
     // 거절당한 게스트 토큰은 버린다. 어떤 상태에서 버려야 하는지는 discardGuestTokenOnRejection
     // 이 안다(그 판단이 여기 있으면 테스트가 닿지 않는다).
     useEffect(() => {
         discardGuestTokenOnRejection(roomId, socketStatus)
     }, [socketStatus, roomId])
+
+    // C1: 죽은 회원 토큰으로 거절당했다면 그 토큰을 버리고 게이트로 되돌아간다. 오목 화면과
+    // 같은 판단이며, 모든 거절이 아니라 신원 판정이 실패한 셋에만 해당한다.
+    const memberTokenIsDead = shouldDiscardMemberToken({
+        source: tokenSource,
+        status: socketStatus,
+        errorCode: socketErrorCode,
+    })
+
+    useEffect(() => {
+        if (!memberTokenIsDead) {
+            return
+        }
+        tokenManager.removeToken()
+        setToken(null)
+        setTokenSource(null)
+    }, [memberTokenIsDead])
 
     const selfParticipantId = resolveSelfParticipantId({
         memberId,
@@ -202,20 +233,28 @@ function DodgeRoomScreen() {
         return () => window.removeEventListener("keydown", onKeyDown)
     }, [socketStatus, state.status, selfParticipantId, move])
 
-    if (!token) {
+    // 토큰이 죽은 것으로 판정됐으면 위 이펙트가 곧 상태를 비운다. 그 한 프레임 동안 종단
+    // 패널을 스치듯 보여 주지 않도록 여기서도 같은 판단을 본다.
+    if (!token || !tokenSource || memberTokenIsDead) {
         return (
             <RoomJoinGate
                 roomId={roomId}
                 inviteCode={inviteCode}
                 expectedGameType="DODGE"
-                onReady={setToken}
+                onReady={(readyToken, source) => {
+                    setToken(readyToken)
+                    setTokenSource(source)
+                }}
             />
         )
     }
 
     // 참가가 거절되면 소켓은 다시 붙지 않는다(종단 상태). 판을 그대로 두면 아무것도 반응하지
-    // 않는 죽은 화면이 되므로 이유와 빠져나갈 길을 대신 보여 준다. 토큰 상태를 되돌려 게이트로
-    // 보내지는 않는다 — 회원 토큰은 게이트가 곧바로 다시 넘겨줘 거절 루프가 된다.
+    // 않는 죽은 화면이 되므로 이유와 빠져나갈 길을 대신 보여 준다.
+    //
+    // 여기까지 오는 것은 토큰 탓이 아닌 거절뿐이다(방이 가득 찼다, 초대 코드가 틀렸다, 이미
+    // 시작한 게임이다). 그런 사람의 세션은 멀쩡하므로 종단 패널이 맞는 답이다. 토큰이 죽어서
+    // 거절당한 경우는 위 이펙트가 게이트로 돌려보내므로 이 분기에 닿지 않는다(C1).
     if (socketStatus === "rejected") {
         return (
             <main className="mx-auto max-w-md space-y-4 py-20 text-center">

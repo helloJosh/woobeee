@@ -19,6 +19,7 @@ import {
     loadRoomSummary,
     readStoredGuestToken,
     roomPath,
+    type JoinTokenSource,
 } from "@/lib/game-join"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameType, RoomSummary } from "@/lib/types"
@@ -27,7 +28,12 @@ interface RoomJoinGateProps {
     roomId: string
     inviteCode: string
     expectedGameType: GameType
-    onReady: (token: string) => void
+    /**
+     * 토큰과 함께 <b>출처</b>를 넘긴다. 게임 화면은 출처 없이는 거절을 옳게 다룰 수 없다 —
+     * 죽은 회원 토큰은 버리고 게이트로 돌아가야 하고(C1), 게스트 토큰은 재접속마다
+     * sessionStorage 에서 다시 읽어야 한다(I7). 문자열만으로는 둘을 구분할 수 없다.
+     */
+    onReady: (token: string, source: JoinTokenSource) => void
 }
 
 /**
@@ -111,23 +117,24 @@ export default function RoomJoinGate({
     })
 
     /** 넘겼으면 true, 이미 이 방에 대해 넘긴 뒤라 아무것도 하지 않았으면 false. */
-    const handOff = useCallback((room: string, token: string) => {
+    const handOff = useCallback((room: string, token: string, source: JoinTokenSource) => {
         if (deliveredRoomRef.current === room) {
             return false
         }
         deliveredRoomRef.current = room
-        onReadyRef.current(token)
+        onReadyRef.current(token, source)
         return true
     }, [])
 
     // roomId 를 의존성에 넣어야 한다. 회원 토큰 문자열은 방이 바뀌어도 그대로라서
     // 토큰만 보고 있으면 두 번째 방에서는 이펙트가 다시 돌지 않는다.
     const readyToken = stage.kind === "ready" ? stage.token : null
+    const readySource = stage.kind === "ready" ? stage.source : null
     useEffect(() => {
-        if (readyToken) {
-            handOff(roomId, readyToken)
+        if (readyToken && readySource) {
+            handOff(roomId, readyToken, readySource)
         }
-    }, [roomId, readyToken, handOff])
+    }, [roomId, readyToken, readySource, handOff])
 
     const joinAsGuest = async () => {
         setJoining(true)
@@ -146,7 +153,7 @@ export default function RoomJoinGate({
 
         // 넘겼으면 joining 을 그대로 둔 채 부모가 게임 화면으로 갈아끼우게 한다. 넘기지
         // 못했다면 스피너를 끄고 이유를 말한다 — 아무 말 없이 계속 도는 버튼은 막다른 길이다.
-        if (!handOff(roomId, outcome.token)) {
+        if (!handOff(roomId, outcome.token, "guest-session")) {
             setJoinError("이미 이 방에 참가했습니다. 페이지를 새로고침해 주세요.")
             setJoining(false)
         }

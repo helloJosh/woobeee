@@ -17,7 +17,13 @@ const api = vi.hoisted(() => ({
     issueGuestToken: vi.fn(),
 }))
 
-vi.mock("@/lib/api", () => ({ gameAPI: api }))
+/**
+ * `resolveJoinToken` 이 회원 토큰을 읽는 유일한 문. localStorage 스텁을 세우는 대신 여기서
+ * 갈아 끼운다 — 이 모듈이 tokenManager 에 기대는 것이 `getToken()` 하나뿐임이 드러난다.
+ */
+const tokens = vi.hoisted(() => ({ getToken: vi.fn<() => string | null>(() => null) }))
+
+vi.mock("@/lib/api", () => ({ gameAPI: api, tokenManager: tokens }))
 
 import {
     NICKNAME_MAX_LENGTH,
@@ -29,6 +35,8 @@ import {
     joinRoomAsGuest,
     readStoredGuestIdentity,
     readStoredGuestToken,
+    resolveJoinToken,
+    shouldDiscardMemberToken,
     storeGuestToken,
     type JoinGateInput,
 } from "./game-join"
@@ -74,6 +82,8 @@ beforeEach(() => {
     ;(globalThis as { window?: unknown }).window = { sessionStorage: storage }
     api.getRoomSummary.mockReset()
     api.issueGuestToken.mockReset()
+    tokens.getToken.mockReset()
+    tokens.getToken.mockReturnValue(null)
     vi.spyOn(console, "error").mockImplementation(() => {})
 })
 
@@ -439,5 +449,145 @@ describe("joinRoomAsGuest", () => {
 
         expect(outcome).toEqual({ kind: "token", token: "tok" })
         expect(readStoredGuestIdentity("R1")).toEqual({ token: "tok", participantId: "g:aaa" })
+    })
+})
+
+// ---------------------------------------------------------------------------
+// 6. shouldDiscardMemberToken — C1: 죽은 회원 토큰에서 빠져나갈 길
+// ---------------------------------------------------------------------------
+
+describe("shouldDiscardMemberToken", () => {
+    const DEAD = ["game_invalidGameToken", "game_unauthorized", "game_memberNotFound"] as const
+
+    it.each(DEAD)("discards the member token when the socket is rejected with %s", (code) => {
+        expect(
+            shouldDiscardMemberToken({ source: "member", status: "rejected", errorCode: code })
+        ).toBe(true)
+    })
+
+    /**
+     * 핵심 대조군. 이 셋을 통과시키면 "모든 거절을 토큰 삭제로 바꾸는" 과잉 수정이 된다 —
+     * 멀쩡히 로그인한 회원이 자리가 없어 못 들어간 것뿐인데 게임 목록으로 돌아갔을 때
+     * 로그아웃돼 있게 된다.
+     */
+    it.each([
+        "game_roomFull",
+        "game_gameAlreadyStarted",
+        "game_invalidInviteCode",
+        "game_roomNotFound",
+        "game_notAMember",
+        "game_nicknameTaken",
+        "game_unexpected",
+    ])("keeps the session for %s, which is not the token's fault", (code) => {
+        expect(
+            shouldDiscardMemberToken({ source: "member", status: "rejected", errorCode: code })
+        ).toBe(false)
+    })
+
+    it("keeps the session when the server closed before saying why", () => {
+        expect(
+            shouldDiscardMemberToken({ source: "member", status: "rejected", errorCode: undefined })
+        ).toBe(false)
+    })
+
+    /**
+     * 게스트 토큰에는 손대지 않는다 — 그쪽은 discardGuestTokenOnRejection 의 일이고,
+     * 여기서 회원 토큰을 지우면 게스트로 들어와 있던 사람의 <b>다른</b> 세션이 날아간다.
+     */
+    it.each(DEAD)("never touches the member token for a guest session rejected with %s", (code) => {
+        expect(
+            shouldDiscardMemberToken({ source: "guest-session", status: "rejected", errorCode: code })
+        ).toBe(false)
+    })
+
+    it("does nothing before the gate has handed a token over", () => {
+        expect(
+            shouldDiscardMemberToken({ source: null, status: "rejected", errorCode: DEAD[0] })
+        ).toBe(false)
+    })
+
+    /**
+     * `rejected` 만이 "서버가 우리를 거부했다" 는 종단 상태다. `closed` 는 우리가 닫았거나
+     * 재시도를 다 쓴 것이라 토큰은 멀쩡할 수 있고, `reconnecting` 은 아직 판정 전이다 —
+     * 여기서 토큰을 지우면 잠깐 끊긴 사람이 세션을 잃는다.
+     */
+    it.each<SocketStatus>(["connecting", "open", "joined", "reconnecting", "closed"])(
+        "does not discard on %s",
+        (status) => {
+            expect(
+                shouldDiscardMemberToken({ source: "member", status, errorCode: DEAD[0] })
+            ).toBe(false)
+        }
+    )
+})
+
+// ---------------------------------------------------------------------------
+// 7. resolveJoinToken — I7: 재접속 JOIN 이 싣는 토큰
+// ---------------------------------------------------------------------------
+
+describe("resolveJoinToken", () => {
+    it("reads the member token again on every call instead of freezing the gate's copy", () => {
+        tokens.getToken.mockReturnValue("fresh-access")
+
+        expect(resolveJoinToken("R1", "member", "stale-access")).toBe("fresh-access")
+    })
+
+    /**
+     * C1 을 되돌리지 않기 위한 것이다. 회원 토큰이 사라졌다는 것은 누군가 의도적으로 지운
+     * 것이므로(로그아웃, 혹은 shouldDiscardMemberToken 이 죽은 토큰을 버린 직후) 게이트가
+     * 넘겼던 낡은 문자열을 되살리면 안 된다.
+     */
+    it("does not resurrect the gate's copy once the member token is gone", () => {
+        tokens.getToken.mockReturnValue(null)
+
+        expect(resolveJoinToken("R1", "member", "stale-access")).toBe("")
+    })
+
+    /**
+     * 게스트는 자기 저장소만 본다. 같은 브라우저에 회원 토큰이 있는 사람이 게스트로 들어와
+     * 두고 있을 때 회원 토큰으로 새어 나가면, 재접속에서 서버가 보는 신원이 바뀌어 한 사람이
+     * 방에서 두 자리를 차지한다.
+     */
+    it("keeps a guest on its own token and never falls back to the member one", () => {
+        tokens.getToken.mockReturnValue("member-access")
+        storeGuestToken("R1", "guest-tok", "g:aaa")
+
+        expect(resolveJoinToken("R1", "guest-session", "gate-tok")).toBe("guest-tok")
+        expect(tokens.getToken).not.toHaveBeenCalled()
+    })
+
+    it("re-reads the guest token so a re-issued one is used on reconnect", () => {
+        storeGuestToken("R1", "first", "g:aaa")
+        expect(resolveJoinToken("R1", "guest-session", "gate-tok")).toBe("first")
+
+        storeGuestToken("R1", "second", "g:aaa")
+        expect(resolveJoinToken("R1", "guest-session", "gate-tok")).toBe("second")
+    })
+
+    /**
+     * 사파리 프라이빗 모드 등에서 storeGuestToken 이 조용히 실패하면 저장소가 비어 있다.
+     * 그때 빈 문자열을 보내면 멀쩡한 토큰을 들고도 재접속이 전부 막히므로 게이트가 넘긴
+     * 토큰으로 되돌아간다 — 회원 쪽과 반대다.
+     */
+    it("falls back to the gate's guest token when the store could not keep it", () => {
+        expect(resolveJoinToken("R1", "guest-session", "gate-tok")).toBe("gate-tok")
+    })
+
+    /**
+     * 위 폴백이 <b>회원 토큰으로 새지 않는지</b>. 저장이 비어 있는 것과 회원 토큰이 있는 것이
+     * 겹치는 경우가 실제로 가장 흔하다 — 로그인한 사람이 게스트 닉네임으로 들어와 있고
+     * sessionStorage 는 프라이빗 모드라 비어 있다. 여기서 회원 토큰이 실려 나가면 서버가 보는
+     * 신원이 바뀌어 같은 사람이 방에서 두 자리를 차지한다.
+     */
+    it("still refuses the member token when the guest store is empty", () => {
+        tokens.getToken.mockReturnValue("member-access")
+
+        expect(resolveJoinToken("R1", "guest-session", "gate-tok")).toBe("gate-tok")
+    })
+
+    it("does not hand another room's guest token over", () => {
+        storeGuestToken("R2", "other-room", "g:bbb")
+
+        expect(resolveJoinToken("R1", "guest-session", "gate-tok")).toBe("gate-tok")
     })
 })

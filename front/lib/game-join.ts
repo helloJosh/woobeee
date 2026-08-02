@@ -1,4 +1,4 @@
-import { gameAPI } from "@/lib/api"
+import { gameAPI, tokenManager } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import type { SocketStatus } from "@/lib/game-socket"
 import type { GameType, RoomSummary } from "@/lib/types"
@@ -189,6 +189,83 @@ export function discardGuestTokenOnRejection(roomId: string, status: SocketStatu
     return true
 }
 
+/**
+ * 소켓이 참가를 거절당했을 때, 그 이유가 "지금 들고 있는 <b>회원</b> 토큰이 죽었다" 인지.
+ *
+ * <p>이것이 없을 때가 C1 이었다. `hooks/use-auth.tsx` 의 `isAuthenticated` 는
+ * `!!tokenManager.getToken()` — 문자열이 있느냐일 뿐 만료를 보지 않는다. 그래서 죽은 액세스
+ * 토큰이 localStorage 에 남은 방문자가 초대 링크를 열면 게이트가 곧바로 `ready/member` 를
+ * 내주고 <b>닉네임 폼은 아예 뜨지 않는다</b>. HTTP 로는 아무도 눈치채지 못한다 —
+ * `RoomController.summary` 는 인증이 필요 없고 `GameAuthWebFilter` 는 잘못된 토큰을 거부하지
+ * 않고 무시한다. 처음으로 알아채는 것이 소켓 JOIN 이고, 거기서 종단 `rejected` 가 되면
+ * 화면에는 "처음부터 다시 참가해 주세요" 와 새로고침 버튼이 뜬다 — 새로고침하면 게이트가
+ * 같은 죽은 토큰을 다시 넘겨 <b>똑같은 거절</b>이 재현된다. 게스트 갈림길로 가는 길이 없다.
+ *
+ * <p>게스트 쪽은 이미 옳게 하고 있다({@link discardGuestTokenOnRejection}). 회원 쪽도 같이
+ * 한다 — 다만 <b>모든 거절을 토큰 삭제로 바꾸면 안 된다</b>. 멀쩡히 로그인한 회원이 방이
+ * 가득 차서(`game_roomFull`), 초대 코드가 틀려서(`game_invalidInviteCode`), 이미 시작한
+ * 게임이라서(`game_gameAlreadyStarted`) 거절당하는 것은 토큰의 문제가 아니다. 그 사람의
+ * 세션까지 날리면 게임 목록으로 돌아갔을 때 로그아웃돼 있다.
+ *
+ * <p>그래서 신원 판정이 실패한 코드 셋만 본다. 서버(GameErrorCode)의 "신원" 묶음 중 방문자가
+ * 들고 온 토큰을 무효로 만드는 것들이다.
+ */
+export const DEAD_MEMBER_TOKEN_CODES: readonly string[] = [
+    // JoinAuthenticator 가 토큰을 못 읽었다 — 만료됐거나 다른 방의 것이다.
+    "game_invalidGameToken",
+    // 토큰이 아예 없거나 인증이 서지 않았다.
+    "game_unauthorized",
+    // 토큰은 읽혔는데 그 회원 행이 없다. 다시 로그인하는 것 말고 할 수 있는 일이 없다.
+    "game_memberNotFound",
+]
+
+export interface MemberTokenDiscardInput {
+    /** 지금 소켓에 물려 있는 토큰의 출처. 아직 게이트를 지나지 않았으면 null. */
+    source: JoinTokenSource | null
+    status: SocketStatus
+    /** 거절 직전에 서버가 보내 준 ERROR 프레임의 code. 프레임이 오기 전에 끊기면 undefined. */
+    errorCode: string | undefined
+}
+
+export function shouldDiscardMemberToken(input: MemberTokenDiscardInput): boolean {
+    if (input.source !== "member" || input.status !== "rejected") {
+        return false
+    }
+    return input.errorCode !== undefined && DEAD_MEMBER_TOKEN_CODES.includes(input.errorCode)
+}
+
+/**
+ * JOIN 마다 다시 읽는 토큰. {@code createGameSocket} 의 `token` 에 <b>함수로</b> 넘긴다.
+ *
+ * <p>게이트가 넘긴 문자열을 그대로 고정하면(I7), 액세스 토큰의 TTL 이 판 도중에 지나는 순간
+ * 이후의 모든 재접속 JOIN 이 인증에서 막히고 그 실패는 곧바로 종단 `rejected` 가 된다 —
+ * 30초 유예 안에 돌아올 수 있었던 사람이 자리를 잃는다.
+ *
+ * <p><b>출처를 봐야 한다.</b> 게스트는 sessionStorage 의 게스트 토큰을 계속 써야 하고
+ * `tokenManager.getToken()` 으로 새어 나가면 안 된다 — 같은 브라우저에 회원 토큰이 있는
+ * 사람이 게스트로 들어와 두고 있는 경우, 회원 토큰으로 재접속하면 서버가 보는 신원이 바뀌어
+ * 같은 사람이 방에서 두 자리를 차지한다.
+ *
+ * @param gateToken 게이트가 넘긴 토큰. 폴백으로만 쓴다.
+ */
+export function resolveJoinToken(
+    roomId: string,
+    source: JoinTokenSource,
+    gateToken: string
+): string {
+    if (source === "guest-session") {
+        // 저장이 막힌 브라우저(사파리 프라이빗 모드 등)에서는 storeGuestToken 이 조용히
+        // 실패한다. 그때 빈 문자열을 보내면 멀쩡한 토큰을 들고도 재접속이 전부 막히므로,
+        // 게이트가 넘긴 토큰으로 되돌아간다.
+        return readStoredGuestToken(roomId) ?? gateToken
+    }
+    // 회원은 폴백하지 않는다. 게이트가 `member` 를 내줬다는 것은 그 시점에
+    // tokenManager 에 토큰이 있었다는 뜻이므로, 지금 없다면 누군가 의도적으로 지운
+    // 것이다 — 로그아웃했거나, 바로 위 shouldDiscardMemberToken 이 죽은 토큰을 버렸거나.
+    // 그 자리에 낡은 문자열을 되살리면 C1 을 그대로 되돌리는 셈이다.
+    return tokenManager.getToken() ?? ""
+}
+
 function isStoredGuestToken(value: unknown): value is StoredGuestToken {
     if (typeof value !== "object" || value === null) {
         return false
@@ -258,11 +335,18 @@ export function describeJoinBlock(summary: RoomSummary): RoomJoinBlock | null {
  * 게이트가 지금 무엇을 그려야 하는지. 컴포넌트는 이 결과를 switch 로 받아 그리기만 한다.
  * ready 는 "쓸 수 있는 토큰이 있으니 게임 화면으로 넘겨라" 는 뜻이다.
  */
+/**
+ * 게이트가 넘긴 토큰이 <b>무엇인지</b>. 게임 화면은 이것 없이는 거절을 옳게 처리할 수 없다 —
+ * 죽은 회원 토큰은 버려야 하고 게스트 토큰은 sessionStorage 에서 다시 읽어야 하는데, 토큰
+ * 문자열만으로는 둘을 구분할 수 없다(둘 다 그냥 불투명한 문자열이다).
+ */
+export type JoinTokenSource = "member" | "guest-session"
+
 export type JoinGateStage =
     | { kind: "loading" }
     | { kind: "error"; message: string }
     | { kind: "wrong-game" }
-    | { kind: "ready"; token: string; source: "member" | "guest-session" }
+    | { kind: "ready"; token: string; source: JoinTokenSource }
     | { kind: "needs-identity"; summary: RoomSummary; block: RoomJoinBlock | null }
 
 export interface JoinGateInput {
