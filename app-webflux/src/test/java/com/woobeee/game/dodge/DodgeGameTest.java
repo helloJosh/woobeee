@@ -219,6 +219,39 @@ class DodgeGameTest {
         assertThat(frame.obstacles()).containsExactly(new Cell(11, 0));
     }
 
+    /**
+     * M2 — 골든 값. 위 테스트는 장애물이 <b>하나뿐인</b> 틱을 고정하므로 리스트의 <i>순서</i>는
+     * 전혀 검증하지 못한다. 그런데 그 순서 역시 브라우저 계약이다: 클라이언트가 obstacles 를
+     * 배열 위치로 다루거나(렌더 순서), 낙하분과 신규 생성분을 다른 순서로 이어 붙이면 재생
+     * 화면이 원본과 달라진다. 그래서 장애물이 여럿인 틱 하나를 통째로 고정한다.
+     *
+     * <p>seed 12345, tick 1 의 xorshift32 값(13~24번째 호출)을 손으로 굴려 얻었다:
+     * <pre>
+     *   0: 0.300349   1: 0.034989   2: 0.668699   3: 0.301702
+     *   4: 0.025221   5: 0.754853   6: 0.120995   7: 0.800961
+     *   8: 0.087412   9: 0.651159  10: 0.434973  11: 0.384712
+     * spawnProbability(1) == 0.15 이므로 0.15 미만인 컬럼은 1, 4, 6, 8 네 개다.
+     * </pre>
+     *
+     * <p>기대 리스트는 {@code [(11,1), (1,0), (4,0), (6,0), (8,0)]} 이다 — 두 가지를 동시에
+     * 고정한다: (1) tick 0 에 생긴 (11,0) 이 한 칸 내려온 <b>낙하분이 먼저</b> 오고 신규 생성분이
+     * 뒤에 붙는다, (2) 신규 생성분은 <b>컬럼 오름차순</b>이다. 둘 중 하나만 뒤집어도 깨진다.
+     */
+    @Test
+    void aMultiObstacleTickPinsFallenBeforeSpawnedAndAscendingColumns() {
+        DodgeGame game = new DodgeGame(List.of(A, B), 12345);
+
+        game.advanceOneTick(Map.of());
+        DodgeFrame frame = game.advanceOneTick(Map.of());
+
+        assertThat(frame.obstacles()).containsExactly(
+                new Cell(11, 1),
+                new Cell(1, 0),
+                new Cell(4, 0),
+                new Cell(6, 0),
+                new Cell(8, 0));
+    }
+
     /** 같은 시드는 같은 결과를 낸다 — 골든 테스트를 보강하는 회귀 방지용 상호 비교다. */
     @Test
     void spawningIsRepeatableAcrossInstancesWithTheSameSeed() {

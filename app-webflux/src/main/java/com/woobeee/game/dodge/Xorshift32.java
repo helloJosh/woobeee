@@ -19,7 +19,11 @@ public final class Xorshift32 {
         return state;
     }
 
-    /** 32비트 부호 없는 값을 long 으로 넓혀 돌려준다. Java int 산술이 이미 32비트로 순환한다. */
+    /**
+     * 다음 32비트 상태를 그대로 돌려준다 — <b>부호 있는</b> {@code int} 다. Java 의 int 산술이
+     * 이미 32비트로 순환하므로 마스킹이 따로 필요 없다. JS 포트에서는 각 좌시프트 뒤에
+     * {@code | 0} 을 붙여 같은 32비트 순환을 만들어야 한다.
+     */
     public int nextInt() {
         int x = state;
         x ^= x << 13;
@@ -29,6 +33,11 @@ public final class Xorshift32 {
         return x;
     }
 
+    /**
+     * {@link #nextInt()} 의 32비트 값을 <b>부호 없는</b> long 으로 넓힌 뒤 2^32 로 나눠
+     * {@code [0, 1)} 로 옮긴다. JS 포트는 반환값에 {@code >>> 0} 을 붙여 같은 부호 없는 확장을
+     * 만든 뒤 같은 상수로 나눈다.
+     */
     public double nextDouble() {
         return Integer.toUnsignedLong(nextInt()) / TWO_POW_32;
     }
