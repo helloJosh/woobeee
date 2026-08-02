@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper} from "lucide-react"
+import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper, User} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -119,17 +119,22 @@ export default function Header({
               <Menu className="h-5 w-5" />
             </Button>
 
-            <Button variant="ghost" asChild className="flex items-center gap-2 font-semibold">
+            <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/">
-                <Home className="h-5 w-5" />
-                <span className="hidden sm:inline">마켓플레이스</span>
+                <Home className="h-4 w-4" />
+                <span className="hidden sm:inline">홈</span>
               </Link>
             </Button>
-
-            <Button variant="ghost" asChild className="flex items-center gap-2 font-semibold">
+            <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/blog">
-                <Newspaper className="h-5 w-5" />
-                <span className="hidden sm:inline">블로그홈</span>
+                <Newspaper className="h-4 w-4" />
+                <span className="hidden sm:inline">기술블로그</span>
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
+              <Link href="/mypage">
+                <User className="h-4 w-4" />
+                <span className="hidden sm:inline">마이페이지</span>
               </Link>
             </Button>
           </div>
