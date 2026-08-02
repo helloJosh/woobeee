@@ -2,6 +2,7 @@ package com.woobeee.game.api.error;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 게임 API 가 실패 응답에 싣는 코드 목록.
@@ -76,6 +77,14 @@ public enum GameErrorCode {
 
     public GameException asException() {
         return new GameException(this);
+    }
+
+    /** 예외에서 코드를 꺼낸다. {@link GameException} 이면 그 코드, 아니면 상태로 유추한 폴백. */
+    public static GameErrorCode of(ResponseStatusException exception) {
+        if (exception instanceof GameException gameException) {
+            return gameException.errorCode();
+        }
+        return fromStatus(exception.getStatusCode());
     }
 
     /**

@@ -197,15 +197,28 @@ export interface DodgeSnapshotPayload {
 export type GameSnapshotPayload = OmokSnapshotPayload | DodgeSnapshotPayload
 
 /**
- * RoomCommandDispatcher.guard 가 예외를 흡수해 내보내는 모양. code 는 HTTP 상태 코드이고
- * (알 수 없는 런타임 예외는 500), 게임 명령에서 비롯된 실패라면 그 명령의 seq 가 ackSeq 로
- * 돌아온다.
+ * 서버: `com.woobeee.game.ws.payload.ErrorPayload`.
+ * RoomCommandDispatcher.guard 가 예외를 흡수해 내보내는 모양이고, 참가 인증에 실패한 세션에는
+ * GameWebSocketHandler 가 소켓을 닫기 직전에 같은 모양을 직접 한 프레임 써 준다(그 세션은 아직
+ * 방 허브를 구독하지 않아 브로드캐스트가 닿지 않는다). 게임 명령에서 비롯된 실패라면 그 명령의
+ * seq 가 ackSeq 로 돌아온다.
  *
- * <p>code 가 선택인 이유는 서버에 한 곳, 직렬화 자체가 실패했을 때 내보내는 고정 문자열
- * (GameWebSocketHandler.toTextMessage) 이 message 만 담기 때문이다. 그 경로에서는 code 가 없다.
+ * <p><b>code 는 문자열 키다</b> — `game_roomFull` 처럼. HTTP 실패 응답의 `header.message` 와
+ * 같은 값이고, 같은 지도(`lib/errors/error-messages.ts`)로 문구를 찾는다. 숫자 상태는
+ * `status` 다. 예전에는 `code` 가 숫자였는데, 두 통로에서 같은 낱말이 다른 것을 가리키면
+ * 반드시 사고가 나므로 역할을 HTTP 쪽과 맞췄다.
+ *
+ * @example
+ * if (isServerMessage(message, "ERROR")) {
+ *     setBanner(getFriendlyErrorMessage(message.payload.code))
+ * }
  */
 export interface ErrorPayload {
-    code?: number
+    /** 문구 지도의 키. `game_*`. */
+    code?: string
+    /** HTTP 상태에 대응하는 숫자. 알 수 없는 런타임 예외는 500. */
+    status?: number
+    /** 서버가 로그용으로 붙인 영어 설명. 사용자에게 그대로 보여주지 않는다. */
     message: string
 }
 

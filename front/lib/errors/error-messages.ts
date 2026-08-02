@@ -23,8 +23,12 @@ export const errorMessageMap = {
         "game_gameAlreadyStarted": "이미 게임이 시작된 방입니다.",
         "game_invalidNickname": "닉네임은 공백을 뺀 1~20자로 입력해 주세요.",
         "game_nicknameTaken": "이미 방에서 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요.",
+        // 아래 둘은 지금은 화면에 뜨지 않는다 — apiRequest(lib/api.ts)가 401 을 본문 파싱
+        // 전에 가로채 고정 문구를 던지기 때문이다. 401 처리가 바뀌면 바로 살아나므로 남겨 둔다.
         "game_unauthorized": "로그인이 필요합니다.",
         "game_memberNotFound": "회원 정보를 찾을 수 없습니다. 다시 로그인해 주세요.",
+        // WebSocket ERROR 프레임으로 온다(HTTP 아님) — GameWebSocketHandler 가 참가 인증에
+        // 실패한 세션을 닫기 직전에 보낸다.
         "game_invalidGameToken": "게임 입장 정보가 만료되었습니다. 처음부터 다시 참가해 주세요.",
         "game_notAMember": "이 방의 참가자가 아닙니다.",
         "game_notHost": "방장만 게임을 시작할 수 있습니다.",
@@ -62,8 +66,11 @@ export const errorMessageMap = {
         "game_gameAlreadyStarted": "This game has already started.",
         "game_invalidNickname": "Nickname must be 1-20 characters, excluding whitespace.",
         "game_nicknameTaken": "That nickname is already used in this room. Please pick another.",
+        // Both below are currently unreachable: apiRequest (lib/api.ts) intercepts 401 before
+        // parsing the body. Kept because they go live the moment that 401 handling changes.
         "game_unauthorized": "Please log in.",
         "game_memberNotFound": "Member not found. Please sign in again.",
+        // Arrives on a WebSocket ERROR frame, not over HTTP.
         "game_invalidGameToken": "Your entry has expired. Please join the room again.",
         "game_notAMember": "You are not a participant of this room.",
         "game_notHost": "Only the host can start the game.",

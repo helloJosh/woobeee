@@ -176,11 +176,14 @@ export async function joinRoomAsGuest(
 }
 
 /**
- * 새 참가자를 막아야 하는 이유. 서버(Room.admit)는 정원 초과를 ROOM_FULL, 시작된 방을
- * GAME_ALREADY_STARTED 로 거절하지만 그 판정은 WebSocket JOIN 에서만 일어난다 —
- * GuestIdentityService.issue 는 방 존재·초대 코드·닉네임만 보고 토큰을 내준다. 그래서
- * 게이트가 막지 않으면 게스트는 토큰을 받고 게임 화면으로 넘어간 뒤에야, 이 컴포넌트가 이미
- * 사라진 자리에서 거절당한다. 여기서 미리 알려 주는 이유다.
+ * 새 참가자를 막아야 하는 이유. 서버도 같은 것을 막는다 — GuestIdentityService.issue 가 방
+ * 존재·초대 코드·닉네임에 더해 방 상태와 정원까지 보고, 들어갈 수 없는 방이면 토큰을 아예
+ * 만들지 않는다(`game_gameAlreadyStarted`, `game_roomFull`). 여기서 한 번 더 보는 것은 화면
+ * 때문이다: 발급을 시도해 실패로 알게 되는 것보다, 방 요약을 읽은 시점에 미리 안내하는 쪽이
+ * 낫다(닉네임을 입력하기 전에 알 수 있다).
+ *
+ * <p>둘 사이에는 여전히 경합이 있다 — 요약을 읽고 발급을 요청하는 사이에 마지막 자리가 찰 수
+ * 있다. 그때는 발급이 `game_roomFull` 로 거절되고 그 문구가 배너에 뜬다. 최종 판정은 서버다.
  */
 export type RoomJoinBlock = { reason: "started" | "full"; message: string }
 

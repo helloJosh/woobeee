@@ -1,8 +1,11 @@
 package com.woobeee.game.ws;
 
+import com.woobeee.game.api.error.GameErrorCode;
+import com.woobeee.game.ws.payload.ErrorPayload;
 import org.springframework.web.reactive.socket.WebSocketHandler;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
+import org.springframework.web.server.ResponseStatusException;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -161,8 +164,33 @@ public class GameWebSocketHandler implements WebSocketHandler {
                     });
                     return joined ? Mono.<Void>empty() : session.close();
                 })
-                .onErrorResume(error -> session.close().then(Mono.empty()))
+                .onErrorResume(error -> rejectWithReason(session, error))
                 .then();
+    }
+
+    /**
+     * 인증 실패를 알린 뒤 세션을 닫는다.
+     *
+     * <p>이 세션은 아직 방 허브를 구독하지 않았다 — 구독은 {@code dispatcher.join} 이 통과한
+     * 뒤에야 일어난다. 그래서 {@code RoomCommandDispatcher.guard} 가 허브로 내보내는 ERROR 는
+     * 이 세션에 절대 닿지 않는다. 프레임을 세션에 <b>직접</b> 써야 하는 것은 그래서다. 이게
+     * 없으면 게스트 토큰이 만료된 사람에게 소켓이 조용히 닫히기만 하고, 화면은 왜 거절됐는지
+     * 말해 줄 방법이 없다.
+     *
+     * <p>여기서 {@code session.send} 를 한 번 더 부르는 것이 바깥의 outbound 스트림과 겹치지
+     * 않는 이유: outbound 는 {@code joinedRoomId} 가 값을 낼 때까지 아무것도 쓰지 않는데,
+     * 참가에 실패한 이 경로에서는 그 값이 영영 오지 않는다. 쓰는 쪽은 이 프레임 하나뿐이다.
+     */
+    private Mono<Void> rejectWithReason(WebSocketSession session, Throwable error) {
+        GameErrorCode errorCode = error instanceof ResponseStatusException statusException
+                ? GameErrorCode.of(statusException)
+                : GameErrorCode.UNEXPECTED;
+
+        String frame = toTextMessage(ServerMessage.of("ERROR", ErrorPayload.of(errorCode)));
+        return session.send(Mono.just(session.textMessage(frame)))
+                .onErrorResume(ignored -> Mono.empty())
+                .then(session.close())
+                .then(Mono.empty());
     }
 
     private ClientMessage parse(String text) {
@@ -177,7 +205,9 @@ public class GameWebSocketHandler implements WebSocketHandler {
         try {
             return objectMapper.writeValueAsString(message);
         } catch (Exception exception) {
-            return "{\"type\":\"ERROR\",\"payload\":{\"message\":\"serialization failed\"}}";
+            // 마지막 방어선. 직렬화가 깨져도 클라이언트가 아는 모양·아는 코드로 나가야 한다.
+            return "{\"type\":\"ERROR\",\"payload\":{\"status\":500,\"code\":\""
+                    + GameErrorCode.UNEXPECTED.code() + "\",\"message\":\"serialization failed\"}}";
         }
     }
 

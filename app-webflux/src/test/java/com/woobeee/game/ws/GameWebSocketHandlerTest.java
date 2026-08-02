@@ -1,5 +1,6 @@
 package com.woobeee.game.ws;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.room.GameIdGenerator;
 import com.woobeee.game.room.GameType;
@@ -145,6 +146,49 @@ class GameWebSocketHandlerTest {
 
         handler.handle(session).subscribe();
 
+        verify(session).close();
+        verify(dispatcher, never()).join(anyString(), anyString(), any(), any());
+    }
+
+    /**
+     * GAME-AC-28 — 인증 실패는 세션을 닫기 <b>전에</b> 이유를 알려 준다.
+     *
+     * <p>이 세션은 아직 방 허브를 구독하지 않았으므로(허브 구독은 dispatcher.join 이 통과한
+     * 뒤에야 일어난다) 허브로 나가는 ERROR 브로드캐스트는 이 세션에 절대 닿지 않는다. 그래서
+     * 이 프레임만은 세션에 직접 써야 한다. 이게 없으면 게스트 토큰이 만료된 사람에게 소켓이
+     * 조용히 닫히기만 하고, 화면은 "거절당했다"는 사실 외에는 아무것도 말해 줄 수 없다.
+     */
+    @Test
+    void aFailedAuthenticationSendsACodedErrorFrameBeforeClosing() {
+        when(authenticator.authenticate(eq("room-1"), eq("tok")))
+                .thenReturn(Mono.error(GameErrorCode.INVALID_GAME_TOKEN.asException()));
+
+        List<String> sent = new CopyOnWriteArrayList<>();
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("session-1");
+        when(session.receive()).thenReturn(Flux.just(
+                        "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}")
+                .map(payload -> {
+                    WebSocketMessage message = mock(WebSocketMessage.class);
+                    when(message.getPayloadAsText()).thenReturn(payload);
+                    return message;
+                }));
+        when(session.textMessage(anyString())).thenAnswer(invocation -> {
+            sent.add(invocation.getArgument(0));
+            return mock(WebSocketMessage.class);
+        });
+        when(session.send(any())).thenAnswer(invocation -> {
+            Publisher<WebSocketMessage> messages = invocation.getArgument(0);
+            return Flux.from(messages).then();
+        });
+        when(session.close()).thenReturn(Mono.empty());
+
+        handler.handle(session).subscribe();
+
+        assertThat(sent).anySatisfy(text -> {
+            assertThat(text).contains("\"type\":\"ERROR\"");
+            assertThat(text).contains(GameErrorCode.INVALID_GAME_TOKEN.code());
+        });
         verify(session).close();
         verify(dispatcher, never()).join(anyString(), anyString(), any(), any());
     }

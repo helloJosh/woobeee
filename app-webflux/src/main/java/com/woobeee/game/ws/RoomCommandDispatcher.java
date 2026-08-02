@@ -1,11 +1,12 @@
 package com.woobeee.game.ws;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomService;
 import com.woobeee.game.room.RoomStatus;
-import org.springframework.http.HttpStatus;
+import com.woobeee.game.ws.payload.ErrorPayload;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -89,7 +90,7 @@ public class RoomCommandDispatcher {
         guard(roomId, message.seq(), () -> {
             Room room = roomService.requireRoomById(roomId);
             if (room.member(participantId).isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not a member of this room");
+                throw GameErrorCode.NOT_A_MEMBER.asException();
             }
             GameCommandSink sink = sinks.get(room.gameType());
             if (sink == null) {
@@ -157,16 +158,11 @@ public class RoomCommandDispatcher {
             action.run();
             return true;
         } catch (ResponseStatusException exception) {
-            roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, Map.of(
-                    "code", exception.getStatusCode().value(),
-                    "message", String.valueOf(exception.getReason())
-            )));
+            roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.from(exception)));
             return false;
         } catch (RuntimeException exception) {
-            roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, Map.of(
-                    "code", 500,
-                    "message", "Command failed"
-            )));
+            // 예외 메시지는 싣지 않는다 — HTTP catch-all 과 같은 규칙이다.
+            roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.of(GameErrorCode.UNEXPECTED)));
             return false;
         }
     }

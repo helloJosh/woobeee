@@ -1,5 +1,6 @@
 package com.woobeee.game.ws;
 
+import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.room.ConnectionState;
 import com.woobeee.game.room.GameIdGenerator;
@@ -7,6 +8,7 @@ import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomRegistry;
 import com.woobeee.game.room.RoomService;
+import com.woobeee.game.ws.payload.ErrorPayload;
 import com.woobeee.game.ws.payload.RoomStatePayload;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -129,6 +131,70 @@ class RoomCommandDispatcherTest {
                 .then(() -> dispatcher.start("room-1", HOST.participantId()))
                 .assertNext(message -> assertThat(message.type()).isEqualTo("ERROR"))
                 .verifyComplete();
+    }
+
+    /**
+     * GAME-AC-28 — 소켓 ERROR 도 HTTP 봉투와 같은 코드를 싣는다. 코드가 없으면 화면은
+     * 서버가 보낸 영어 문장을 그대로 띄우거나 뭉뚱그린 안내밖에 할 수 없다.
+     */
+    @Test
+    void aFailedCommandCarriesTheErrorCodeNotJustAMessage() {
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> dispatcher.start("room-1", HOST.participantId()))
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("ERROR");
+                    ErrorPayload payload = (ErrorPayload) message.payload();
+                    assertThat(payload.code()).isEqualTo(GameErrorCode.NOT_ENOUGH_PLAYERS.code());
+                    assertThat(payload.status()).isEqualTo(409);
+                })
+                .expectComplete()
+                .verify(Duration.ofSeconds(2));
+    }
+
+    /**
+     * GAME-AC-28 — 카탈로그 밖에서 올라온 예외도 봉투 모양은 지킨다. 그리고 예외 메시지는
+     * 싣지 않는다 — HTTP 쪽 catch-all 과 같은 규칙이다.
+     */
+    @Test
+    void anUnexpectedFailureCarriesTheGenericCodeAndLeaksNothing() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        sink.throwOnParticipantGone = true;
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> dispatcher.leaveNow("room-1", GUEST.participantId()))
+                .assertNext(message -> {
+                    ErrorPayload payload = (ErrorPayload) message.payload();
+                    assertThat(payload.code()).isEqualTo(GameErrorCode.UNEXPECTED.code());
+                    assertThat(payload.status()).isEqualTo(500);
+                    assertThat(payload.message()).doesNotContain("boom");
+                })
+                .expectComplete()
+                .verify(Duration.ofSeconds(2));
+    }
+
+    /**
+     * GAME-AC-28 — 방 멤버가 아닌 세션의 게임 명령. 여기가 카탈로그를 우회해 bare
+     * ResponseStatusException 을 던지던 21번째 호출부였다.
+     */
+    @Test
+    void aGameCommandFromANonMemberCarriesTheNotAMemberCode() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> dispatcher.gameCommand("room-1", "not-a-member",
+                        new ClientMessage("OMOK_PLACE", 7L, null)))
+                .assertNext(message -> {
+                    ErrorPayload payload = (ErrorPayload) message.payload();
+                    assertThat(payload.code()).isEqualTo(GameErrorCode.NOT_A_MEMBER.code());
+                    assertThat(payload.status()).isEqualTo(403);
+                })
+                .expectComplete()
+                .verify(Duration.ofSeconds(2));
     }
 
     @Test
