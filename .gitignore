@@ -32,6 +32,10 @@ logs/
 # Environment files
 .env
 .env.*
+# 예시 파일은 비밀값이 없고 문서가 가리키는 대상이다. 무시하면 수정이 조용히 사라진다.
+!.env.example
+!*.env.example
+!front/.env.local.example
 
 # Local AI/MCP config
 .ai/mcp/mcp.json
