@@ -3,10 +3,15 @@
 import {
     ApiResponse,
     CartResponse,
+    CreateRoomResult,
+    GameResultSummary,
+    GameType,
     GetCommentResponse,
     GetPostResponse,
     GetPostsResponse,
     GoogleAuthorizationResponse,
+    GuestTokenResult,
+    MemberProfile,
     PresignedUploadResponse,
     PostCommentRequest,
     ProductCreateRequest,
@@ -15,6 +20,7 @@ import {
     ProductSummary,
     ProductsParams,
     PostsParams,
+    RoomSummary,
     TokenResponse
 } from "./types"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
@@ -340,7 +346,76 @@ export const authAPI = {
             },
         })
         tokenManager.removeToken()
-    }
+    },
+
+    me: async (): Promise<MemberProfile> => {
+        const response = await apiRequest("/api/auth/me")
+        const json: ApiResponse<MemberProfile> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "프로필을 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+}
+
+// 게임 API
+export const gameAPI = {
+    createRoom: async (gameType: GameType): Promise<CreateRoomResult> => {
+        const response = await apiRequest("/api/game/rooms", {
+            method: "POST",
+            body: JSON.stringify({ gameType }),
+        })
+        const json: ApiResponse<CreateRoomResult> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "방을 만들지 못했습니다.")
+        }
+        return json.data
+    },
+
+    getRoomSummary: async (roomId: string, inviteCode: string): Promise<RoomSummary> => {
+        const response = await apiRequest(
+            `/api/game/rooms/${encodeURIComponent(roomId)}?invite=${encodeURIComponent(inviteCode)}`
+        )
+        const json: ApiResponse<RoomSummary> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "방 정보를 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+
+    issueGuestToken: async (
+        roomId: string,
+        inviteCode: string,
+        nickname: string
+    ): Promise<GuestTokenResult> => {
+        const response = await apiRequest(`/api/game/rooms/${encodeURIComponent(roomId)}/guest-tokens`, {
+            method: "POST",
+            body: JSON.stringify({ inviteCode, nickname }),
+        })
+        const json: ApiResponse<GuestTokenResult> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "닉네임으로 참가하지 못했습니다.")
+        }
+        return json.data
+    },
+
+    myResults: async (limit = 20, offset = 0): Promise<GameResultSummary[]> => {
+        const response = await apiRequest(`/api/game/me/results?limit=${limit}&offset=${offset}`)
+        const json: ApiResponse<GameResultSummary[]> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "전적을 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+
+    replayUrl: async (gameResultId: number): Promise<string> => {
+        const response = await apiRequest(`/api/game/results/${gameResultId}/replay`)
+        const json: ApiResponse<{ replayUrl: string }> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "기보를 불러오지 못했습니다.")
+        }
+        return json.data.replayUrl
+    },
 }
 
 export const categoryAPI = {

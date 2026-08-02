@@ -190,6 +190,54 @@ export interface ProductCreateResponse {
   detailImageKeys: string[]
 }
 
+export type GameType = "OMOK" | "DODGE"
+
+export type RoomStatus = "WAITING" | "IN_PROGRESS" | "FINISHED"
+
+export interface RoomSummary {
+  gameType: GameType
+  status: RoomStatus
+  capacity: number
+  participantCount: number
+}
+
+export interface CreateRoomResult {
+  roomId: string
+  inviteCode: string
+  gameType: GameType
+}
+
+export interface GuestTokenResult {
+  token: string
+  participantId: string
+  displayName: string
+}
+
+export interface GameResultSummary {
+  gameResultId: number
+  gameType: GameType
+  endedAt: string
+  finishRank: number
+  winnerDisplayName: string
+  replayAvailable: boolean
+}
+
+export interface ParticipantView {
+  participantId: string
+  displayName: string
+  kind: "MEMBER" | "GUEST"
+  ready: boolean
+  connection: "CONNECTED" | "DISCONNECTED"
+}
+
+export interface MemberProfile {
+  memberId: number
+  email: string
+  nickname: string
+  gameMoney: number
+  profileImageUrl: string | null
+}
+
 export type CartStatus = "ACTIVE" | "EXPIRED" | "DELETED"
 
 export interface CartProductSummary {
