@@ -189,6 +189,7 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 | --- | --- | --- |
 | `ROOM_STATE` | `gameType`, `hostParticipantId`, `participants[]`, `status` | 입퇴장·READY·연결상태 변화 때마다 방 전체에 |
 | `GAME_START` | `startedAt`, 게임별 초기 상태 | 시작 시 |
+| `GAME_SNAPSHOT` | `gameType` + 게임별 상태(아래) | 이미 진행 중인 게임에 기존 참가자가 다시 붙었을 때, 그 `ROOM_STATE` 바로 뒤에 |
 | `OMOK_MOVED` | `participantId`, `x`, `y`, `color`, `nextTurn`, `turnDeadline` | 착수 성공. **승리 착수는 예외** — 다음 차례가 없으므로 `nextTurn`/`turnDeadline` 없이 네 필드(`participantId`, `x`, `y`, `color`)만 싣고, 뒤이어 `GAME_END` 가 나간다 |
 | `OMOK_REJECTED` | `ackSeq`, `reason` | 금수·차례아님·이미 놓인 자리 |
 | `DODGE_TICK` | `tick`, `positions[]`, `obstacles[]`, `eliminated[]` | 매 틱, 방 전체에 |
@@ -201,6 +202,30 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 
 **연결 종료** — 세션이 끊기면 그 참가자를 `DISCONNECTED` 로 바꿔 `ROOM_STATE` 를 브로드캐스트하고
 30초 유예 타이머를 건다. 유예가 만료되면 방에서 빼고 다시 `ROOM_STATE` 를 브로드캐스트한다.
+
+**재접속 — `GAME_SNAPSHOT`** — 유예 안에 돌아온 참가자에게는 `ROOM_STATE` 만으로 부족하다.
+참가자 목록과 방 상태로는 판도 틱도 복원할 수 없어서, 자리는 지킨 채 빈 화면만 보게 된다.
+그래서 `RoomService.join` 이 최초 참가와 재접속을 `JoinOutcome(room, reconnected)` 로 구분해
+돌려주고, `RoomCommandDispatcher.join` 은 **재접속이면서 방이 `IN_PROGRESS` 일 때만**
+`GameCommandSink.onRejoin` 을 불러 `GAME_SNAPSHOT` 을 내보낸다. 최초 참가와, 아직 시작하지 않은
+방으로의 재접속은 스냅샷을 만들지 않는다.
+
+페이로드는 게임마다 다르고, `gameType` 으로 구분한다.
+
+| gameType | payload |
+| --- | --- |
+| `OMOK` | `moves[]`(순서대로 `x`, `y`, `color`), `nextTurn`, `turnDeadline` |
+| `DODGE` | `tick`, `positions[]`(`participantId`, `x`, `y`), `obstacles[]`(`x`, `y`) |
+
+오목은 판을 격자로 인코딩하지 않고 착수 목록을 그대로 싣는다 — 기보 뷰어가 이미 이해하는 모양이라
+클라이언트가 판 복원 코드를 한 벌만 갖는다. 장애물피하기는 평소 `DODGE_TICK` 이 싣는 프레임과 같은
+내용이라 기존 프레임 렌더러가 그대로 처리한다. 스냅샷을 뜨는 것은 게임 상태를 바꾸지 않는다
+(`DodgeGame.currentFrame()` 은 틱을 진행하지 않는다).
+
+스냅샷은 **재접속한 세션 하나가 아니라 방 전체에 브로드캐스트한다.** `RoomHub` 에는 세션 단위
+전송이 없고(`subscribe(roomId)` / `broadcast(roomId, message)` 뿐이다) 그것을 추가하는 것은 이
+변경의 범위를 넘는다. 나머지 참가자가 권위 있는 상태로 한 번 더 그리는 것은 무해하고, 오히려
+그동안 벌어진 어긋남을 스스로 바로잡는다.
 
 ### 5. 오목 (턴제, 서버 판정)
 

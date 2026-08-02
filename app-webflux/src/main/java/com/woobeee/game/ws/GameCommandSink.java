@@ -19,5 +19,14 @@ public interface GameCommandSink {
 
     void onGameCommand(Room room, String participantId, ClientMessage message);
 
+    /**
+     * 이미 진행 중인 게임에 참가자가 다시 붙었을 때 불린다. 구현체는 화면을 다시 그릴 수 있을 만큼의
+     * 상태를 GAME_SNAPSHOT 으로 내보낸다. 진행 중인 게임이 없으면 아무것도 하지 않는다.
+     *
+     * <p>기본 구현을 두지 않는다 — 조용히 아무것도 안 하는 default 야말로 다음 게임 타입이 이
+     * 버그를 그대로 다시 출시하는 방법이다.
+     */
+    void onRejoin(Room room, String participantId);
+
     void onParticipantGone(Room room, String participantId);
 }

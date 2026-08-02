@@ -224,6 +224,62 @@ class DodgeGameSinkTest {
         assertThat(tick0.get("moves").get("m:11").asString()).isEqualTo("LEFT");
     }
 
+    /**
+     * GAME-AC-23: a reconnecting player gets the current frame — the same {@code tick} /
+     * {@code positions} / {@code obstacles} content a normal DODGE_TICK carries, so the client's
+     * existing frame renderer handles it unchanged.
+     */
+    @Test
+    void aRejoinBroadcastsTheCurrentTickPositionsAndObstacles() {
+        sink.onStart(room);
+        scheduler.advanceTimeBy(Duration.ofMillis(300));
+        int tickNow = sink.gameOf("room-1").tick();
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> sink.onRejoin(room, "g:a"))
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("GAME_SNAPSHOT");
+                    Map<String, Object> payload = asPayload(message);
+                    assertThat(payload).containsEntry("gameType", "DODGE");
+                    assertThat(payload).containsEntry("tick", tickNow);
+                    @SuppressWarnings("unchecked")
+                    List<Map<String, Object>> positions =
+                            (List<Map<String, Object>>) payload.get("positions");
+                    assertThat(positions).extracting(position -> position.get("participantId"))
+                            .containsExactlyInAnyOrderElementsOf(sink.gameOf("room-1").survivors());
+                    assertThat(payload).containsKey("obstacles");
+                })
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+    }
+
+    /** GAME-AC-23: taking a snapshot must not advance the game by a tick. */
+    @Test
+    void aRejoinDoesNotAdvanceTheTickCounter() {
+        sink.onStart(room);
+        scheduler.advanceTimeBy(Duration.ofMillis(300));
+        int before = sink.gameOf("room-1").tick();
+
+        sink.onRejoin(room, "g:a");
+
+        assertThat(sink.gameOf("room-1").tick()).isEqualTo(before);
+    }
+
+    /**
+     * GAME-AC-24: reconnecting into a room whose game never started has nothing to replay. The
+     * PROBE arriving first is what proves no snapshot was queued ahead of it — a bounded way to
+     * assert an absence.
+     */
+    @Test
+    void aRejoinWithNoGameInProgressBroadcastsNothing() {
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> sink.onRejoin(room, "g:a"))
+                .then(() -> hub.broadcast("room-1", ServerMessage.of("PROBE", Map.of())))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("PROBE"))
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+    }
+
     @Test
     void aDepartedParticipantIsEliminated() {
         sink.onStart(room);

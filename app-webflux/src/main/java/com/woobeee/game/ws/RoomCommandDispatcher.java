@@ -4,6 +4,7 @@ import com.woobeee.game.identity.GameParticipant;
 import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomService;
+import com.woobeee.game.room.RoomStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -46,12 +47,23 @@ public class RoomCommandDispatcher {
      * <p>{@code onValidated} 는 참가가 실제로 확정된 직후, 이 참가에 대한 ROOM_STATE 를 방에
      * 브로드캐스트하기 직전에 불린다. 호출자는 여기서 허브 구독을 열어 자신의 참가로 인한
      * ROOM_STATE 를 놓치지 않게 한다.
+     *
+     * <p>진행 중인 게임에 <b>다시</b> 붙은 참가자에게는 ROOM_STATE 만으로 충분하지 않다 — 참가자
+     * 목록과 방 상태만으로는 판도 틱도 복원할 수 없어서, 30초 유예 안에 돌아온 플레이어가 자리는
+     * 지킨 채 빈 화면만 보게 된다. 그래서 ROOM_STATE 뒤에 싱크의 {@code onRejoin} 을 불러
+     * GAME_SNAPSHOT 을 내보낸다. 최초 참가는 따라잡을 상태가 없으므로 부르지 않는다.
      */
     public boolean join(String roomId, String inviteCode, GameParticipant participant, Runnable onValidated) {
         return guard(roomId, null, () -> {
-            Room room = roomService.join(roomId, inviteCode, participant);
+            RoomService.JoinOutcome outcome = roomService.join(roomId, inviteCode, participant);
+            Room room = outcome.room();
             onValidated.run();
             broadcastRoomState(room);
+
+            if (outcome.reconnected() && room.status() == RoomStatus.IN_PROGRESS) {
+                Optional.ofNullable(sinks.get(room.gameType()))
+                        .ifPresent(sink -> sink.onRejoin(room, participant.participantId()));
+            }
         });
     }
 

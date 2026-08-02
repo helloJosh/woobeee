@@ -210,6 +210,44 @@ public class DodgeGameSink implements GameCommandSink {
         }
     }
 
+    /**
+     * 재접속한 참가자에게 화면을 다시 그려 줄 GAME_SNAPSHOT 을 낸다.
+     *
+     * <p>내용은 평소 {@code DODGE_TICK} 이 싣는 것과 같은 프레임({@code tick}/{@code positions}/
+     * {@code obstacles})이다 — 클라이언트의 기존 프레임 렌더러가 그대로 처리한다.
+     * {@link DodgeGame#currentFrame()} 은 틱을 진행하지 않으므로, 재접속 때문에 게임이 한 칸
+     * 앞으로 가는 일은 없다.
+     *
+     * <p><b>세션 하나가 아니라 방 전체에 브로드캐스트한다.</b> {@link RoomHub} 에는 세션 단위 전송이
+     * 없고({@code subscribe(roomId)} / {@code broadcast(roomId, message)} 뿐이다) 그것을 추가하는
+     * 것은 이 변경의 범위를 넘는다. 나머지 참가자가 권위 있는 상태로 한 번 더 그리는 것은 무해하고,
+     * 오히려 그동안 벌어진 어긋남을 스스로 바로잡는다.
+     */
+    @Override
+    public void onRejoin(Room room, String participantId) {
+        DodgeGame game = games.get(room.roomId());
+        if (game == null) {
+            return;
+        }
+
+        DodgeFrame frame;
+        // 틱 루프와 같은 모니터에서 읽는다 — positions/obstacles 는 스레드 안전하지 않고,
+        // 틱 중간에 뜬 스냅샷은 입력만 반영되고 장애물은 안 내려온 손상된 프레임이다.
+        synchronized (game) {
+            if (game.finished()) {
+                return;
+            }
+            frame = game.currentFrame();
+        }
+
+        roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_SNAPSHOT", Map.of(
+                "gameType", "DODGE",
+                "tick", frame.tick(),
+                "positions", positionsOf(frame),
+                "obstacles", obstaclesOf(frame)
+        )));
+    }
+
     @Override
     public void onParticipantGone(Room room, String participantId) {
         String roomId = room.roomId();

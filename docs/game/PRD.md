@@ -148,8 +148,8 @@ xorshift 는 0에서 멈춘다.
 특정 명령의 응답이 아니므로 `ackSeq` 가 없다.
 
 - 클라이언트 → 서버: `JOIN` `LEAVE` `READY` `START` `OMOK_PLACE` `DODGE_MOVE`
-- 서버 → 클라이언트: `ROOM_STATE` `GAME_START` `OMOK_MOVED` `OMOK_REJECTED` `DODGE_TICK`
-  `GAME_END` `ERROR`
+- 서버 → 클라이언트: `ROOM_STATE` `GAME_START` `GAME_SNAPSHOT` `OMOK_MOVED` `OMOK_REJECTED`
+  `DODGE_TICK` `GAME_END` `ERROR`
 
 ## 인수 기준 (Acceptance Criteria)
 
@@ -180,6 +180,8 @@ xorshift 는 0에서 멈춘다.
 | GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest`, `OmokGameSinkTest`, `DodgeGameSinkTest.theGameEndsAndRecordsAResult` |
 | GAME-AC-21 | 기보 업로드가 실패해도 결과는 남고 `replay_object_key` 는 `null` 이다 | `GameResultServiceTest`, `ReplayUploaderTest` |
 | GAME-AC-22 | 기보 다시보기는 그 게임 참가자 본인에게만 presigned URL을 발급한다. 게스트(`member_id` 없음)는 애초에 `member_id` 로 참가자를 확인하는 이 조회의 대상이 될 수 없으므로 기보를 절대 조회할 수 없다 | `GameResultControllerTest`, `GameResultQueryRepositoryTest`(`FIND_REPLAY_ACCESS` 의 `p.member_id = :memberId` SQL 고정) |
+| GAME-AC-23 | 진행 중인 게임에 재접속하면 화면을 다시 그릴 수 있는 `GAME_SNAPSHOT` 을 받는다 — 오목은 지금까지의 착수 목록과 `nextTurn`·`turnDeadline`, 장애물피하기는 현재 `tick`·`positions`·`obstacles`. 스냅샷은 게임 상태를 바꾸지 않는다(오목의 차례도, 장애물피하기의 틱 카운터도 그대로다) | `RoomServiceTest.joinReportsWhetherItSeatedANewcomerOrRevivedAnExistingMember`, `RoomCommandDispatcherTest.aReconnectIntoARunningGameAsksTheSinkForASnapshot`·`theSnapshotIsRequestedAfterTheRoomStateBroadcast`, `OmokGameSinkTest.aRejoinBroadcastsEveryMoveSoFarWithTheCurrentTurn`·`aRejoinLeavesTheGameExactlyAsItWas`, `DodgeGameSinkTest.aRejoinBroadcastsTheCurrentTickPositionsAndObstacles`·`aRejoinDoesNotAdvanceTheTickCounter`, `DodgeGameTest.currentFrameReportsTheStateWithoutAdvancingTheTick` |
+| GAME-AC-24 | 최초 참가와, 아직 게임이 시작되지 않은 방으로의 재접속은 `GAME_SNAPSHOT` 을 만들지 않는다 | `RoomCommandDispatcherTest.aFirstTimeJoinAsksForNoSnapshot`·`aReconnectIntoARoomWhoseGameHasNotStartedAsksForNoSnapshot`, `OmokGameSinkTest.aRejoinWithNoGameInProgressBroadcastsNothing`, `DodgeGameSinkTest.aRejoinWithNoGameInProgressBroadcastsNothing` |
 
 ## 비기능 요구사항
 

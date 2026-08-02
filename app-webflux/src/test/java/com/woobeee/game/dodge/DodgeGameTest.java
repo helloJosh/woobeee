@@ -42,6 +42,25 @@ class DodgeGameTest {
         assertThat(down.positions().get(A).y()).isEqualTo(DodgeRules.ROWS - 1);
     }
 
+    /**
+     * GAME-AC-23: the reconnect snapshot needs the frame as it stands right now. Calling
+     * advanceOneTick again would answer with a frame the rest of the room never saw and move the
+     * game forward for everyone because one player came back.
+     */
+    @Test
+    void currentFrameReportsTheStateWithoutAdvancingTheTick() {
+        DodgeGame game = DodgeGameTestSupport.quiet(1, List.of(new Cell(3, 0)), A);
+        DodgeFrame advanced = game.advanceOneTick(Map.of(A, Direction.LEFT));
+
+        DodgeFrame snapshot = game.currentFrame();
+
+        assertThat(game.tick()).isEqualTo(1);
+        assertThat(snapshot.tick()).isEqualTo(advanced.tick());
+        assertThat(snapshot.positions()).isEqualTo(advanced.positions());
+        assertThat(snapshot.obstacles()).isEqualTo(advanced.obstacles());
+        assertThat(snapshot.eliminatedThisTick()).isEmpty();
+    }
+
     @Test
     void obstaclesFallOneRowPerTick() {
         DodgeGame game = DodgeGameTestSupport.quiet(1, List.of(new Cell(3, 0)), A);

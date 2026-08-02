@@ -160,6 +160,52 @@ public class OmokGameSink implements GameCommandSink {
         }
     }
 
+    /**
+     * 재접속한 참가자에게 판을 다시 그려 줄 GAME_SNAPSHOT 을 낸다.
+     *
+     * <p>판을 격자로 인코딩하지 않고 착수 목록을 순서대로 싣는다 — 기보 뷰어가 이미 이해하는
+     * 모양 그대로여서 클라이언트가 판 복원 코드를 한 벌만 갖는다.
+     *
+     * <p><b>세션 하나가 아니라 방 전체에 브로드캐스트한다.</b> {@link RoomHub} 에는 세션 단위 전송이
+     * 없고({@code subscribe(roomId)} / {@code broadcast(roomId, message)} 뿐이다) 그것을 추가하는
+     * 것은 이 변경의 범위를 넘는다. 나머지 참가자가 권위 있는 상태로 한 번 더 그리는 것은 무해하고,
+     * 오히려 그동안 벌어진 어긋남을 스스로 바로잡는다.
+     */
+    @Override
+    public void onRejoin(Room room, String participantId) {
+        OmokGame game = games.get(room.roomId());
+        if (game == null) {
+            return;
+        }
+
+        List<Map<String, Object>> moves;
+        String nextTurn;
+        String turnDeadline;
+        // 틱/착수와 같은 모니터에서 읽는다 — 착수 중간에 뜬 스냅샷은 판과 차례가 어긋난
+        // 스냅샷이다.
+        synchronized (game) {
+            if (game.finished()) {
+                return;
+            }
+            moves = game.moves().stream()
+                    .map(move -> Map.<String, Object>of(
+                            "x", move.x(),
+                            "y", move.y(),
+                            "color", move.stone().name()
+                    ))
+                    .toList();
+            nextTurn = game.currentTurnParticipantId();
+            turnDeadline = game.turnDeadline().toString();
+        }
+
+        roomHub.broadcast(room.roomId(), ServerMessage.of("GAME_SNAPSHOT", Map.of(
+                "gameType", "OMOK",
+                "moves", moves,
+                "nextTurn", nextTurn,
+                "turnDeadline", turnDeadline
+        )));
+    }
+
     @Override
     public void onParticipantGone(Room room, String participantId) {
         OmokGame game = games.get(room.roomId());

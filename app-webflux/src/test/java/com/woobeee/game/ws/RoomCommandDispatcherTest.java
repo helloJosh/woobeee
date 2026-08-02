@@ -183,6 +183,74 @@ class RoomCommandDispatcherTest {
     }
 
     /**
+     * GAME-AC-23: a player who dropped out of a running game and came back inside the grace
+     * window must be handed the game state again — otherwise they keep their seat and stare at
+     * an empty board while the game continues without them.
+     */
+    @Test
+    void aReconnectIntoARunningGameAsksTheSinkForASnapshot() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.ready("room-1", HOST.participantId(), true);
+        dispatcher.ready("room-1", GUEST.participantId(), true);
+        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.disconnected("room-1", GUEST.participantId());
+        log.clear();
+
+        dispatcher.join("room-1", "code", GUEST);
+
+        assertThat(log).containsExactly("onRejoin:" + GUEST.participantId());
+    }
+
+    /** GAME-AC-24: a newcomer has nothing to catch up on — the ROOM_STATE is the whole story. */
+    @Test
+    void aFirstTimeJoinAsksForNoSnapshot() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+
+        dispatcher.join("room-1", "code", GUEST);
+
+        assertThat(log).isEmpty();
+    }
+
+    /** GAME-AC-24: reconnecting into a lobby has no game state to replay. */
+    @Test
+    void aReconnectIntoARoomWhoseGameHasNotStartedAsksForNoSnapshot() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.disconnected("room-1", GUEST.participantId());
+        log.clear();
+
+        dispatcher.join("room-1", "code", GUEST);
+
+        assertThat(log).isEmpty();
+    }
+
+    /** GAME-AC-23: the snapshot follows the ROOM_STATE that announced the reconnect, never precedes it. */
+    @Test
+    void theSnapshotIsRequestedAfterTheRoomStateBroadcast() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.ready("room-1", HOST.participantId(), true);
+        dispatcher.ready("room-1", GUEST.participantId(), true);
+        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.disconnected("room-1", GUEST.participantId());
+        log.clear();
+
+        hub.subscribe("room-1").take(1).subscribe(message -> log.add(message.type()));
+        dispatcher.join("room-1", "code", GUEST);
+
+        assertThat(log).containsExactly("ROOM_STATE", "onRejoin:" + GUEST.participantId());
+    }
+
+    /**
      * C2 regression: {@code requireRoomById} only checks the room exists, not that the caller is
      * a member of it. A non-member who merely knows the roomId (e.g. a session whose JOIN failed
      * invite-code validation, or one from a different room entirely) must not have its game
@@ -242,6 +310,11 @@ class RoomCommandDispatcherTest {
         @Override
         public void onGameCommand(Room room, String participantId, ClientMessage message) {
             log.add("onGameCommand:" + participantId);
+        }
+
+        @Override
+        public void onRejoin(Room room, String participantId) {
+            log.add("onRejoin:" + participantId);
         }
 
         @Override

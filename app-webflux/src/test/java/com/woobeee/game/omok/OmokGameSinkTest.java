@@ -9,6 +9,7 @@ import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomStatus;
 import com.woobeee.game.ws.ClientMessage;
 import com.woobeee.game.ws.RoomHub;
+import com.woobeee.game.ws.ServerMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -22,6 +23,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +69,16 @@ class OmokGameSinkTest {
                 seq,
                 objectMapper.readTree("{\"x\":" + x + ",\"y\":" + y + "}")
         );
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> asPayload(ServerMessage message) {
+        return (Map<String, Object>) message.payload();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> movesOf(Map<String, Object> payload) {
+        return (List<Map<String, Object>>) payload.get("moves");
     }
 
     @Test
@@ -162,6 +175,63 @@ class OmokGameSinkTest {
         sink.onGameCommand(room, "m:11", placeMessage(7, 7, 99L));
 
         assertThat(room.status()).isEqualTo(RoomStatus.FINISHED);
+    }
+
+    /**
+     * GAME-AC-23: a reconnecting player must be able to redraw the board. The snapshot carries the
+     * move list in order rather than a board grid, so the client replays it with the very same
+     * code the replay viewer already uses.
+     */
+    @Test
+    void aRejoinBroadcastsEveryMoveSoFarWithTheCurrentTurn() {
+        sink.onStart(room);
+        sink.onGameCommand(room, "m:11", placeMessage(7, 7, 1L));
+        sink.onGameCommand(room, "g:a", placeMessage(8, 8, 2L));
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> sink.onRejoin(room, "g:a"))
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("GAME_SNAPSHOT");
+                    Map<String, Object> payload = asPayload(message);
+                    assertThat(payload).containsEntry("gameType", "OMOK");
+                    assertThat(payload).containsEntry("nextTurn", "m:11");
+                    assertThat(payload).containsEntry(
+                            "turnDeadline", NOW.plus(OmokGameSink.MOVE_LIMIT).toString());
+                    assertThat(movesOf(payload)).containsExactly(
+                            Map.of("x", 7, "y", 7, "color", "BLACK"),
+                            Map.of("x", 8, "y", 8, "color", "WHITE"));
+                })
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
+    }
+
+    /** GAME-AC-23: reading state for the snapshot must not be a move. */
+    @Test
+    void aRejoinLeavesTheGameExactlyAsItWas() {
+        sink.onStart(room);
+        sink.onGameCommand(room, "m:11", placeMessage(7, 7, 1L));
+        String turnBefore = sink.gameOf("room-1").currentTurnParticipantId();
+        int movesBefore = sink.gameOf("room-1").moves().size();
+
+        sink.onRejoin(room, "g:a");
+
+        assertThat(sink.gameOf("room-1").currentTurnParticipantId()).isEqualTo(turnBefore);
+        assertThat(sink.gameOf("room-1").moves()).hasSize(movesBefore);
+    }
+
+    /**
+     * GAME-AC-24: reconnecting into a room whose game never started has nothing to replay. The
+     * PROBE arriving first is what proves no snapshot was queued ahead of it — a bounded way to
+     * assert an absence.
+     */
+    @Test
+    void aRejoinWithNoGameInProgressBroadcastsNothing() {
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> sink.onRejoin(room, "g:a"))
+                .then(() -> hub.broadcast("room-1", ServerMessage.of("PROBE", Map.of())))
+                .assertNext(message -> assertThat(message.type()).isEqualTo("PROBE"))
+                .expectComplete()
+                .verify(VERIFY_TIMEOUT);
     }
 
     @Test

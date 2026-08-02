@@ -112,11 +112,24 @@ class RoomServiceTest {
         service.start(room.roomId(), HOST.participantId());
         service.markDisconnected(room.roomId(), GUEST.participantId());
 
-        Room rejoined = service.join(room.roomId(), "code", GUEST);
+        Room rejoined = service.join(room.roomId(), "code", GUEST).room();
 
         assertThat(rejoined.member(GUEST.participantId()).orElseThrow().connection())
                 .isEqualTo(ConnectionState.CONNECTED);
         assertThat(rejoined.members()).hasSize(2);
+    }
+
+    /**
+     * GAME-AC-23: 재접속 스냅샷을 보낼지 말지는 호출자가 판단하는데, join 이 최초 참가와 재접속을
+     * 같은 값으로 돌려주면 그 판단에 쓸 정보가 사라진다 — 연결 상태를 읽어 봐야 이미 CONNECTED 로
+     * 되돌아간 뒤라 구분할 수 없다.
+     */
+    @Test
+    void joinReportsWhetherItSeatedANewcomerOrRevivedAnExistingMember() {
+        Room room = service.create(GameType.OMOK, HOST);
+
+        assertThat(service.join(room.roomId(), "code", GUEST).reconnected()).isFalse();
+        assertThat(service.join(room.roomId(), "code", GUEST).reconnected()).isTrue();
     }
 
     /** GAME-AC-08 */

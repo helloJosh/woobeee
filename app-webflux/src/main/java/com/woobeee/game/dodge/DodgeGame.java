@@ -195,6 +195,17 @@ public final class DodgeGame {
         }
     }
 
+    /**
+     * 틱을 진행하지 않고 지금 이 순간의 프레임을 읽는다. 재접속한 참가자에게 화면을 다시 그려 주려면
+     * 판을 한 칸도 움직이지 않은 채로 현재 상태가 필요하다 — {@link #advanceOneTick(Map)} 을 한 번
+     * 더 부르는 것은 그 참가자 때문에 게임이 앞으로 가는 것이라 답이 될 수 없다.
+     *
+     * <p>{@code eliminatedThisTick} 은 빈 목록이다. 이 호출은 아무도 탈락시키지 않는다.
+     */
+    public DodgeFrame currentFrame() {
+        return frame(List.of());
+    }
+
     /** 탈락 역순이 순위다. 같은 틱에 탈락한 사람은 공동 순위. */
     public Map<String, Integer> finalRanks() {
         Map<String, Integer> ranks = new LinkedHashMap<>();

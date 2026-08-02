@@ -39,16 +39,31 @@ public class RoomService {
      * <p>판정과 추가는 {@link Room#admit(GameParticipant, RoomStatus)} 하나로 원자적으로
      * 수행한다 — 검사와 추가를 여기서 별도의 {@code Room} 호출로 나누면 그 사이에
      * {@link #start} 가 끼어들어 상태를 바꿀 수 있다(체크-후-액션 경합).
+     *
+     * <p>둘을 {@code Room} 하나로 뭉뚱그리지 않고 {@link JoinOutcome} 으로 구분해 돌려준다 —
+     * 진행 중인 게임에 다시 붙은 참가자에게는 화면을 다시 그릴 스냅샷을 보내야 하는데, 최초
+     * 참가와 재접속이 같은 값으로 돌아오면 호출자가 그 둘을 다시 알아낼 방법이 없다(연결 상태를
+     * 읽어 봐야 이미 CONNECTED 로 되돌아간 뒤다).
      */
-    public Room join(String roomId, String inviteCode, GameParticipant participant) {
+    public JoinOutcome join(String roomId, String inviteCode, GameParticipant participant) {
         Room room = requireRoom(roomId, inviteCode);
 
         Room.AdmitResult result = room.admit(participant, RoomStatus.WAITING);
         return switch (result) {
-            case RECONNECTED, ADMITTED -> room;
+            case RECONNECTED -> new JoinOutcome(room, true);
+            case ADMITTED -> new JoinOutcome(room, false);
             case GAME_ALREADY_STARTED -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Game already started");
             case ROOM_FULL -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Room is full");
         };
+    }
+
+    /**
+     * {@link #join} 의 결과.
+     *
+     * @param room        참가가 확정된 방
+     * @param reconnected 이미 그 방의 멤버였고 연결만 되살아난 것이면 true, 새로 자리를 받았으면 false
+     */
+    public record JoinOutcome(Room room, boolean reconnected) {
     }
 
     public Room setReady(String roomId, String participantId, boolean ready) {
