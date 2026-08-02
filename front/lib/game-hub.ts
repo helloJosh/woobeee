@@ -1,5 +1,6 @@
 import { gameAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
+import { roomPath } from "@/lib/game-join"
 import type { GameType } from "@/lib/types"
 
 // 기존 호출부(app/game/page.tsx)가 계속 "@/lib/game-hub" 에서 가져다 쓸 수 있게 재수출한다.
@@ -16,9 +17,17 @@ export type CreateRoomOutcome =
     | { kind: "navigate"; path: string }
     | { kind: "error"; message: string }
 
+/**
+ * URL 은 roomPath 하나로만 만든다. 예전에는 여기서 직접 조립했는데, 그러면 초대 링크의
+ * 모양이 두 군데에 있게 된다 — 방을 만든 사람이 가는 URL 과, 로그인을 마친 초대 손님이
+ * 돌아오는 URL(game-join.ts 의 roomPath). 세그먼트는 GAME_ROUTE_SEGMENTS 로 묶었지만
+ * 인코딩이 남아 있었다: 여기서는 roomId·inviteCode 를 날것으로 끼워 넣고 roomPath 는
+ * encodeURIComponent 를 씌웠다. 오늘은 둘 다 서버가 만든 값이라 결과가 같지만, 초대 코드에
+ * `+`나 `&`나 `/`가 한 번 들어가는 순간 두 URL 이 갈라지고 그중 하나만 맞는다 — 방 만들기는
+ * 되는데 로그인 후 복귀만 404 로 떨어지는, 재현하기 고약한 모양이 된다.
+ */
 export async function createGameRoom(
     gameType: GameType,
-    path: string,
     isAuthenticated: boolean
 ): Promise<CreateRoomOutcome> {
     if (!isAuthenticated) {
@@ -27,7 +36,7 @@ export async function createGameRoom(
 
     try {
         const room = await gameAPI.createRoom(gameType)
-        return { kind: "navigate", path: `/game/${path}/${room.roomId}?invite=${room.inviteCode}` }
+        return { kind: "navigate", path: roomPath(gameType, room.roomId, room.inviteCode) }
     } catch (error) {
         console.error("Failed to create room:", error)
         return { kind: "error", message: describeCreateRoomError(error) }

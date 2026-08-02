@@ -10,6 +10,7 @@ import { useState, useEffect } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import UserMenu from "@/components/auth/user-menu"
+import { buildAuthHref, returnPathFor } from "@/lib/auth-redirect"
 import { useAuth } from "@/hooks/use-auth" // Updated import
 import { useHeaderControls } from "@/hooks/use-header-controls"
 
@@ -188,8 +189,17 @@ export default function Header() {
                   </Link>
                 </Button>
             ) : (
+                /*
+                 * 헤더는 루트 레이아웃에 있어 모든 경로에서 렌더된다 — 초대 링크로 들어온
+                 * 방문자가 보는 방 화면에서도, 참가 게이트 바로 위에서. 그 사람이 게이트의
+                 * "로그인하고 참가" 대신 이 버튼을 누르는 것은 충분히 자연스럽고, 그때도
+                 * 초대를 잃으면 안 된다. 그래서 목적지는 고정값이 아니라 "지금 있는 곳" 이다.
+                 *
+                 * pathname·searchParams 는 이 컴포넌트가 이미 검색어 때문에 읽고 있고,
+                 * 레이아웃이 헤더를 Suspense 로 감싸 두었으므로 정적 페이지도 깨지지 않는다.
+                 */
                 <Button variant="ghost" asChild className="flex items-center gap-2">
-                  <Link href="/login">
+                  <Link href={buildAuthHref("/login", returnPathFor(pathname, searchParams?.toString()))}>
                     <LogIn className="h-4 w-4" />
                     <span className="hidden sm:inline">로그인</span>
                   </Link>

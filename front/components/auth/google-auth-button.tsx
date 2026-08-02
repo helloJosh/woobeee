@@ -9,12 +9,18 @@ interface GoogleAuthButtonProps {
     mode: "signin" | "login"
     nickname?: string
     className?: string
+    /**
+     * 인증을 마치고 돌아갈 앱 내부 경로. 부모(로그인·회원가입 화면)가 자기 URL 의 `next`
+     * 파라미터에서 뽑아 넘긴다. 생략하면 홈으로 간다.
+     */
+    next?: string | null
 }
 
 export default function GoogleAuthButton({
     mode,
     nickname = "Google 사용자",
     className,
+    next,
 }: GoogleAuthButtonProps) {
     const [loading, setLoading] = useState(false)
     const { startGoogleLogin, startGoogleSignup } = useAuth()
@@ -23,9 +29,9 @@ export default function GoogleAuthButton({
         setLoading(true)
         try {
             if (mode === "signin") {
-                await startGoogleSignup(nickname.trim() || "Google 사용자")
+                await startGoogleSignup(nickname.trim() || "Google 사용자", next)
             } else {
-                await startGoogleLogin()
+                await startGoogleLogin(next)
             }
         } catch (error) {
             console.error("Google OAuth start failed:", error)

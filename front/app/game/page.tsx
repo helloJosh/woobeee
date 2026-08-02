@@ -6,21 +6,25 @@ import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { buildAuthHref } from "@/lib/auth-redirect"
 import { assertNever, createGameRoom } from "@/lib/game-hub"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameType } from "@/lib/types"
 
-const GAMES: { type: GameType; path: string; title: string; blurb: string; players: string }[] = [
+// 로그인이 필요할 때 돌아올 곳. 이 화면은 쿼리를 쓰지 않으므로 고정값이면 충분하다.
+const THIS_PAGE = "/game"
+
+// 라우트 세그먼트는 여기 없다. 이동할 URL 은 createGameRoom 이 gameType 만 보고
+// game-join.ts 의 roomPath 로 만든다 — 초대 링크의 모양을 아는 곳은 그 함수 하나뿐이다.
+const GAMES: { type: GameType; title: string; blurb: string; players: string }[] = [
     {
         type: "OMOK",
-        path: "omok",
         title: "오목",
         blurb: "15×15 렌주룰. 흑에게 삼삼·사사·장목 금수가 적용됩니다.",
         players: "1:1",
     },
     {
         type: "DODGE",
-        path: "dodge",
         title: "장애물피하기",
         blurb: "위에서 떨어지는 장애물을 피하세요. 마지막 생존자가 승리합니다.",
         players: "최대 8인",
@@ -33,15 +37,16 @@ export default function GameHubPage() {
     const [creating, setCreating] = useState<GameType | null>(null)
     const [error, setError] = useState<string | null>(null)
 
-    const createRoom = async (gameType: GameType, path: string) => {
+    const createRoom = async (gameType: GameType) => {
         setError(null)
         setCreating(gameType)
 
-        const outcome = await createGameRoom(gameType, path, isAuthenticated)
+        const outcome = await createGameRoom(gameType, isAuthenticated)
         switch (outcome.kind) {
             case "redirect-to-login":
                 setCreating(null)
-                router.push("/login")
+                // 로그인만 시키고 홈에 버려두면 방을 만들려던 사람이 다시 여기까지 걸어와야 한다.
+                router.push(buildAuthHref("/login", THIS_PAGE))
                 break
             case "navigate":
                 // creating을 그대로 두고 스피너를 보여준 채 다음 페이지로 이동한다.
@@ -76,7 +81,7 @@ export default function GameHubPage() {
                         <Button
                             className="mt-6"
                             disabled={loading || creating !== null}
-                            onClick={() => createRoom(game.type, game.path)}
+                            onClick={() => createRoom(game.type)}
                         >
                             {creating === game.type ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             방 만들기
@@ -94,7 +99,7 @@ export default function GameHubPage() {
             {!loading && !isAuthenticated ? (
                 <p className="mt-6 text-sm text-muted-foreground">
                     방을 만들려면{" "}
-                    <Link href="/login" className="text-primary hover:underline">
+                    <Link href={buildAuthHref("/login", THIS_PAGE)} className="text-primary hover:underline">
                         로그인
                     </Link>
                     이 필요합니다. 초대 링크로 참가할 때는 닉네임만 있으면 됩니다.

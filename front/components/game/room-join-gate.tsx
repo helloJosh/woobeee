@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { tokenManager } from "@/lib/api"
+import { buildAuthHref } from "@/lib/auth-redirect"
 import { assertNever } from "@/lib/game-errors"
 import {
     GAME_TYPE_LABELS,
@@ -17,6 +18,7 @@ import {
     joinRoomAsGuest,
     loadRoomSummary,
     readStoredGuestToken,
+    roomPath,
 } from "@/lib/game-join"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameType, RoomSummary } from "@/lib/types"
@@ -187,9 +189,20 @@ export default function RoomJoinGate({
                           * 방이 막혀 있어도 로그인 링크는 남긴다. 이 방에 이미 자리가 있는
                           * 회원이 새로고침 뒤 돌아오는 길이 이것뿐이고, 그 경우 서버는
                           * RECONNECTED 로 받아 준다. 확실히 새 참가자인 게스트 폼만 잠근다.
+                          *
+                          * 돌아올 곳(next)을 함께 실어 보낸다. 이 링크를 누르는 사람은 정의상
+                          * 로그인하지 않았고, 방 id 와 초대 코드는 지금 떠나는 URL 에만 있다 —
+                          * 넘기지 않으면 로그인을 마친 순간 초대가 사라진다.
                           */}
                         <Button asChild className="w-full" variant="outline">
-                            <Link href="/login">로그인하고 참가</Link>
+                            <Link
+                                href={buildAuthHref(
+                                    "/login",
+                                    roomPath(stage.summary.gameType, roomId, inviteCode)
+                                )}
+                            >
+                                로그인하고 참가
+                            </Link>
                         </Button>
 
                         <div className="relative py-2 text-center text-xs uppercase text-muted-foreground">

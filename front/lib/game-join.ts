@@ -279,6 +279,22 @@ export const GAME_TYPE_LABELS: Record<GameType, string> = {
     DODGE: "장애물피하기",
 }
 
+/** `/game/<segment>/<roomId>` 의 가운데 조각. app/game/page.tsx 의 GAMES 가 이것을 쓴다. */
+export const GAME_ROUTE_SEGMENTS: Record<GameType, string> = {
+    OMOK: "omok",
+    DODGE: "dodge",
+}
+
+/**
+ * 초대 링크의 정규 형태. game-hub.ts 의 createGameRoom 이 방을 만든 직후 만드는 URL 과 같은
+ * 모양이어야 한다 — 게이트는 이 경로를 `/login?next=` 에 실어 보내고, 로그인을 마친 방문자는
+ * 정확히 이 URL 로 되돌아온다. 모양이 어긋나면 로그인 뒤 404 로 떨어진다.
+ */
+export function roomPath(gameType: GameType, roomId: string, inviteCode: string): string {
+    const base = `/game/${GAME_ROUTE_SEGMENTS[gameType]}/${encodeURIComponent(roomId)}`
+    return inviteCode ? `${base}?invite=${encodeURIComponent(inviteCode)}` : base
+}
+
 /**
  * "2 / 8명". 시작 여부는 붙이지 않는다 — status 가 WAITING 이 아니면 describeJoinBlock 이
  * 항상 같은 사실을 결과("새로 참가할 수 없습니다")까지 담아 말하므로, 여기서 또 쓰면 같은

@@ -3,13 +3,19 @@
 import { useState, useEffect, createContext, useContext } from "react"
 import type { ReactNode } from "react"
 import { authAPI, tokenManager } from "@/lib/api"
+import { rememberPendingRedirect } from "@/lib/auth-redirect"
 import type { User } from "@/lib/types"
 
 interface AuthContextType {
     user: User | null
     loading: boolean
-    startGoogleLogin: () => Promise<void>
-    startGoogleSignup: (nickname: string) => Promise<void>
+    /**
+     * next: 인증을 마치고 돌아갈 앱 내부 경로. Google 은 사이트를 완전히 떠났다 돌아오므로
+     * 쿼리 파라미터로는 나를 수 없다 — 여기서 서버가 준 OAuth state 에 묶어 둔다.
+     * lib/auth-redirect.ts 참고.
+     */
+    startGoogleLogin: (next?: string | null) => Promise<void>
+    startGoogleSignup: (nickname: string, next?: string | null) => Promise<void>
     completeGoogleAuthorization: (code: string, state: string) => Promise<void>
     logout: () => Promise<void>
     isAuthenticated: boolean
@@ -46,9 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         initAuth()
     }, [])
 
-    const startGoogleLogin = async () => {
+    // rememberPendingRedirect 는 반드시 assign 앞이다. assign 뒤에 두면 페이지가 이미
+    // 떠나는 중이라 실행이 보장되지 않는다.
+    const startGoogleLogin = async (next?: string | null) => {
         try {
             const response = await authAPI.startGoogleLogin()
+            rememberPendingRedirect(response.state, next)
             window.location.assign(response.authorizationUrl)
         } catch (error) {
             console.error("Google login start failed:", error)
@@ -56,9 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }
 
-    const startGoogleSignup = async (nickname: string) => {
+    const startGoogleSignup = async (nickname: string, next?: string | null) => {
         try {
             const response = await authAPI.startSignup(nickname)
+            rememberPendingRedirect(response.state, next)
             window.location.assign(response.authorizationUrl)
         } catch (error) {
             console.error("Google signup start failed:", error)
