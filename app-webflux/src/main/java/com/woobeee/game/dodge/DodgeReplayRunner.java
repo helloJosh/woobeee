@@ -10,16 +10,40 @@ import java.util.Map;
  * 뜻이지 재생을 멈추라는 뜻이 아니다.
  */
 public class DodgeReplayRunner {
-    /** 손상된 기보가 무한 루프에 빠지지 않도록 하는 안전장치. 정상 게임은 이 한계에 닿지 않는다. */
+    /**
+     * 손상된 기보가 무한 루프에 빠지지 않도록 하는 안전장치. 스폰 확률은 틱 900에서 최댓값
+     * (0.60)에 도달한 뒤 더 오르지 않고, 격자 높이(16행)상 장애물 하나가 바닥까지 내려오는 데
+     * 15틱이면 충분하다 — 규칙 자체에는 "정상 게임"의 길이를 못박는 상한이 없다(밀도가 1.0
+     * 미만인 한 이론상 무한히 버틸 수 있다). 그래서 이 값은 게임 길이의 근거가 아니라, 100ms
+     * 틱 기준 약 2.8시간에 달하는 순수한 안전 상한이다 — 실제 라운드가 이 근처에도 못 미치므로,
+     * 도달하면 "긴 게임"이 아니라 종료하지 않는 기보라는 뜻이다.
+     */
     private static final int MAX_TICKS = 100_000;
+
+    private final int maxTicks;
+
+    public DodgeReplayRunner() {
+        this(MAX_TICKS);
+    }
+
+    /** 테스트 전용: 상한에 실제로 도달하는 경로를 십만 틱을 돌리지 않고 검증하기 위한 생성자. */
+    DodgeReplayRunner(int maxTicks) {
+        this.maxTicks = maxTicks;
+    }
 
     public DodgeGame rerun(DodgeReplay replay) {
         DodgeGame game = new DodgeGame(replay.participantIds(), replay.seed());
 
-        while (!game.finished() && game.tick() < MAX_TICKS) {
+        while (!game.finished() && game.tick() < maxTicks) {
             Map<String, Direction> inputs =
                     replay.inputsByTick().getOrDefault(game.tick(), Map.of());
             game.advanceOneTick(inputs);
+        }
+
+        if (!game.finished()) {
+            throw new IllegalStateException(
+                    "Dodge replay for seed " + replay.seed() + " did not finish within "
+                            + maxTicks + " ticks — likely a malformed or non-terminating replay");
         }
 
         return game;

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DodgeReplayTest {
 
@@ -60,6 +61,16 @@ class DodgeReplayTest {
                 Map.of(A, "host", B, "손님")
         );
 
+        // F1: newline termination is part of the cross-language contract — pin it on the raw,
+        // unstripped string, not on a stripped one. Exactly one line per record, exactly one
+        // trailing '\n', no leading whitespace.
+        assertThat(ndjson).doesNotStartWith("\n").doesNotStartWith(" ");
+        assertThat(ndjson).endsWith("\n");
+        assertThat(ndjson).doesNotEndWith("\n\n");
+        String[] rawLines = ndjson.split("\n", -1);
+        assertThat(rawLines).hasSize(4); // header + 2 tick lines + the empty tail after the one closing '\n'
+        assertThat(rawLines[3]).isEmpty();
+
         String[] lines = ndjson.strip().split("\n");
         assertThat(lines).hasSize(3);
 
@@ -72,6 +83,12 @@ class DodgeReplayTest {
         assertThat(header.get("tickMs").asInt()).isEqualTo(100);
         assertThat(header.get("seed").asInt()).isEqualTo(8412739);
         assertThat(header.get("players")).hasSize(2);
+        // Minors: pin participantId/displayName values (a swapped mapping must fail) and array
+        // ordering (a browser client may key on array position, not on a lookup by id).
+        assertThat(header.get("players").get(0).get("participantId").asText()).isEqualTo(A);
+        assertThat(header.get("players").get(0).get("displayName").asText()).isEqualTo("host");
+        assertThat(header.get("players").get(1).get("participantId").asText()).isEqualTo(B);
+        assertThat(header.get("players").get(1).get("displayName").asText()).isEqualTo("손님");
 
         var firstTick = mapper.readTree(lines[1]);
         assertThat(firstTick.get("tick").asInt()).isEqualTo(3);
@@ -89,7 +106,35 @@ class DodgeReplayTest {
                 Map.of(A, "host")
         );
 
+        // F1: the empty-game case must be exactly one header line and one trailing newline —
+        // pinned on the raw string so a missing or doubled '\n' fails here too.
+        assertThat(ndjson).doesNotStartWith("\n").doesNotStartWith(" ");
+        assertThat(ndjson).endsWith("\n");
+        assertThat(ndjson).doesNotEndWith("\n\n");
+        String[] rawLines = ndjson.split("\n", -1);
+        assertThat(rawLines).hasSize(2); // header + the empty tail after the one closing '\n'
+        assertThat(rawLines[1]).isEmpty();
+
         assertThat(ndjson.strip().split("\n")).hasSize(1);
+    }
+
+    /**
+     * F2 — a replay whose recorded inputs never let the game end must not silently return an
+     * unfinished {@link DodgeGame}: that would make a caller who forgets to check
+     * {@code finished()} treat a corrupted/non-terminating replay as a valid short game.
+     * The tick cap is lowered for the test so this does not run for real ticks: obstacles start
+     * at row 0 and fall one row per tick, so with two players starting at the bottom row (15)
+     * and zero recorded input, nobody can be eliminated within 5 ticks regardless of seed —
+     * the cap is guaranteed to be hit first.
+     */
+    @Test
+    void rerunThrowsWhenTheReplayNeverTerminatesWithinTheTickCap() {
+        DodgeReplay replay = new DodgeReplay(42, List.of(A, B), Map.of());
+
+        assertThatThrownBy(() -> new DodgeReplayRunner(5).rerun(replay))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("42")
+                .hasMessageContaining("5");
     }
 
     @Test
