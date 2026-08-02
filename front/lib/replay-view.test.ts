@@ -15,6 +15,7 @@ import {
     formatEndedAt,
     hasMoreResults,
     maxReplayIndex,
+    mergeResultPages,
     parseOmokReplayNdjson,
     replayStepDelayMs,
     OMOK_REPLAY_STEP_MS,
@@ -160,6 +161,37 @@ describe("parseOmokReplayNdjson", () => {
 })
 
 describe("buildDodgeReplayView", () => {
+    /**
+     * 장애물은 이 재생에서 <b>유일하게 움직이는 것</b>이다. 아래 좌표는 dodge-engine.test.ts
+     * 의 서버 대조 golden 그대로다:
+     *
+     * <pre>obs=t1:(0,0)(2,0)|t2:(0,1)(2,1)(4,0)(5,0)|t3:(0,2)(2,2)(4,1)(5,1)(1,0)</pre>
+     *
+     * <p>순서까지 그대로 본다. 목록이 곧 난수열의 소비 순서라, 순서가 흐트러졌다는 것은
+     * 그 뒤 모든 틱이 다른 게임이라는 뜻이다.
+     */
+    it("places every obstacle where the server placed it, in the server's order", () => {
+        const frames = buildDodgeReplayView(dodgeNdjson([]), null).frames
+
+        expect(frames[1].obstacles).toEqual([
+            { x: 0, y: 0 },
+            { x: 2, y: 0 },
+        ])
+        expect(frames[2].obstacles).toEqual([
+            { x: 0, y: 1 },
+            { x: 2, y: 1 },
+            { x: 4, y: 0 },
+            { x: 5, y: 0 },
+        ])
+        expect(frames[3].obstacles).toEqual([
+            { x: 0, y: 2 },
+            { x: 2, y: 2 },
+            { x: 4, y: 1 },
+            { x: 5, y: 1 },
+            { x: 1, y: 0 },
+        ])
+    })
+
     it("opens on tick 0 — the starting cells, before any obstacle exists", () => {
         const view = buildDodgeReplayView(dodgeNdjson([]), null)
 
@@ -189,6 +221,49 @@ describe("buildDodgeReplayView", () => {
 
         expect(view.frames).toHaveLength(4)
         expect(view.frames[view.frames.length - 1].tick).toBe(3)
+    })
+
+    /**
+     * 나간 사람은 맞아 죽은 사람과 화면에서 똑같이 사라진다. 어느 쪽인지 말해 주지 않으면
+     * 마지막 한 명이 이긴 판이 사실은 상대가 나가서 끝난 판이었다는 것을 알 수 없다.
+     */
+    it("records the departure on the last frame that still shows the leaver", () => {
+        const view = buildDodgeReplayView(dodgeNdjson([{ tick: 3, departures: ["g:a"] }]), null)
+        const last = view.frames[view.frames.length - 1]
+
+        expect(last.tick).toBe(3)
+        expect(last.departedThisTick).toEqual(["g:a"])
+        // 그 프레임에는 아직 두 명이 서 있다 — 이탈은 다음 틱을 진행하기 직전에 반영된다.
+        expect(last.players).toHaveLength(2)
+    })
+
+    it("keeps going when a departure does not end the game", () => {
+        const threePlayers = {
+            ...DODGE_HEADER,
+            players: [
+                { participantId: "m:11", displayName: "회원" },
+                { participantId: "g:a", displayName: "손님" },
+                { participantId: "g:b", displayName: "구경꾼" },
+            ],
+        }
+        const view = buildDodgeReplayView(
+            dodgeNdjson([{ tick: 2, departures: ["g:b"] }], threePlayers),
+            null
+        )
+
+        expect(view.frames[2].departedThisTick).toEqual(["g:b"])
+        // 셋 중 하나가 빠져도 둘이 남았으므로 판은 계속된다.
+        expect(view.frames[3].players.map((player) => player.participantId)).toEqual(["m:11", "g:a"])
+        expect(view.frames.length).toBeGreaterThan(4)
+    })
+
+    // 서버 DodgeGame.eliminate 는 이미 판에 없는 사람의 이탈을 no-op 으로 삼킨다. 말이
+    // 사라지지도 않는데 "퇴장" 이라고 적으면 화면이 없는 사건을 지어내는 것이다.
+    it("ignores a departure for someone who is not on the board", () => {
+        const view = buildDodgeReplayView(dodgeNdjson([{ tick: 2, departures: ["g:ghost"] }]), null)
+
+        expect(view.frames[2].departedThisTick).toEqual([])
+        expect(view.frames).toHaveLength(20)
     })
 
     it("replays the recorded inputs — a move changes where the piece stands", () => {
@@ -235,6 +310,23 @@ describe("buildDodgeReplayView", () => {
         // 두 명짜리 판은 첫 탈락으로 끝난다 — 그 한 번이 마지막 프레임에 실려 있어야 한다.
         expect(hits).toHaveLength(1)
         expect(view.frames[view.frames.length - 1].eliminatedThisTick).toEqual(hits)
+    })
+
+    /**
+     * 상한에 닿았다는 것은 기보가 손상됐거나 끝나지 않는다는 뜻이다. 그때 조용히 돌려주면
+     * 호출자는 그것을 "짧은 정상 게임" 으로 그린다 — 잘렸다는 사실이 어디에도 남지 않는다.
+     * 서버 `DodgeReplayRunner` 와 `rerunReplay` 가 같은 자리에서 같은 이유로 던진다.
+     */
+    it("throws rather than showing a truncated replay as a short game", () => {
+        // golden: seed=42 n=1 은 23틱짜리다. 5틱에서 자르면 끝나지 않은 채로 상한에 닿는다.
+        const oneHanded = dodgeNdjson([], {
+            ...DODGE_HEADER,
+            players: [{ participantId: "m:11", displayName: "회원" }],
+        })
+
+        expect(() => buildDodgeReplayView(oneHanded, null, 5)).toThrow(/did not finish/)
+        // 같은 기보를 끝까지 돌리면 멀쩡히 끝난다 — 위 실패가 상한 때문임을 확인한다.
+        expect(buildDodgeReplayView(oneHanded, null).frames).toHaveLength(24)
     })
 
     it("refuses a header whose rules this client cannot reproduce", () => {
@@ -307,6 +399,13 @@ describe("replay position", () => {
         expect(describeReplayFrameEvent(omok, 1)).toBe("")
     })
 
+    it("tells a departure apart from an elimination, by name", () => {
+        const left = buildReplayView("DODGE", dodgeNdjson([{ tick: 3, departures: ["g:a"] }]), null)
+
+        expect(describeReplayFrameEvent(left, 3)).toBe("손님 퇴장")
+        expect(describeReplayFrameEvent(left, 2)).toBe("")
+    })
+
     it("marks me in the legend", () => {
         expect(describeReplayPlayerName("손님", true)).toBe("손님 (나)")
         expect(describeReplayPlayerName("손님", false)).toBe("손님")
@@ -317,9 +416,20 @@ describe("failure messages", () => {
     // presigned URL 은 만료된다. 그건 사용자가 다시 눌러 해결할 수 있는 것이라 그렇게 말한다.
     it("tells an expired link apart from a broken one", () => {
         expect(describeReplayHttpError(403)).toMatch(/만료/)
-        expect(describeReplayHttpError(404)).toMatch(/만료/)
+        expect(describeReplayHttpError(410)).toMatch(/만료/)
         expect(describeReplayHttpError(500)).toMatch(/내려받지 못했습니다/)
         expect(describeReplayHttpError(500)).not.toMatch(/만료/)
+    })
+
+    /**
+     * 404 는 만료가 아니다. 서명이 만료된 링크는 다시 발급받으면 되지만 없는 오브젝트는
+     * 몇 번을 눌러도 오지 않는다 — "다시 시도해 주세요" 는 그 경우 같은 버튼으로 무한히
+     * 되돌려 보내는 거짓 안내다.
+     */
+    it("does not tell the user to retry a replay that does not exist", () => {
+        expect(describeReplayHttpError(404)).not.toMatch(/다시 시도/)
+        expect(describeReplayHttpError(404)).not.toMatch(/만료/)
+        expect(describeReplayHttpError(404)).toMatch(/찾을 수 없습니다/)
     })
 
     it("uses the network sentence when fetch itself failed", () => {
@@ -376,9 +486,36 @@ describe("result rows", () => {
         expect(formatEndedAt("")).toBe("")
     })
 
+    /**
+     * 위 세 줄만으로는 주석이 말하는 위험을 잡지 못한다 — 시간대 없는 입력은 `new Date` 로
+     * 파싱해 되찍어도 같은 숫자가 나오기 때문이다(리뷰에서 실제로 그 구현으로 바꿔도 전부
+     * 통과했다). <b>이 줄이 그 구현을 죽인다</b>: `Z` 가 붙는 순간 Date 는 UTC 로 읽고
+     * 로컬(KST)로 되찍어 21:34 를 낸다. 우리는 서버가 준 숫자를 자르기만 한다.
+     */
+    it("keeps the server's digits even when the string carries a zone", () => {
+        expect(formatEndedAt("2026-08-01T12:34:56Z")).toBe("2026-08-01 12:34")
+        expect(formatEndedAt("2026-08-01T12:34:56+09:00")).toBe("2026-08-01 12:34")
+    })
+
     it("offers another page only while one might exist", () => {
         expect(hasMoreResults(20, 20)).toBe(true)
         expect(hasMoreResults(19, 20)).toBe(false)
         expect(hasMoreResults(0, 20)).toBe(false)
+    })
+
+    /**
+     * offset 페이징 + `ended_at DESC` 는 목록 앞쪽에 행이 늘면 창이 밀린다 — 첫 쪽을 본 뒤
+     * 게임 하나가 끝나면 두 번째 쪽이 이미 본 전적을 다시 준다. 그대로 이으면 화면에 같은
+     * 줄이 두 번 그려지고 React key 까지 충돌한다.
+     */
+    it("drops a result the shifting window already handed us", () => {
+        const first = { ...result, gameResultId: 1 }
+        const second = { ...result, gameResultId: 2 }
+        const third = { ...result, gameResultId: 3 }
+
+        expect(mergeResultPages([first, second], [second, third])).toEqual([first, second, third])
+        expect(mergeResultPages([first], [])).toEqual([first])
+        // 같은 쪽 안에 중복이 있어도 한 번만 남는다.
+        expect(mergeResultPages([], [third, third])).toEqual([third])
     })
 })

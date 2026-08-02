@@ -218,7 +218,16 @@ export const apiRequest = async (
     // 무엇인지 알 수 없고, 플래그가 하나 더 늘 때마다 나빠진다.
     // 기본값은 기존 호출부(blog/auth/cart/product) 동작을 그대로 유지한다.
     // game API처럼 화면에 인라인 에러를 직접 그리는 호출부만 suppressAlert 를 켠다.
-    { suppressAlert = false }: { suppressAlert?: boolean } = {}
+    //
+    // suppressUnauthorizedHandler: 401(그리고 갱신 실패) 때 전역 세션 만료 처리를 건너뛴다.
+    // 그 처리는 토큰을 전부 지우고 alert 를 띄운 뒤 페이지를 새로고침한다 — 사용자가 직접
+    // 누른 요청에는 맞지만, **화면 뒤에서 도는 확인용 호출**에는 재앙이다. 게임 중
+    // gameAPI.me() 같은 배경 호출 하나가 멀쩡히 돌아가는 판을 통째로 날려 버린다.
+    // 켜면 그냥 던진다 — 호출부가 조용히 대체 경로로 가면 된다.
+    {
+        suppressAlert = false,
+        suppressUnauthorizedHandler = false,
+    }: { suppressAlert?: boolean; suppressUnauthorizedHandler?: boolean } = {}
 ) => {
     const url = `${API_BASE_URL}${endpoint}`
     const token = tokenManager.getToken()
@@ -245,8 +254,17 @@ export const apiRequest = async (
                 if (retryOnUnauthorized && canRefresh) {
                     const refreshed = await refreshAccessToken()
                     if (refreshed) {
-                        return apiRequest(endpoint, options, false, { suppressAlert })
+                        return apiRequest(endpoint, options, false, {
+                            suppressAlert,
+                            suppressUnauthorizedHandler,
+                        })
                     }
+                }
+
+                // 토큰을 지우지도, alert 를 띄우지도, 새로고침하지도 않는다. 배경 호출
+                // 하나가 세션과 화면을 함께 끝내면 안 된다.
+                if (suppressUnauthorizedHandler) {
+                    throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
                 }
 
                 if (canRefresh) {
@@ -425,9 +443,17 @@ export const gameAPI = {
     /**
      * 토큰이 말하는 나. 회원 전용이다 — 게임 서버의 `GamePrincipals.require` 는 인증이
      * 없으면 던지므로, 로그인하지 않은 방문자(게스트)에게는 부르면 안 된다.
+     *
+     * <p><b>이 호출만 401 처리를 끈다.</b> 플레이 화면이 배경에서 신원을 확인하려고 부르는
+     * 것이라, 여기서 전역 세션 만료 처리가 돌면 액세스 토큰이 만료된 채 게스트 토큰으로
+     * 멀쩡히 두고 있던 판이 alert 한 번과 새로고침으로 끝난다. 실패는 조용히 던지고,
+     * useVerifiedMemberId 가 저장된 값으로 되돌아간다.
      */
     me: async (): Promise<GamePrincipalView> => {
-        const response = await apiRequest("/api/game/me", {}, true, { suppressAlert: true })
+        const response = await apiRequest("/api/game/me", {}, true, {
+            suppressAlert: true,
+            suppressUnauthorizedHandler: true,
+        })
         const json: ApiResponse<GamePrincipalView> = await response.json()
         if (!isApiSuccessful(json)) {
             throw new Error(json.header.message || "내 정보를 불러오지 못했습니다.")

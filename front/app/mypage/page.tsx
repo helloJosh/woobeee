@@ -16,6 +16,7 @@ import {
     describeResultSubtitle,
     describeResultTitle,
     hasMoreResults,
+    mergeResultPages,
 } from "@/lib/replay-view"
 import { useAuth } from "@/hooks/use-auth"
 import type { GameResultSummary, GameType, MemberProfile } from "@/lib/types"
@@ -87,7 +88,9 @@ export default function MyPage() {
         setLoadingMore(true)
         try {
             const page = await gameAPI.myResults(PAGE_SIZE, results.length)
-            setResults((current) => [...current, ...page])
+            // 이어 붙이는 규칙은 mergeResultPages 가 안다 — offset 페이징은 목록 앞쪽에
+            // 행이 늘면 이미 본 전적을 다시 준다(그러면 key 까지 충돌한다).
+            setResults((current) => mergeResultPages(current, page))
             setMoreAvailable(hasMoreResults(page.length, PAGE_SIZE))
             setError(null)
         } catch (cause) {

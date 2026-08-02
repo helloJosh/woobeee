@@ -138,6 +138,13 @@ export interface DodgeReplayFrame {
     obstacles: Cell[]
     /** 이 틱에 맞아 사라진 사람들. 재생 중 "지금 누가 죽었는지" 를 말해 준다. */
     eliminatedThisTick: string[]
+    /**
+     * 이 시점에 방을 나간 사람들(v2 기보의 departures).
+     *
+     * <p>탈락과 나란히 두는 이유는 화면에서 둘이 구별되지 않기 때문이다 — 어느 쪽이든 말이
+     * 사라진다. 이유를 말해 주지 않으면 판을 다시 보는 사람은 맞아 죽은 것으로 읽는다.
+     */
+    departedThisTick: string[]
 }
 
 export interface DodgeReplayRosterEntry {
@@ -182,8 +189,17 @@ function readDodgeDisplayNames(text: string): Map<string, string> {
  *
  * <p>끝까지 가지 못한 기보는 던진다. 잘린 재생을 "짧은 게임" 으로 보여 주면 아무도 그것이
  * 잘렸다는 사실을 알 수 없다(서버 `DodgeReplayRunner` · `rerunReplay` 와 같은 태도).
+ *
+ * @param maxTicks 테스트 전용 이음매. `rerunReplay(replay, maxTicks)` 와 같은 목적이고 같은
+ *   기본값이다 — 상한에 실제로 닿는 경로를 십만 틱 없이 확인하기 위한 것이다. 이 이음매가
+ *   없으면 위 문단의 "던진다" 를 실행으로 확인할 방법이 없고, 실제로 리뷰에서 그 throw 를
+ *   지워도 263개가 전부 통과했다.
  */
-export function buildDodgeReplayView(text: string, selfParticipantId: string | null): DodgeReplayView {
+export function buildDodgeReplayView(
+    text: string,
+    selfParticipantId: string | null,
+    maxTicks: number = REPLAY_MAX_TICKS
+): DodgeReplayView {
     const replay = parseReplayNdjson(text)
     const names = readDodgeDisplayNames(text)
     // 색·번호 배정 순서는 헤더의 참가자 순서다. 시작 칸도 같은 순서로 배정되므로
@@ -209,11 +225,29 @@ export function buildDodgeReplayView(text: string, selfParticipantId: string | n
     })
 
     const frames: DodgeReplayFrame[] = [
-        { tick: 0, players: toPlayers(startingPositions), obstacles: [], eliminatedThisTick: [] },
+        {
+            tick: 0,
+            players: toPlayers(startingPositions),
+            obstacles: [],
+            eliminatedThisTick: [],
+            departedThisTick: [],
+        },
     ]
 
     const game = createDodgeGame(order, replay.seed)
-    while (!game.finished && game.tick < REPLAY_MAX_TICKS) {
+    while (!game.finished && game.tick < maxTicks) {
+        // 이 틱의 이탈은 stepReplay 가 **틱을 진행하기 전에** 반영한다. 그러므로 그것이
+        // 보이는 마지막 판은 지금 배열 끝에 있는 프레임(tick === game.tick)이다. 그 프레임에
+        // 적어 둔다 — 게임을 끝내는 이탈은 다음 프레임을 만들지 않으므로(stepReplay 가 null),
+        // 뒤에 적으려 하면 가장 중요한 경우가 통째로 사라진다.
+        const current = frames[frames.length - 1]
+        const onBoard = new Set(current.players.map((player) => player.participantId))
+        // 이미 판에 없는 사람의 이탈은 서버에서도 no-op 이다(DodgeGame.eliminate). 말이
+        // 사라지지 않는데 "퇴장" 이라고 적으면 화면이 거짓말을 한다.
+        current.departedThisTick = (replay.departuresByTick[game.tick] ?? []).filter((id) =>
+            onBoard.has(id)
+        )
+
         const frame = stepReplay(game, replay)
         if (frame === null) {
             // 이탈이 그 틱에 게임을 끝냈다. 진행된 틱이 없으므로 프레임도 없다.
@@ -224,12 +258,13 @@ export function buildDodgeReplayView(text: string, selfParticipantId: string | n
             players: toPlayers(frame.positions),
             obstacles: frame.obstacles,
             eliminatedThisTick: frame.eliminatedThisTick,
+            departedThisTick: [],
         })
     }
 
     if (!game.finished) {
         throw new Error(
-            `Dodge replay for seed ${replay.seed} did not finish within ${REPLAY_MAX_TICKS} ticks`
+            `Dodge replay for seed ${replay.seed} did not finish within ${maxTicks} ticks`
         )
     }
 
@@ -308,19 +343,31 @@ export function describeReplayLabel(view: ReplayView, index: number): string {
 }
 
 /**
- * 재생 중 지금 프레임에 대한 한 줄 설명. 장애물피하기는 탈락이 유일한 사건이라 그것만 말한다.
+ * 재생 중 지금 프레임에 대한 한 줄 설명.
+ *
+ * <p>말이 사라지는 이유는 둘이고 화면에서는 구별되지 않는다 — 장애물에 맞았거나, 방을
+ * 나갔거나. 말하지 않으면 다시 보는 사람은 전부 맞아 죽은 것으로 읽고, 특히 마지막 한 명이
+ * 남아 이긴 판이 "이탈로 끝난 판" 이었다는 사실이 사라진다.
  */
 export function describeReplayFrameEvent(view: ReplayView, index: number): string {
     if (view.gameType === "OMOK") {
         return ""
     }
     const frame = view.frames[clampReplayIndex(view, index)]
-    if (!frame || frame.eliminatedThisTick.length === 0) {
+    if (!frame) {
         return ""
     }
     const nameOf = new Map(view.roster.map((entry) => [entry.participantId, entry.displayName]))
-    const names = frame.eliminatedThisTick.map((id) => nameOf.get(id) ?? id)
-    return `${names.join(", ")} 탈락`
+    const named = (ids: string[]) => ids.map((id) => nameOf.get(id) ?? id).join(", ")
+
+    const parts: string[] = []
+    if (frame.eliminatedThisTick.length > 0) {
+        parts.push(`${named(frame.eliminatedThisTick)} 탈락`)
+    }
+    if (frame.departedThisTick.length > 0) {
+        parts.push(`${named(frame.departedThisTick)} 퇴장`)
+    }
+    return parts.join(" · ")
 }
 
 /** 명단 한 줄. 내 말에는 표시를 붙인다 — 여덟 개 점 중 어느 것이 나인지 알 방법이 없다. */
@@ -334,10 +381,17 @@ export function describeReplayPlayerName(displayName: string, isSelf: boolean): 
  * <p>presigned URL 은 만료된다(`GameStorageProperties.presignedUrlExpirationSeconds`).
  * 오래 열어 둔 뒤 다시 재생을 누르면 403 이 오는데, 그건 사용자가 고칠 수 없는 것이 아니라
  * "다시 눌러 주세요" 로 해결되는 것이라 그렇게 말해 준다.
+ *
+ * <p><b>404 는 여기에 끼워 넣지 않는다.</b> 서명이 만료된 것과 오브젝트가 없는 것은 다르다 —
+ * 없는 파일은 몇 번을 다시 눌러도 오지 않는다. "다시 시도해 주세요" 는 그 경우 사용자를
+ * 무한히 같은 버튼으로 되돌려 보내는 거짓 안내다.
  */
 export function describeReplayHttpError(status: number): string {
-    if (status === 403 || status === 404 || status === 410) {
+    if (status === 403 || status === 410) {
         return "기보 링크가 만료되었습니다. 다시 시도해 주세요."
+    }
+    if (status === 404) {
+        return "기보 파일을 찾을 수 없습니다."
     }
     return "기보를 내려받지 못했습니다. 잠시 후 다시 시도해 주세요."
 }
@@ -400,4 +454,34 @@ export function formatEndedAt(raw: string): string {
  */
 export function hasMoreResults(lastPageSize: number, limit: number): boolean {
     return lastPageSize >= limit && limit > 0
+}
+
+/**
+ * 다음 쪽을 목록에 잇는다. <b>이미 있는 gameResultId 는 버린다.</b>
+ *
+ * <p>서버 페이징은 `LIMIT/OFFSET` 이고 정렬은 `ended_at DESC` 다 — 목록의 <i>앞쪽</i>에
+ * 행이 추가되는 정렬이라, 첫 쪽을 본 뒤 게임이 하나 끝나면 그만큼 창이 밀려 offset=20 이
+ * 이미 보여 준 행을 다시 준다. 그대로 이어 붙이면 같은 전적이 두 번 그려지고, 더 나쁘게는
+ * React 의 key 가 충돌한다.
+ *
+ * <p>keyset 페이징이 진짜 해법이지만 그건 서버 변경이다. 여기서 걸러내는 것으로 충분한
+ * 이유는 이 정렬에서 <b>중복은 생겨도 누락은 생기지 않기</b> 때문이다 — 창이 뒤로 밀릴 뿐,
+ * 앞질러 가지 않는다(전적을 지우는 경로가 없다).
+ */
+export function mergeResultPages(
+    current: GameResultSummary[],
+    page: GameResultSummary[]
+): GameResultSummary[] {
+    const seen = new Set(current.map((result) => result.gameResultId))
+    const merged = [...current]
+    for (const result of page) {
+        // 들어온 쪽 안의 중복도 함께 막는다. 오늘의 쿼리로는 나올 수 없지만, 이 함수가
+        // 지키는 것은 "목록에 같은 id 가 두 번 있지 않다" 이지 "서버가 정직하다" 가 아니다.
+        if (seen.has(result.gameResultId)) {
+            continue
+        }
+        seen.add(result.gameResultId)
+        merged.push(result)
+    }
+    return merged
 }

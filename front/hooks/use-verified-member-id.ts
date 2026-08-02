@@ -25,8 +25,13 @@ export function useVerifiedMemberId(storedMemberId: number | null): number | nul
     const [verified, setVerified] = useState<number | null>(null)
 
     useEffect(() => {
+        // 저장된 신원이 바뀌면 확인값을 **먼저 버린다**. chooseMemberId 는 확인값을
+        // 우선하므로, 계정이 바뀐 뒤에도 옛 확인값이 남아 있으면 그때만은 이 훅이 틀린
+        // 신원을 돌려준다 — 되돌아갈 값이 없어 신원을 잃는 것과 달리, 그건 남의 판을
+        // 내 것으로 조작하게 만드는 실패다.
+        setVerified(null)
+
         if (storedMemberId === null) {
-            setVerified(null)
             return
         }
 
