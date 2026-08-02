@@ -52,7 +52,9 @@
   - 각 도메인 PRD의 `## 인수 기준 (Acceptance Criteria)` 표가 단일 출처다. 별도 테스트 케이스 문서는 두지 않는다.
   - 동작/API 계약을 바꾸면 **먼저 AC 표를 갱신**하고 그 AC를 커버하는 테스트를 추가/수정한다.
   - 테스트 메서드 이름·주석에 AC ID(예: `BLOG-AC-03`)를 참조해 PRD ↔ 테스트 추적을 유지한다.
-  - AC가 "미작성"인 도메인(`blog`, `game`)은 테스트 백로그다.
+  - AC 표가 없는 도메인은 테스트 백로그다. 현재 `blog` 와 **`front`** 가 그렇다 — `game` 은
+    28행 표를 갖췄고 GAME-AC-25 한 줄만 테스트에서 ID 를 참조하지 않는다(테스트 자체는 있다).
+    `front` 는 이 레포에서 가장 큰 스위트인데 AC 가 없다.
 - **`DodgeGame` 을 고치면 프론트 포트의 골든을 다시 뽑는다.** `front/lib/dodge-engine.ts` 는 서버
   틱 로직의 TypeScript 포트이고 기보 재생이 여기에 걸려 있다. 한 글자만 달라져도 재생이 다른
   게임이 되는데, 골든을 갱신하지 않으면 프론트 테스트는 낡은 기대값에 대고 계속 초록이다.
@@ -140,15 +142,26 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 
 | 항목 | 내용 |
 | --- | --- |
-| front 게임 화면 | 백엔드는 두 게임 모두 완료. 상단탭·게임 메인·플레이 화면·마이페이지는 Plan 4 |
-| front 잔존 페이지 | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 삭제 또는 게임 화면으로 대체 |
-| 프로필 이미지 front UI | 백엔드 계약만 있고 업로드·표시 화면이 없다 |
+| front 잔존 페이지·API | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 페이지뿐 아니라 `lib/api.ts` 의 `/api/products*`·`/api/buyers/{id}/carts/*` 클라이언트 여덟 개도 살아 있고 `next.config.mjs` 는 그 경로를 rewrite 하지 않는다. `app/products/[productId]/page.tsx` 에는 `/cart` 링크도 남아 있다 |
+| 프로필 이미지 업로드 화면 | 마이페이지가 이미지를 **표시**는 한다. 업로드 화면이 없다 |
+| front AC 미작성 | `docs/front/PRD.md` 에 `## 인수 기준` 표가 없다. 274개→331개로 이 레포에서 가장 큰 테스트 스위트인데 AC ID 를 참조하는 테스트가 하나도 없어, 위 "테스트는 PRD의 인수 기준에서 도출한다" 규칙이 가장 필요한 도메인에서 지켜지지 않는다 |
+| 프론트 컴포넌트 무검증 | vitest 가 node 환경이고 jsdom 이 없다. 판단은 전부 `lib/` 로 옮겨 뒀지만 fetch 이펙트·재생 타이머·이펙트 정리(cleanup)가 **돌긴 하는지**는 아무도 확인하지 않는다 — `return () => …` 을 통째로 지워도 331개가 그대로 통과한다 |
+| 기보 골든이 단방향 | `front/lib/dodge-engine.ts` 의 `GOLDEN` 은 `scripts/dodge-parity-trace.jsh` 로 손으로 다시 뽑는다. Java 쪽 `DodgeGame` 을 고치고 재컴파일·재실행하지 않으면 프론트 테스트는 낡은 기대값에 대고 계속 초록이다. 왕복 픽스처(`app-webflux/src/test/resources`)가 절반은 막지만, 골든 자체를 강제하는 CI 는 없다 |
+| CI 없음 | 레포에 워크플로가 없다. `GameErrorCodeTest` 의 enum↔TS 지도 대조는 상대 경로에 `Assumptions.assumeTrue(Files.exists(...))` 를 걸어 두어, 파일이 옮겨지면 **말없이 건너뛴다** |
+| app-mvc 에 catch-all advice 없음 | `AuthRestControllerAdvice` 가 `basePackages="com.woobeee.mvc.auth"` 로 좁혀져 있어 네 부류가 `ApiResponse` 봉투 밖으로 나간다: auth 서비스의 `ResponseStatusException` 12곳, `CustomInternalServerException`, blog 컨트롤러 전체의 빈 검증, `DELETE /api/auth/me/profile-image` 의 204. 프론트는 전부 "예기치 못한 오류" 한 문장으로 받는다. 게다가 app-mvc 는 `header.message` 에 영어 문장을 넣는데 프론트는 그 자리를 **코드 키**로 읽는다 — 반드시 어긋난다. app-webflux 는 `GameExceptionHandler` 로 이미 해결돼 있으니 그 모양을 옮기면 된다 |
+| `ERROR` 프레임 일부가 여전히 방 전체로 | 명령 실패는 원인 세션으로 가도록 고쳤지만 두 경로는 의도적으로 방 전체다 — leave 정산 실패, 그리고 방이 `IN_PROGRESS` 로 넘어간 뒤 실패한 START. 둘 다 남은 참가자에게도 소식이라는 판단이다 |
+| 나감 처리가 인앱 이동에서만 즉시 | `LEAVE` 는 라우트 이동에서만 보낸다. 탭을 닫거나 새로고침하면 30초 유예를 타므로, 8인 피하기에서는 그동안 움직이지 않는 유령이 판에 남아 충돌 판정을 받는다. `pagehide` 를 쓰면 새로고침까지 즉시 나감이 되어 유예의 목적이 사라진다 — 없애려면 서버 쪽 liveness 신호가 필요하다 |
+| 소켓 계약 타입이 장식 | `ClientMessageType` / `ClientMessagePayloads` / `DodgeDirection` 을 아무도 import 하지 않는다. `send` 가 `(type: string, ...)` 이라 오타 난 타입 문자열도 컴파일되고 서버에서 조용히 버려진다 |
+| MinIO CORS 미검증 | 기보 뷰어는 presigned URL 을 rewrites 가 아니라 `S3_ENDPOINT` 로 직접 가져온다(`credentials:"omit"`). 막히면 원인 없는 일반 네트워크 문구만 뜬다. 같은 값이 서버 클라이언트와 브라우저용 presign 에 함께 쓰이므로, 클러스터 내부 주소를 넣으면 브라우저가 못 여는 URL 이 나온다 |
 | 고아 오브젝트 정리 | 발급받고 등록하지 않은 `profiles/` 업로드에 대한 lifecycle 정책 |
 | 게임 머니 증감 | `members.game_money` 는 항상 0이다. 증감 계약은 game spec에서 설계 |
 | front 취약점 | 이관한 `package-lock.json` 기준 `npm audit` 17건(high 13, moderate 4). 전신 리포에서 그대로 넘어온 것 |
 | QueryDSL 잔존 | `blog/repository/PostQueryRepositoryImpl` 을 네이티브 SQL로 전환 |
 | blog AC 미작성 | `docs/blog/PRD.md` 의 인수 기준 표가 비어 있어 blog 테스트가 없다 |
-| 이관 문서 잔여 언급 | `docs/` 의 이관 문서 일부에 product/cart 언급이 남아 있다. 도메인 문서를 손댈 때 함께 정리 |
+| 이관 문서 잔여 언급 | `docs/ARCHITECTURE.md` 에 product/cart 절이 크게 남아 있고, 존재하지 않는 `docs/cart/` 로 가는 ADR 링크 두 개와 존재하지 않는 `.codex/settings.json` 참조, 그리고 클래스명과 다른 blog 엔티티 이름(`Post` vs `Posts`)이 있다. `docs/<domain>/adr/` 은 `auth`·`blog` 에만 있다 |
+| 자잘한 미고정 | `auth-redirect.ts` 의 `startsWith("//")` 는 정규화 검사에 가려져 지워도 통과한다(중복일 뿐, 정규화 검사를 지워도 된다는 뜻이 아니다). `dodge-engine.ts` 가 Java 는 package-private 로 둔 이음매를 export 한다. `getBrowserLocale` 을 아무도 import 하지 않아 `en` 메시지 블록 전체가 런타임에 도달 불가다. `ErrorPayload.status` 는 채워지지만 읽는 곳이 없다. 경주 테스트 두 개가 각각 500ms 를 타임아웃으로 쓴다 |
+| 3B·6B 잔여 (모두 사용자가 밟을 수 없음) | 스냅샷 브로드캐스트가 게임 모니터를 쥔 채 팬아웃한다. 이미 접속 중인 멤버가 새 세션으로 JOIN 하면 방 전체에 상태가 다시 나간다. 라우트 미스의 404 와 `GameAuthWebFilter` 안에서 난 오류는 봉투를 타지 않는다. `broadcastRoomState` 가 던지면 방금 입장한 참가자가 자기 ROOM_STATE 확인을 못 받는다 |
+| 5B 잔여 (표시상) | `Header` 가 클라이언트 전용 `mounted` 로 렌더를 막아 서버 HTML 에는 없다 — 이제 전 라우트에서 하이드레이션 후 튀어나온다. `/blog` 로 클라이언트 이동할 때 한 프레임 동안 3탭만 그려진다. 죽은 `/products`·`/cart` 가 자체 sticky 헤더를 그려 전역 헤더 뒤로 숨는다. 인증 화면 넷이 `min-h-screen` 이라 64px 헤더 아래에서 살짝 어긋난다 |
 | Kafka 미연동 | 로컬 compose에만 있고 코드 연동은 없다(ADR-003). 실제로 쓰려면 토픽 설계부터 |
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 game/blog 기준으로 새로 구성 |
 | 오목 제한시간 미강제 (G1) | `turnDeadline` 을 `OMOK_MOVED` 로 클라이언트에 알리지만 `OmokGame.timeout(...)` 을 호출하는 배선이 없다. 60초를 넘겨도 서버가 자동으로 패배 처리하지 않는다. 테스트: `OmokGameSinkTest#aStalledPlayerNeverTimesOutBecauseNothingDrivesTheDeadline` (`@Tag("known-gap")`) |
