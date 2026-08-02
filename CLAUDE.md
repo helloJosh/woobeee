@@ -127,3 +127,9 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 game/blog 기준으로 새로 구성 |
 | 오목 제한시간 미강제 | `turnDeadline` 을 `OMOK_MOVED` 로 클라이언트에 알리지만 `OmokGame.timeout(...)` 을 호출하는 배선이 없다. 60초를 넘겨도 서버가 자동으로 패배 처리하지 않는다 |
 | `RoomSweeper` 가 진행 중 게임을 정리하지 않음 | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 진행 중이던 오목 게임의 sink 상태(`OmokGameSink`)가 그 사실을 모른 채 메모리에 남는다 |
+| **기보 접근 권한 실DB 테스트** | GAME-AC-22(참가자 본인만 기보 URL)를 강제하는 SQL이 **텍스트로만** 고정돼 있다. `AND p.member_id = :memberId` 를 지우면 테스트가 깨지지만, 컬럼을 바꾸거나 `AND` 를 `OR` 로 바꾸면 통과한다. 셋 중 가장 위험 — **UI가 이 엔드포인트에 붙기 전에** 실 Postgres 대상 테스트로 막아야 한다(참가자·비참가자·없는 id·게스트 4케이스) |
+| 결과 저장 롤백 미검증 | `GameResultService` 가 `insertResult`+`insertParticipants` 를 트랜잭션으로 감싸는 것은 테스트로 고정됐지만, 실제 commit/rollback 은 검증되지 않았다. 통합 테스트로 두 번째 참가자 insert 를 실패시켜 `game_results` 가 0행인지 확인해야 한다 |
+| `game_result_id` FK 없음 | `game_result_participants.game_result_id` 에 `game_results` 로의 FK 가 없다. 지금은 삭제 경로가 없어 고아 행이 생길 수 없다. 붙이려면 V2 가 이미 적용됐으므로 `V3__game_result_fk.sql` 로 `ON DELETE CASCADE` 를 추가한다 |
+| 열린사 판정이 렌주보다 느슨함 | `FourRule.makesStraightFour` 가 양끝 중 **하나만** 정확히 5를 만들어도 참을 반환한다(`||`). 정통 렌주의 열린사는 승리점이 둘이다. 수정 전의 모양만 보는 판정보다는 좁으므로 회귀는 아니지만, 엄밀히 맞추려면 `&&` 로 조인다 |
+| 앱 컨텍스트 기동 테스트 없음 | `app-webflux` 에는 `@WebFluxTest` 슬라이스만 있고 전체 컨텍스트를 띄우는 테스트가 없다. 빈 그래프가 실제로 기동하는지 CI가 확인하지 못한다 |
+| 방 상태가 `FINISHED` 로 가지 않음 | 게임이 끝나도 `RoomStatus` 는 `IN_PROGRESS` 로 남아 TTL 까지 그대로다. 재대국 불가이고 `ROOM_STATE` 가 사실과 다르다 |
