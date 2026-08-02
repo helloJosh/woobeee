@@ -439,6 +439,97 @@ describe("parseReplayNdjson", () => {
         expect(() => parseReplayNdjson(JSON.stringify({ ...header, prng: "mulberry32" }) + "\n")).toThrow(/prng/)
         expect(() => parseReplayNdjson(JSON.stringify({ ...header, v: 1 }) + "\n")).toThrow(/v1|version/)
     })
+
+    /**
+     * seed 는 재생 전체를 결정하는 값이고, 틀렸을 때의 실패 모양이 가장 나쁘다: 잘라내면 0 이
+     * 되는 값은 xorshift 를 영구 0 으로 만들어 매 틱 열 열두 개가 전부 쏟아지는 "짧고 그럴듯한
+     * 게임" 을 예외 없이 그린다. 서버는 0 이 아닌 자바 int 만 쓰므로(UuidGameIdGenerator.nextSeed)
+     * 그 밖의 값은 전부 손상이다.
+     *
+     * <p>`JSON.stringify` 는 `undefined` 필드를 아예 빼 버리므로, "필드가 없는" 경우가 곧
+     * `seed: undefined` 케이스다.
+     */
+    it("refuses a seed the server could not have written", () => {
+        const withSeed = (seed: unknown) =>
+            JSON.stringify({ ...header, seed }) + "\n"
+
+        expect(() => parseReplayNdjson(withSeed(undefined))).toThrow(/seed/)
+        expect(() => parseReplayNdjson(withSeed(null))).toThrow(/seed/)
+        expect(() => parseReplayNdjson(withSeed("0"))).toThrow(/seed/)
+        expect(() => parseReplayNdjson(withSeed("7"))).toThrow(/seed/)
+        expect(() => parseReplayNdjson(withSeed(1.5))).toThrow(/seed/)
+        expect(() => parseReplayNdjson(withSeed(2 ** 32))).toThrow(/seed/)
+        expect(() => parseReplayNdjson(withSeed(Number.NaN))).toThrow(/seed/)
+
+        // 경계는 통과해야 한다 — 자바 int 의 양 끝과 음수 씨앗은 정상적인 값이다.
+        expect(parseReplayNdjson(withSeed(-2147483648)).seed).toBe(-2147483648)
+        expect(parseReplayNdjson(withSeed(2147483647)).seed).toBe(2147483647)
+        expect(parseReplayNdjson(withSeed(-1)).seed).toBe(-1)
+    })
+
+    /**
+     * players 는 참가자 명단이자 **인원수**다. 인원수가 시작 칸을 정하므로(startingCells)
+     * 이것이 틀리면 틱 1부터 다른 게임이다. 빈 명단은 첫 틱에 곧바로 끝나는 두 프레임짜리
+     * 빈 격자를, participantId 가 없는 항목은 `"undefined"` 라는 이름의 유령 참가자를 만든다.
+     */
+    it("refuses a players list it cannot key positions by", () => {
+        const withPlayers = (players: unknown) =>
+            JSON.stringify({ ...header, players }) + "\n"
+
+        expect(() => parseReplayNdjson(withPlayers(undefined))).toThrow(/players/)
+        expect(() => parseReplayNdjson(withPlayers(null))).toThrow(/players/)
+        expect(() => parseReplayNdjson(withPlayers([]))).toThrow(/players/)
+        expect(() => parseReplayNdjson(withPlayers({ "m:11": "host" }))).toThrow(/players/)
+        expect(() => parseReplayNdjson(withPlayers([{ displayName: "host" }]))).toThrow(/participantId/)
+        expect(() => parseReplayNdjson(withPlayers([{ participantId: 11 }]))).toThrow(/participantId/)
+        expect(() => parseReplayNdjson(withPlayers([{ participantId: "" }]))).toThrow(/participantId/)
+        expect(() => parseReplayNdjson(withPlayers(["m:11"]))).toThrow(/participantId/)
+        // 두 번째 항목이 깨진 경우도 잡아야 한다 — 첫 항목만 보면 통과한다.
+        expect(() =>
+            parseReplayNdjson(withPlayers([{ participantId: "m:11" }, { displayName: "손님" }]))
+        ).toThrow(/players\[1\]/)
+
+        expect(
+            parseReplayNdjson(withPlayers([{ participantId: "m:11" }, { participantId: "g:a" }]))
+                .participantIds
+        ).toEqual(["m:11", "g:a"])
+    })
+})
+
+/**
+ * xorshift32 의 0 판정은 **잘라낸 뒤**에 해야 한다. 자바 생성자는 인자가 이미 int 라 그
+ * 지점에서 판정하는데, JS 에서 순서를 뒤집으면 잘라서 0 이 되는 값들이 state 0 으로 들어가고
+ * 수열이 영구히 0 이 된다 — 그러면 spawnProbability 와의 비교가 언제나 참이라 매 틱 모든 열에
+ * 장애물이 생긴다.
+ */
+describe("xorshift32 zero handling", () => {
+    const firstThree = (seed: number) => {
+        const random = xorshift32(seed)
+        return [random.nextInt(), random.nextInt(), random.nextInt()]
+    }
+
+    it("treats a value that truncates to zero exactly like the literal zero seed", () => {
+        const zero = firstThree(0)
+
+        expect(zero).not.toEqual([0, 0, 0])
+        expect(firstThree(2 ** 32)).toEqual(zero)
+        expect(firstThree(-(2 ** 32))).toEqual(zero)
+        expect(firstThree(undefined as unknown as number)).toEqual(zero)
+        expect(firstThree(null as unknown as number)).toEqual(zero)
+        expect(firstThree("0" as unknown as number)).toEqual(zero)
+    })
+
+    /**
+     * 무너진 상태의 관찰 가능한 증상. `nextDouble()` 이 언제나 0 이면 어떤 spawnProbability
+     * 와 비교해도 참이라 열 열두 개가 매 틱 전부 생긴다.
+     */
+    it("never produces the all-zero stream that would spawn every column", () => {
+        for (const seed of [0, 2 ** 32, undefined as unknown as number]) {
+            const random = xorshift32(seed)
+            const draws = Array.from({ length: 12 }, () => random.nextDouble())
+            expect(draws.some((value) => value >= 0.15)).toBe(true)
+        }
+    })
 })
 
 describe("collision", () => {

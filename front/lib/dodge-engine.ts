@@ -27,8 +27,19 @@ const DELTAS: Record<DirectionName, Cell> = {
     RIGHT: { x: 1, y: 0 },
 }
 
+/**
+ * 서버의 {@code Xorshift32(int seed)} 와 같다. **잘라낸 뒤에 0 을 검사해야 한다** — 자바는
+ * 생성자 인자가 이미 `int` 라 32비트로 잘린 값을 보고 0 을 판정하지만, JS 는 `number` 라
+ * 우리가 직접 잘라야 같은 지점에서 같은 판정을 한다.
+ *
+ * <p>순서가 뒤바뀌어 있으면(`seed === 0 ? 1 : seed | 0`) "문자 그대로 0 은 아니지만 잘라내면
+ * 0 이 되는" 값 — `undefined`, `null`, `"0"`, `2**32` — 이 그대로 state 0 으로 들어간다.
+ * xorshift 는 0 에서 영원히 0 을 뱉으므로 `nextDouble()` 이 항상 0 이 되고, 그러면 매 틱 모든
+ * 열에서 장애물이 쏟아져 15틱쯤에 전원이 죽는 "그럴듯한 짧은 게임" 이 예외 하나 없이 그려진다.
+ */
 export function xorshift32(seed: number) {
-    let state = seed === 0 ? 1 : seed | 0
+    const truncated = seed | 0
+    let state = truncated === 0 ? 1 : truncated
 
     const nextInt = () => {
         state ^= state << 13
@@ -314,6 +325,60 @@ const HEADER_RULES: ReadonlyArray<[string, number]> = [
     ["maxSpawn", DODGE_RULES.maxSpawn],
 ]
 
+/** 서버가 seed 로 쓰는 자바 `int` 의 범위. 이 밖의 값은 이 기보를 쓴 서버가 만들 수 없다. */
+const INT32_MIN = -2147483648
+const INT32_MAX = 2147483647
+
+/**
+ * 헤더의 `seed`. 서버는 언제나 0 이 아닌 자바 `int` 를 쓴다
+ * (`UuidGameIdGenerator.nextSeed`). 그 범위를 벗어나거나 정수가 아닌 값 — 필드가 통째로 없어
+ * `undefined` 인 경우, `null`, 문자열 `"0"`, `2**32` — 은 이 기보를 쓴 서버가 만들 수 없는
+ * 값이므로 재생하지 않는다.
+ *
+ * <p>재생을 거절하는 것이 요점이다. 이런 값들은 {@link xorshift32} 에 그대로 들어가면
+ * 예외 없이 **다른 게임**을 그린다. `HEADER_RULES` 불일치와 같은 태도로 즉시 던진다.
+ */
+function requireSeed(value: unknown): number {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < INT32_MIN || value > INT32_MAX) {
+        throw new Error(
+            `Dodge replay header seed=${String(value)} is not a 32-bit integer;` +
+                " the server can only write one, so refuse to replay it"
+        )
+    }
+    return value
+}
+
+/**
+ * 헤더의 `players`. 여기서 나오는 participantId 목록이 재생의 참가자 전원이고, 그 **수**가
+ * 시작 칸을 정한다(`startingCells`) — 즉 이 목록이 틀리면 틱 1부터 다른 게임이 된다.
+ *
+ * <p>예전에는 `(header.players ?? []).map((p: any) => p.participantId)` 였다. 목록이 없으면
+ * 참가자 0명으로 재생이 시작돼 첫 틱에 곧바로 "끝난" 두 프레임짜리 빈 격자가 나왔고,
+ * `participantId` 가 없는 항목은 문자열 `"undefined"` 를 키로 삼아 조용히 한 자리를 차지했다.
+ * 둘 다 오류 없이 그려진다 — 그래서 던진다.
+ */
+function requireParticipantIds(value: unknown): string[] {
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new Error(
+            "Dodge replay header players must be a non-empty array;" +
+                " without it the reader would render an empty two-frame game instead of failing"
+        )
+    }
+    return value.map((player, index) => {
+        const participantId =
+            typeof player === "object" && player !== null
+                ? (player as { participantId?: unknown }).participantId
+                : undefined
+        if (typeof participantId !== "string" || participantId.length === 0) {
+            throw new Error(
+                `Dodge replay header players[${index}].participantId is missing or not a string;` +
+                    " that player would be keyed by \"undefined\" and silently take a seat"
+            )
+        }
+        return participantId
+    })
+}
+
 export function parseReplayNdjson(text: string): DodgeReplayData {
     const lines = text.trim().split("\n")
     const header = JSON.parse(lines[0])
@@ -331,6 +396,11 @@ export function parseReplayNdjson(text: string): DodgeReplayData {
             )
         }
     }
+    // 규칙 상수를 대조한 다음, 재생의 두 뼈대(난수 씨앗·참가자 명단)를 검사한다. 둘 다
+    // 틀리면 예외 없이 다른 게임이 그려지는 값이므로 여기서 막는 것 말고는 방법이 없다.
+    const seed = requireSeed(header.seed)
+    const participantIds = requireParticipantIds(header.players)
+
     const inputsByTick: Record<number, Record<string, DirectionName>> = {}
     const departuresByTick: Record<number, string[]> = {}
 
@@ -345,8 +415,8 @@ export function parseReplayNdjson(text: string): DodgeReplayData {
     }
 
     return {
-        seed: header.seed,
-        participantIds: (header.players ?? []).map((p: any) => p.participantId),
+        seed,
+        participantIds,
         inputsByTick,
         departuresByTick,
     }
