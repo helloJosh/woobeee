@@ -81,17 +81,31 @@ const GUEST_TOKEN_TTL_MS = 6 * 60 * 60 * 1000
 interface StoredGuestToken {
     token: string
     issuedAt: number
+    /**
+     * 발급 응답의 participantId(`g:<uuid>`). 게임 화면이 명단에서 "나" 를 찾는 유일한
+     * 근거다 — 서버는 소켓으로 그것을 따로 알려주지 않고 토큰은 불투명한 난수라 되짚을 수
+     * 없다(GuestIdentityService 가 Redis 해시에만 담아 둔다). 선택 필드로 둔 이유는 이
+     * 필드가 생기기 전에 저장된 항목을 만나도 토큰만은 계속 쓰게 하기 위해서다 — 여기서
+     * 항목을 버리면 그 게스트는 새 닉네임으로 다시 들어가 한 사람이 두 자리를 차지한다.
+     */
+    participantId?: string
+}
+
+/** 저장해 둔 게스트 신원. participantId 는 예전 형식으로 저장된 항목에서는 null 이다. */
+export interface StoredGuestIdentity {
+    token: string
+    participantId: string | null
 }
 
 function guestTokenKey(roomId: string): string {
     return `${GUEST_TOKEN_KEY_PREFIX}${roomId}`
 }
 
-export function storeGuestToken(roomId: string, token: string): void {
+export function storeGuestToken(roomId: string, token: string, participantId: string): void {
     if (typeof window === "undefined") {
         return
     }
-    const entry: StoredGuestToken = { token, issuedAt: Date.now() }
+    const entry: StoredGuestToken = { token, issuedAt: Date.now(), participantId }
     try {
         window.sessionStorage.setItem(guestTokenKey(roomId), JSON.stringify(entry))
     } catch {
@@ -100,7 +114,7 @@ export function storeGuestToken(roomId: string, token: string): void {
     }
 }
 
-export function readStoredGuestToken(roomId: string): string | null {
+export function readStoredGuestIdentity(roomId: string): StoredGuestIdentity | null {
     if (typeof window === "undefined") {
         return null
     }
@@ -126,7 +140,11 @@ export function readStoredGuestToken(roomId: string): string | null {
         clearStoredGuestToken(roomId)
         return null
     }
-    return entry.token
+    return { token: entry.token, participantId: entry.participantId ?? null }
+}
+
+export function readStoredGuestToken(roomId: string): string | null {
+    return readStoredGuestIdentity(roomId)?.token ?? null
 }
 
 export function clearStoredGuestToken(roomId: string): void {
@@ -149,6 +167,10 @@ function isStoredGuestToken(value: unknown): value is StoredGuestToken {
         && candidate.token.length > 0
         && typeof candidate.issuedAt === "number"
         && Number.isFinite(candidate.issuedAt)
+        // 없어도 되지만, 있다면 비지 않은 문자열이어야 한다 — 빈 문자열을 그대로 통과시키면
+        // 게임 화면이 명단의 누구와도 맞지 않는 식별자를 나로 믿는다.
+        && (candidate.participantId === undefined
+            || (typeof candidate.participantId === "string" && candidate.participantId.length > 0))
 }
 
 export type GuestJoinOutcome =
@@ -167,7 +189,7 @@ export async function joinRoomAsGuest(
 
     try {
         const guest = await gameAPI.issueGuestToken(roomId, inviteCode, nickname.value)
-        storeGuestToken(roomId, guest.token)
+        storeGuestToken(roomId, guest.token, guest.participantId)
         return { kind: "token", token: guest.token }
     } catch (error) {
         console.error("Failed to issue guest token:", error)
