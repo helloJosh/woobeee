@@ -78,19 +78,34 @@ export interface GameEndPayload {
     ranks: GameRankEntry[]
 }
 
-/**
- * OmokGameSink.onGameCommand. 착수 성공(PLACED)에는 nextTurn·turnDeadline 이 실리지만,
- * 승리 착수(WIN)의 OMOK_MOVED 에는 participantId·x·y·color 만 실린다 — 그래서 뒤의 두 필드는
- * 선택이다. turnDeadline 은 Instant.toString() 의 ISO-8601 문자열이다.
- */
-export interface OmokMovedPayload {
+export interface OmokMoveBase {
     participantId: string
     x: number
     y: number
     color: "BLACK" | "WHITE"
-    nextTurn?: string
-    turnDeadline?: string
 }
+
+/** 계속되는 착수. 다음 차례와 그 마감시각(Instant.toString(), ISO-8601)이 실린다. */
+export interface OmokMovePlaced extends OmokMoveBase {
+    nextTurn: string
+    turnDeadline: string
+}
+
+/** 승리 착수. 다음 차례가 없으므로 두 필드가 아예 오지 않는다. */
+export interface OmokMoveWon extends OmokMoveBase {
+    nextTurn?: never
+    turnDeadline?: never
+}
+
+/**
+ * OmokGameSink.onGameCommand 는 같은 OMOK_MOVED 를 두 모양으로 보낸다 — PLACED 는
+ * nextTurn·turnDeadline 을 싣고(:131-142), 승리 착수는 participantId·x·y·color 만
+ * 싣는다(:148-157). 유니온으로 둔 이유는 그 차이를 타입이 강제하게 하려는 것이다:
+ * `payload.nextTurn` 은 `string | undefined` 이므로 차례 상태에 그대로 대입할 수 없고,
+ * 호출자가 "마지막 수였다" 를 반드시 분기해야 한다. 이 구분을 놓치면 판은 끝났는데 차례
+ * 표시만 살아 있는 상태가 된다.
+ */
+export type OmokMovedPayload = OmokMovePlaced | OmokMoveWon
 
 /** OmokGame 이 돌려주는 거부 사유. 렌주 금수 판정은 RenjuRule 의 verdict 이름이 그대로 온다. */
 export type OmokRejectionReason =
@@ -127,11 +142,14 @@ export interface DodgeTickPayload {
 
 /**
  * RoomCommandDispatcher.guard 가 예외를 흡수해 내보내는 모양. code 는 HTTP 상태 코드이고
- * (알 수 없는 런타임 예외는 500), 이 메시지에만 ackSeq 가 붙을 수 있다 — 게임 명령에서 비롯된
- * 실패라면 그 명령의 seq 가 돌아온다.
+ * (알 수 없는 런타임 예외는 500), 게임 명령에서 비롯된 실패라면 그 명령의 seq 가 ackSeq 로
+ * 돌아온다.
+ *
+ * <p>code 가 선택인 이유는 서버에 한 곳, 직렬화 자체가 실패했을 때 내보내는 고정 문자열
+ * (GameWebSocketHandler.toTextMessage) 이 message 만 담기 때문이다. 그 경로에서는 code 가 없다.
  */
 export interface ErrorPayload {
-    code: number
+    code?: number
     message: string
 }
 
@@ -154,20 +172,37 @@ export type ServerMessageType = keyof ServerMessagePayloads
  * 나머지에는 아예 필드가 없다.
  *
  * <p>type 은 알려진 타입의 합집합이되 `string` 도 받는다 — 서버가 나중에 새 타입을 추가해도
- * 이 클라이언트가 메시지를 버리지 않게 하기 위해서다. payload 를 좁히려면 아래
- * {@link isServerMessage} 를 쓴다.
+ * 이 클라이언트가 메시지를 통째로 버리지 않게 하기 위해서다.
+ *
+ * <p><b>payload 는 unknown 이다.</b> `any` 로 두면 위에 옮겨 적은 페이로드 타입들이 전부
+ * 장식이 된다 — `switch (message.type)` 로는 payload 가 좁혀지지 않으므로 승리 착수에
+ * 존재하지도 않는 `payload.nextTurn` 을 읽는 코드가 그대로 통과한다. 반드시
+ * {@link isServerMessage} 로 좁혀서 읽는다:
+ *
+ * ```ts
+ * if (isServerMessage(message, "ROOM_STATE")) {
+ *     setParticipants(message.payload.participants)
+ * }
+ * ```
  */
-export interface ServerMessage<T = any> {
+export interface ServerMessage {
     type: ServerMessageType | (string & {})
     ackSeq?: number
-    payload?: T
+    payload: unknown
 }
 
-/** `if (isServerMessage(message, "ROOM_STATE")) { message.payload.participants }` */
+/** 알려진 타입 하나로 좁혀진 메시지. payload 가 그 타입의 페이로드로 확정된다. */
+export interface TypedServerMessage<T extends ServerMessageType> {
+    type: T
+    ackSeq?: number
+    payload: ServerMessagePayloads[T]
+}
+
+/** payload 를 읽는 유일한 정문. */
 export function isServerMessage<T extends ServerMessageType>(
     message: ServerMessage,
     type: T
-): message is ServerMessage<ServerMessagePayloads[T]> & { type: T } {
+): message is TypedServerMessage<T> {
     return message.type === type
 }
 
@@ -175,12 +210,35 @@ export function isServerMessage<T extends ServerMessageType>(
 // 소켓
 // ---------------------------------------------------------------------------
 
-export type SocketStatus = "connecting" | "open" | "reconnecting" | "closed"
+/**
+ * - `connecting`  최초 핸드셰이크 진행 중
+ * - `open`        핸드셰이크만 끝났다. JOIN 을 보냈을 뿐 아직 방에 들어간 것이 아니다
+ * - `joined`      서버가 참가를 확정했다(첫 ROOM_STATE 도착). 입력을 열어도 되는 유일한 상태
+ * - `reconnecting` 백오프 대기 중이거나 재접속 핸드셰이크 진행 중
+ * - `rejected`    참가가 확정되기 전에 서버가 정상 종료(1000)로 세션을 닫았다. 종단 상태
+ * - `closed`      호출자가 닫았거나, 재시도를 다 썼거나, 참가 이후 서버가 정상 종료했다. 종단 상태
+ *
+ * `open` 과 `joined` 를 나눈 이유: 서버는 JOIN 을 거절할 때 메시지를 보내지 않고 그냥 세션을
+ * 닫는다(GameWebSocketHandler:145, :162, :164). 그래서 "핸드셰이크됨" 을 "참가됨" 으로 쓰면
+ * 화면이 왕복 하나만큼 이르게 입력을 열고, 거절당한 재접속을 성공으로 착각한다.
+ */
+export type SocketStatus =
+    | "connecting"
+    | "open"
+    | "joined"
+    | "reconnecting"
+    | "rejected"
+    | "closed"
 
 export interface GameSocketOptions {
     roomId: string
     inviteCode: string
-    token: string
+    /**
+     * 재접속마다 다시 읽는다. 세션 도중 만료되는 액세스 토큰을 쓴다면 함수를 넘겨,
+     * 그때그때 갱신된 토큰이 JOIN 에 실리게 한다 — 문자열로 고정하면 만료된 뒤의 모든
+     * 재접속이 인증에서 막히고, 그 실패가 곧바로 종단 `rejected` 가 된다.
+     */
+    token: string | (() => string)
     onMessage: (message: ServerMessage) => void
     onStatusChange?: (status: SocketStatus) => void
 }
@@ -193,6 +251,9 @@ export interface GameSocket {
 export const MAX_RETRIES = 5
 export const BASE_DELAY_MS = 500
 
+/** 서버가 참가를 거절할 때 쓰는 종료 코드. Spring 의 `session.close()` 기본값이다. */
+export const NORMAL_CLOSURE = 1000
+
 /**
  * 지수 백오프. attempt 는 지금까지 실패한 횟수(0-based)다: 500 · 1000 · 2000 · 4000 · 8000ms,
  * 다섯 번을 다 쓰면 누적 15.5초다. 서버의 이탈 유예(DISCONNECT_GRACE)가 30초이므로 다섯 번째
@@ -202,6 +263,22 @@ export const BASE_DELAY_MS = 500
  */
 export function reconnectDelayMs(attempt: number): number {
     return BASE_DELAY_MS * 2 ** attempt
+}
+
+/**
+ * 끊긴 소켓을 다시 붙어 볼지 판정한다.
+ *
+ * <p>핵심은 `code === 1000` 이다. 이 서버에서 WebSocket 핸드셰이크는 언제나 성공한다 —
+ * 실패하는 것은 그다음의 JOIN 이고, 서버는 그때 메시지 없이 세션을 정상 종료로 닫는다
+ * (토큰 만료, 초대 코드 불일치, 정원 초과, 이미 시작된 게임, 유예가 지나 사라진 방).
+ * 그래서 종료 코드를 보지 않으면 "붙는다 → 거절당한다 → 500ms 뒤 다시 붙는다" 가 영원히
+ * 반복된다. 정상 종료는 서버가 내린 결정이므로 다시 시도하지 않는다.
+ *
+ * <p>우리가 직접 부른 `close()` 는 상태 코드 없이 닫히므로(1005) 여기 걸리지 않고,
+ * 네트워크 단절은 1006 이다 — 둘 다 재접속 대상이다.
+ */
+export function shouldReconnect(code: number, attempts: number): boolean {
+    return code !== NORMAL_CLOSURE && attempts < MAX_RETRIES
 }
 
 /** 소켓 밖에서도 검증할 수 있게 직렬화를 분리해 둔다. */
@@ -230,9 +307,22 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
     let seq = 0
     let retries = 0
     let closedByCaller = false
+    let settled = false
     let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-    const setStatus = (status: SocketStatus) => options.onStatusChange?.(status)
+    /** 종단 상태는 한 번만 알린다 — 나중의 close() 가 rejected 를 closed 로 덮어쓰지 않게. */
+    const setStatus = (status: SocketStatus) => {
+        if (settled) {
+            return
+        }
+        if (status === "closed" || status === "rejected") {
+            settled = true
+        }
+        options.onStatusChange?.(status)
+    }
+
+    const resolveToken = (): string =>
+        typeof options.token === "function" ? options.token() : options.token
 
     /**
      * 버릴 소켓의 핸들러는 반드시 떼어 낸다. 안 그러면 이미 대체된 소켓의 뒤늦은 onclose 가
@@ -254,30 +344,59 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
         const current = new WebSocket(gameSocketUrl())
         socket = current
 
+        // 이 연결에서 서버가 참가를 확정했는지. 확정 전까지는 재시도 카운터를 되돌리지 않는다.
+        let joinConfirmed = false
+
         current.onopen = () => {
-            retries = 0
+            // 여기서 retries 를 0 으로 되돌리면 안 된다. 핸드셰이크는 언제나 성공하므로
+            // 거절당하는 JOIN 에 대해서도 카운터가 매번 초기화되어 MAX_RETRIES 에 영영
+            // 닿지 못한다 — 500ms 마다 영원히 다시 붙는 루프가 된다.
             setStatus("open")
-            // 재접속도 JOIN 이다. 서버는 이미 아는 participantId 면 자리를 잇는다
-            // (RoomService.join -> Room.admit -> RECONNECTED).
+
+            // 재접속도 JOIN 이다. 서버는 이미 아는 participantId 면 정원·진행 상태 검사를
+            // 건너뛰고 연결만 CONNECTED 로 되돌린다(RoomService.join -> Room.admit ->
+            // RECONNECTED). 다만 되돌아오는 것은 ROOM_STATE 뿐이다 — 오목의 판이나
+            // 장애물피하기의 현재 틱을 다시 보내 주지는 않으므로, 판이 진행 중이었다면
+            // 화면은 끊긴 시점의 낡은 상태로 남는다. 화면 쪽에서 감안해야 한다.
             send("JOIN", {
                 roomId: options.roomId,
                 inviteCode: options.inviteCode,
-                token: options.token,
+                token: resolveToken(),
             })
         }
 
         current.onmessage = (event) => {
             const message = parseServerMessage(event.data)
-            if (message) {
-                options.onMessage(message)
+            if (!message) {
+                return
             }
+
+            // 첫 ROOM_STATE 가 참가 확정 신호다. 이 세션은 dispatcher.join 이 검증을 통과시킨
+            // 뒤에야 허브를 구독하므로(GameWebSocketHandler:158-161), ROOM_STATE 가 한 번이라도
+            // 도착했다는 것은 서버가 우리를 방에 넣었다는 뜻이다.
+            if (!joinConfirmed && isServerMessage(message, "ROOM_STATE")) {
+                joinConfirmed = true
+                retries = 0
+                setStatus("joined")
+            }
+
+            options.onMessage(message)
         }
 
-        current.onclose = () => {
+        current.onclose = (event) => {
             detach(current)
 
-            if (closedByCaller || retries >= MAX_RETRIES) {
+            if (closedByCaller) {
                 setStatus("closed")
+                return
+            }
+
+            if (!shouldReconnect(event.code, retries)) {
+                // 참가가 확정되기 전의 정상 종료는 서버의 거절이다 — 왜인지는 알 수 없다.
+                // 서버는 그 ERROR 를 방 허브로 보내는데, 거절당한 세션은 아직 그 허브를
+                // 구독하지 않았기 때문이다(GameWebSocketHandler:158). 상태만 구분해 준다.
+                const rejected = !joinConfirmed && event.code === NORMAL_CLOSURE
+                setStatus(rejected ? "rejected" : "closed")
                 return
             }
 
@@ -300,8 +419,9 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
      * ack 가 섞이지 않는다.
      *
      * <p>소켓이 열려 있지 않으면 메시지는 그냥 버린다(큐에 쌓지 않는다). 끊긴 동안 눌린 착수나
-     * 이동을 나중에 몰아서 보내면 이미 지나간 판·틱에 대한 명령이 되어 더 나쁘다. 호출자는
-     * onStatusChange 로 연결 상태를 보고 입력을 막을 수 있다.
+     * 이동을 나중에 몰아서 보내면 이미 지나간 판·틱에 대한 명령이 되어 더 나쁘다. 화면은
+     * onStatusChange 가 `joined` 를 알린 동안에만 입력을 열어야 한다 — `open` 은 아직
+     * 참가가 확정되지 않은 상태라 여기서 보낸 명령이 서버에 버려진다.
      */
     const send = (type: string, payload?: unknown): number => {
         seq += 1
