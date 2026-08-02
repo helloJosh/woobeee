@@ -239,10 +239,17 @@ public class DodgeGameSink implements GameCommandSink {
                 }
             }
 
+            // A game already finished by a departure (see onParticipantGone) makes
+            // advanceOneTick a no-op: it returns immediately without incrementing the tick
+            // counter. Recording drained input against a tick that never actually executed
+            // would leave a "moves" line in the ndjson for a tick that has no corresponding
+            // real advance -- ghost data no reader asked for. Only record when this call is
+            // the one that actually moved the game forward.
+            boolean alreadyFinishedBeforeThisTick = game.finished();
             int tickBeforeAdvance = game.tick();
             frame = game.advanceOneTick(inputs);
 
-            if (!inputs.isEmpty()) {
+            if (!alreadyFinishedBeforeThisTick && !inputs.isEmpty()) {
                 Map<Integer, Map<String, Direction>> recorded = recordedInputs.get(roomId);
                 if (recorded != null) {
                     recorded.put(tickBeforeAdvance, inputs);

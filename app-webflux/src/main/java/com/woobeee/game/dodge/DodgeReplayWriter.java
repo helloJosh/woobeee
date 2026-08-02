@@ -17,6 +17,11 @@ import java.util.Map;
  * 참가자가 방을 나간다), 줄 타입을 나누면 클라이언트가 같은 틱 번호를 가진 두 줄을 다시 합쳐야
  * 하는 번거로움만 늘어난다. {@code moves} 나 {@code departures} 는 비어 있으면 아예 필드 자체를
  * 쓰지 않는다 — 헤더 이후 각 줄은 그 틱에 실제로 있었던 것만 담는다.
+ *
+ * <p><b>헤더의 {@code v} 는 2다.</b> {@code departures} 필드가 추가되면서 파일의 의미가
+ * 바뀌었다 — v1 그대로 읽는 리더는 {@code inputsByTick} 만 보고 이탈을 놓쳐, 원본과 다른 승자·
+ * 다른 길이를 "정상"으로 재생해 버린다(F1과 같은 실패가 클라이언트에서 조용히 재현된다). 그래서
+ * 이 필드가 생긴 시점에 버전을 반드시 올린다 — 읽는 쪽이 몰라도 되는 변경이 아니다.
  */
 @Component
 public class DodgeReplayWriter {
@@ -30,7 +35,7 @@ public class DodgeReplayWriter {
         StringBuilder builder = new StringBuilder();
 
         Map<String, Object> header = new LinkedHashMap<>();
-        header.put("v", 1);
+        header.put("v", 2);
         header.put("gameType", "DODGE");
         header.put("cols", DodgeRules.COLUMNS);
         header.put("rows", DodgeRules.ROWS);

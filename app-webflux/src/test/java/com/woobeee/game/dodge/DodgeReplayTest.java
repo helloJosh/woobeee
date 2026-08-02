@@ -144,7 +144,7 @@ class DodgeReplayTest {
 
         ObjectMapper mapper = new ObjectMapper();
         var header = mapper.readTree(lines[0]);
-        assertThat(header.get("v").asInt()).isEqualTo(1);
+        assertThat(header.get("v").asInt()).isEqualTo(2);
         assertThat(header.get("gameType").asText()).isEqualTo("DODGE");
         assertThat(header.get("cols").asInt()).isEqualTo(12);
         assertThat(header.get("rows").asInt()).isEqualTo(16);
@@ -203,6 +203,27 @@ class DodgeReplayTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("42")
                 .hasMessageContaining("5");
+    }
+
+    /**
+     * F1 (fix round 2) — the ndjson format is a cross-language contract: a v1 file meant "read
+     * inputsByTick and nothing else." That is no longer true now that departures exist on the
+     * tick line, so the header version must move to 2 whenever this writer runs — a v1 reader
+     * (written, like the real TypeScript one, straight from a spec that only mentioned moves)
+     * would silently drop departures and reproduce F1 client-side: wrong winner, wrong length,
+     * no crash, no signal anything was missed. This test exists so a future field addition has
+     * to consciously bump this number again instead of leaving a stale contract in place.
+     */
+    @Test
+    void headerVersionIsTwoNowThatDeparturesAreAField() {
+        String ndjson = new DodgeReplayWriter(new ObjectMapper()).toNdjson(
+                new DodgeReplay(1, List.of(A), Map.of(), Map.of()),
+                Map.of(A, "host")
+        );
+
+        var header = new ObjectMapper().readTree(ndjson.strip().split("\n")[0]);
+
+        assertThat(header.get("v").asInt()).isEqualTo(2);
     }
 
     @Test

@@ -315,6 +315,32 @@ class DodgeGameSinkTest {
     }
 
     /**
+     * Fix round 2, cosmetic — a game already finished by departure makes advanceOneTick a
+     * no-op (it returns immediately without incrementing the tick counter), but the tick that
+     * observes this still drains whatever was buffered in the meantime. Recording that drained
+     * input regardless would leave a "moves" line in the ndjson tied to a tick that never
+     * actually advanced -- ghost data no reader asked for, even though both DodgeReplayRunner
+     * and a departures-aware client reader would break out before ever reading it today.
+     */
+    @Test
+    void aTickThatDidNotAdvanceRecordsNoGhostMovesLine() {
+        sink.onStart(room);
+        sink.onParticipantGone(room, "g:a");
+        sink.onParticipantGone(room, "g:b");
+        // Buffered after the game is already finished by departure, before the timer's next
+        // tick drains it -- this must not leak into the recorded replay as a "moves" line.
+        sink.onGameCommand(room, "m:11", moveMessage("LEFT", 1L));
+        scheduler.advanceTimeBy(Duration.ofMillis(100));
+
+        ArgumentCaptor<String> ndjsonCaptor = ArgumentCaptor.forClass(String.class);
+        verify(resultService).record(any(FinishedGame.class), ndjsonCaptor.capture());
+
+        JsonNode tick0 = ndjsonLineForTick(ndjsonCaptor.getValue(), 0);
+        assertThat(tick0).isNotNull(); // the departures still belong on this line
+        assertThat(tick0.has("moves")).isFalse();
+    }
+
+    /**
      * F4 — timer.dispose() lives in finish(), but the games map eviction that gameOf(...) reads
      * happens earlier, inside tick()'s atomic remove. Deleting timer.dispose() would leave
      * gameOf(...) null (so the old assertion alone would still pass) while the interval
