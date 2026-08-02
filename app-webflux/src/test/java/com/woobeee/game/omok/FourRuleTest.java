@@ -1,5 +1,7 @@
 package com.woobeee.game.omok;
 
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,5 +113,44 @@ class FourRuleTest {
         OmokBoard board = rowBoard("..X.XXXX.X.....");
 
         assertThat(FourRule.makesStraightFour(board, 6, 7, Axis.HORIZONTAL)).isFalse();
+    }
+
+    /**
+     * G4 known gap: renju's genuine 열린사 (open four) is unstoppable precisely because BOTH
+     * flanks complete to exactly five; a defender who blocks one end still loses to the other.
+     * {@code makesStraightFour} instead uses {@code ||}, so a four with only one live end is
+     * misreported as open.
+     *
+     * <p>Position (row 7, 0-indexed x): black at x=2, x=4, x=5, x=6, x=7 (x=4 is the candidate
+     * stone {@code makesStraightFour} is asked about, already on the board per its contract);
+     * white at x=9 — {@code "..X.XXXX.O....."}. Placing at x=4 completes the three {5,6,7} into
+     * the four {4,5,6,7}. Its "before" flank is x=3: filling it reaches back to the black stone
+     * already at x=2, so the run becomes x=2..7, six long — an overline, not a five, so that
+     * flank is not a real winning point for black. Its "after" flank is x=8: filling it makes
+     * exactly x=4..8, a clean five, and cannot overline further because x=9 is white. Only one of
+     * the two flanks is genuinely live, so this is an ordinary (blockable) four, not an open one:
+     * the opponent simply plays x=8 and the threat is dead (x=3 was never a legal black move
+     * anyway, since playing it would itself be an overline). Asserted directly on
+     * {@link FourRule#makesStraightFour} — that is exactly where the {@code ||}/{@code &&} defect
+     * lives; going through {@link RenjuRule#judge} would also work, but would mix in the
+     * recursive open-three/legality machinery and make the failure harder to attribute to this
+     * one method.
+     *
+     * <p>Trialled fix: flipping {@code ||} to {@code &&} makes this test pass, but it also flips
+     * {@link RenjuRuleTest#twoDistinctThreeGroupsOnOneAxisAreDoubleThree} from DOUBLE_THREE to
+     * LEGAL — that position has two separate broken threes whose only completions each overline
+     * through the *other* group, so under strict {@code &&} neither one ever registers as an open
+     * three. Reconciling the two needs a real design decision (does an overline caused by a
+     * distant, unrelated own-color cluster still disqualify a flank, or only an overline within
+     * the four's own immediate line-of-five?), not a one-character change, so the fix was
+     * reverted and only this test is left behind.
+     */
+    @Tag("known-gap")
+    @DisplayName("G4: makesStraightFour must require BOTH flanks to complete to five, not either")
+    @Test
+    void bothFlanksMustCompleteToFiveNotJustOne() {
+        OmokBoard board = rowBoard("..X.XXXX.O.....");
+
+        assertThat(FourRule.makesStraightFour(board, 4, 7, Axis.HORIZONTAL)).isFalse();
     }
 }

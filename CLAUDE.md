@@ -125,11 +125,27 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 이관 문서 잔여 언급 | `docs/` 의 이관 문서 일부에 product/cart 언급이 남아 있다. 도메인 문서를 손댈 때 함께 정리 |
 | Kafka 미연동 | 로컬 compose에만 있고 코드 연동은 없다(ADR-003). 실제로 쓰려면 토픽 설계부터 |
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 game/blog 기준으로 새로 구성 |
-| 오목 제한시간 미강제 | `turnDeadline` 을 `OMOK_MOVED` 로 클라이언트에 알리지만 `OmokGame.timeout(...)` 을 호출하는 배선이 없다. 60초를 넘겨도 서버가 자동으로 패배 처리하지 않는다 |
-| `RoomSweeper` 가 진행 중 게임을 정리하지 않음 | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 진행 중이던 오목 게임의 sink 상태(`OmokGameSink`)가 그 사실을 모른 채 메모리에 남는다 |
+| 오목 제한시간 미강제 (G1) | `turnDeadline` 을 `OMOK_MOVED` 로 클라이언트에 알리지만 `OmokGame.timeout(...)` 을 호출하는 배선이 없다. 60초를 넘겨도 서버가 자동으로 패배 처리하지 않는다. 테스트: `OmokGameSinkTest#aStalledPlayerNeverTimesOutBecauseNothingDrivesTheDeadline` (`@Tag("known-gap")`) |
+| `RoomSweeper` 가 진행 중 게임을 정리하지 않음 (G2) | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 진행 중이던 오목 게임의 sink 상태(`OmokGameSink`)가 그 사실을 모른 채 메모리에 남는다. 테스트: `RoomSweeperTest#sweepingAnExpiredRoomLeavesTheOmokSinkStillHoldingItsGameState` (`@Tag("known-gap")`) |
 | **기보 접근 권한 실DB 테스트** | GAME-AC-22(참가자 본인만 기보 URL)를 강제하는 SQL이 **텍스트로만** 고정돼 있다. `AND p.member_id = :memberId` 를 지우면 테스트가 깨지지만, 컬럼을 바꾸거나 `AND` 를 `OR` 로 바꾸면 통과한다. 셋 중 가장 위험 — **UI가 이 엔드포인트에 붙기 전에** 실 Postgres 대상 테스트로 막아야 한다(참가자·비참가자·없는 id·게스트 4케이스) |
 | 결과 저장 롤백 미검증 | `GameResultService` 가 `insertResult`+`insertParticipants` 를 트랜잭션으로 감싸는 것은 테스트로 고정됐지만, 실제 commit/rollback 은 검증되지 않았다. 통합 테스트로 두 번째 참가자 insert 를 실패시켜 `game_results` 가 0행인지 확인해야 한다 |
-| `game_result_id` FK 없음 | `game_result_participants.game_result_id` 에 `game_results` 로의 FK 가 없다. 지금은 삭제 경로가 없어 고아 행이 생길 수 없다. 붙이려면 V2 가 이미 적용됐으므로 `V3__game_result_fk.sql` 로 `ON DELETE CASCADE` 를 추가한다 |
-| 열린사 판정이 렌주보다 느슨함 | `FourRule.makesStraightFour` 가 양끝 중 **하나만** 정확히 5를 만들어도 참을 반환한다(`||`). 정통 렌주의 열린사는 승리점이 둘이다. 수정 전의 모양만 보는 판정보다는 좁으므로 회귀는 아니지만, 엄밀히 맞추려면 `&&` 로 조인다 |
+| `game_result_id` FK 없음 (G5) | `game_result_participants.game_result_id` 에 `game_results` 로의 FK 가 없다. 지금은 삭제 경로가 없어 고아 행이 생길 수 없다. 붙이려면 V2 가 이미 적용됐으므로 `V3__game_result_fk.sql` 로 `ON DELETE CASCADE` 를 추가한다. 테스트: `GameResultParticipantsForeignKeyTest#insertingAParticipantForAMissingGameResultIsRejected` (`@Tag("known-gap")`, 실 Postgres 필요) |
+| 열린사 판정이 렌주보다 느슨함 (G4) | `FourRule.makesStraightFour` 가 양끝 중 **하나만** 정확히 5를 만들어도 참을 반환한다(`||`). 정통 렌주의 열린사는 승리점이 둘이다. 수정 전의 모양만 보는 판정보다는 좁으므로 회귀는 아니지만, 엄밀히 맞추려면 `&&` 로 조인다 — 단, 그렇게 하면 `RenjuRuleTest#twoDistinctThreeGroupsOnOneAxisAreDoubleThree` 가 깨진다(서로 다른 두 삼이 각자 반대편 그룹을 향해 장목이 되는 경우의 판정을 다시 설계해야 한다). 테스트: `FourRuleTest#bothFlanksMustCompleteToFiveNotJustOne` (`@Tag("known-gap")`) |
 | 앱 컨텍스트 기동 테스트 없음 | `app-webflux` 에는 `@WebFluxTest` 슬라이스만 있고 전체 컨텍스트를 띄우는 테스트가 없다. 빈 그래프가 실제로 기동하는지 CI가 확인하지 못한다 |
-| 방 상태가 `FINISHED` 로 가지 않음 | 게임이 끝나도 `RoomStatus` 는 `IN_PROGRESS` 로 남아 TTL 까지 그대로다. 재대국 불가이고 `ROOM_STATE` 가 사실과 다르다 |
+| 방 상태가 `FINISHED` 로 가지 않음 (G3) | 게임이 끝나도 `RoomStatus` 는 `IN_PROGRESS` 로 남아 TTL 까지 그대로다. 재대국 불가이고 `ROOM_STATE` 가 사실과 다르다. 테스트: `OmokGameSinkTest#aWinFlipsTheRoomStatusToFinished` (`@Tag("known-gap")`) |
+
+### 알려진 결함을 실행 가능한 테스트로 고정한 것 (`known-gap`)
+
+위 표의 G1/G2/G3/G4/G5 다섯 항목은 리뷰에서 발견됐지만 의도적으로 미루기로 한 결함이다. 각각을
+"오늘은 실패하고, 결함이 고쳐지면 통과하는" 테스트 하나로 고정해 뒀다 — 메모가 아니라 실행 가능한
+할 일이다. 다섯 테스트 모두 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test` 에서는 제외된다
+(그래서 위 기본 검증 명령은 계속 184/226개 그린을 유지한다). 루트 `pom.xml` 의
+`known.gap.excludedGroups` 프로퍼티(기본값 `known-gap`)가 surefire의 `excludedGroups` 를 구동한다.
+
+```bash
+./mvnw -pl core,app-mvc,app-webflux -am test                              # 기본: known-gap 제외, 그린 유지
+./mvnw -pl core,app-mvc,app-webflux -am test -Dknown.gap.excludedGroups=   # known-gap 포함: 다섯 개가 실패해야 정상
+```
+
+G5 테스트(`GameResultParticipantsForeignKeyTest`)는 `docker compose` 의 Postgres(`localhost:9432/market`,
+`root`/`123456789`)에 직접 R2DBC 로 접속한다 — 인프라를 띄워야 통과/실패를 관찰할 수 있다.

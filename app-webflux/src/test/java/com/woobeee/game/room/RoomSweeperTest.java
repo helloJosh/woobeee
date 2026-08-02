@@ -1,9 +1,15 @@
 package com.woobeee.game.room;
 
 import com.woobeee.game.identity.GameParticipant;
+import com.woobeee.game.omok.OmokGameSink;
+import com.woobeee.game.omok.OmokReplayWriter;
+import com.woobeee.game.result.GameResultService;
 import com.woobeee.game.ws.RoomHub;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -16,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.mock;
 
 class RoomSweeperTest {
 
@@ -144,5 +151,49 @@ class RoomSweeperTest {
         sweeper.onTick();
 
         assertThat(registry.find("room-1")).isEmpty();
+    }
+
+    /**
+     * G2 known gap: {@code sweep()} reclaims a TTL-expired room straight through
+     * {@link RoomRegistry#sweepExpired(Instant)} and {@link RoomHub#close(String)} — it never
+     * goes through {@link com.woobeee.game.ws.RoomCommandDispatcher#settle}, which is the only
+     * path that tells a {@link com.woobeee.game.ws.GameCommandSink} a participant (and therefore,
+     * for the last participant, the room) is gone. So an {@link OmokGameSink} that has an active
+     * game in the swept room is never told; its per-room maps ({@code games}, {@code startedAt},
+     * {@code displayNames}, {@code memberIds}, all keyed by roomId) keep that game forever, even
+     * though the room itself, and its hub, are gone.
+     */
+    @Tag("known-gap")
+    @DisplayName("G2: sweeping an expired room does not release the omok sink's game state for it")
+    @Test
+    void sweepingAnExpiredRoomLeavesTheOmokSinkStillHoldingItsGameState() {
+        AtomicInteger counter = new AtomicInteger();
+        RoomRegistry registry = new RoomRegistry(ids(counter), Clock.fixed(NOW, ZoneOffset.UTC));
+        Room room = registry.create(GameType.OMOK, GameParticipant.member(11L, "host"));
+        room.addMember(GameParticipant.guest("a", "손님"));
+
+        RoomHub hub = new RoomHub();
+        OmokGameSink sink = new OmokGameSink(
+                hub,
+                mock(GameResultService.class),
+                new OmokReplayWriter(new ObjectMapper()),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        sink.onStart(room);
+        assertThat(sink.gameOf("room-1"))
+                .as("setup: the omok game must actually be running before we sweep the room")
+                .isNotNull();
+
+        RoomSweeper sweeper = new RoomSweeper(
+                registry, hub, Clock.fixed(NOW.plusSeconds(6 * 3600 + 1), ZoneOffset.UTC));
+
+        sweeper.sweep();
+
+        assertThat(registry.find("room-1"))
+                .as("setup: the room really was reclaimed by the sweep")
+                .isEmpty();
+        assertThat(sink.gameOf("room-1"))
+                .as("RoomSweeper must tell the sink the room is gone (e.g. by routing through "
+                        + "RoomCommandDispatcher.settle) instead of only dropping it from the registry")
+                .isNull();
     }
 }

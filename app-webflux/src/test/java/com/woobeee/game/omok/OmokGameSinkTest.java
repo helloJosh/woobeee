@@ -6,9 +6,12 @@ import com.woobeee.game.result.FinishedGame;
 import com.woobeee.game.result.GameResultService;
 import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
+import com.woobeee.game.room.RoomStatus;
 import com.woobeee.game.ws.ClientMessage;
 import com.woobeee.game.ws.RoomHub;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
@@ -17,7 +20,9 @@ import reactor.test.StepVerifier;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -135,6 +140,30 @@ class OmokGameSinkTest {
                 .findFirst().orElseThrow().memberId()).isNull();
     }
 
+    /**
+     * G3 known gap: nothing ever flips {@link RoomStatus} to {@code FINISHED} once a game ends.
+     * {@code OmokGameSink.finish} broadcasts GAME_END, records the result, and clears its own
+     * per-room maps, but never touches {@code room.status()} — so the room the client-visible
+     * ROOM_STATE payload describes stays {@code IN_PROGRESS} until its 6-hour TTL sweep, and
+     * nothing (e.g. a rematch flow gated on the room being finished/waiting) can rely on the
+     * room's own status to know the game is over.
+     */
+    @Tag("known-gap")
+    @DisplayName("G3: a win never flips the room's status out of IN_PROGRESS")
+    @Test
+    void aWinFlipsTheRoomStatusToFinished() {
+        room.setStatus(RoomStatus.IN_PROGRESS);
+        sink.onStart(room);
+        for (int i = 0; i < 4; i++) {
+            sink.onGameCommand(room, "m:11", placeMessage(3 + i, 7, i * 2 + 1L));
+            sink.onGameCommand(room, "g:a", placeMessage(3 + i, 9, i * 2 + 2L));
+        }
+
+        sink.onGameCommand(room, "m:11", placeMessage(7, 7, 99L));
+
+        assertThat(room.status()).isEqualTo(RoomStatus.FINISHED);
+    }
+
     @Test
     void aDepartedParticipantResignsAndTheOpponentWins() {
         sink.onStart(room);
@@ -183,5 +212,55 @@ class OmokGameSinkTest {
         sink.onParticipantGone(room, "m:11");
 
         verify(resultService).record(any(FinishedGame.class), anyString());
+    }
+
+    /**
+     * G1 known gap: {@link OmokGame#timeout(Instant)} correctly decides a stalled player loses
+     * (see {@code OmokGameTest.exceedingTheMoveLimitLosesTheGame}), but nothing in
+     * {@link OmokGameSink} ever calls it — there is no timer, no scheduled sweep, no per-move
+     * check. A player who simply never moves again stalls the game forever: no GAME_END, no
+     * recorded result, no way for the opponent to be declared the winner.
+     *
+     * <p>This test uses a movable {@link Clock} (the sink's actual dependency, not a stand-in) so
+     * the failure is attributable purely to missing wiring: the clock is advanced instantly, well
+     * past {@link OmokGameSink#MOVE_LIMIT}, with no real sleep involved. If any wiring drove the
+     * timeout — a scheduled sweep, a check triggered by the clock advancing — GAME_END would
+     * follow on its own, since no client message is ever sent here. The bounded
+     * {@code verify(Duration)} below is what turns "nothing ever happens" into an observable,
+     * timely failure instead of an unbounded hang.
+     */
+    @Tag("known-gap")
+    @DisplayName("G1: the 60s move-limit timeout is never enforced by the sink")
+    @Test
+    void aStalledPlayerNeverTimesOutBecauseNothingDrivesTheDeadline() {
+        AtomicReference<Instant> movableNow = new AtomicReference<>(NOW);
+        Clock movableClock = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return movableNow.get();
+            }
+        };
+
+        OmokGameSink timeoutSink = new OmokGameSink(
+                hub, resultService, new OmokReplayWriter(objectMapper), movableClock);
+        timeoutSink.onStart(room);
+
+        // Jump straight past the deadline -- no sleeping, no waiting for real time to pass.
+        movableNow.set(NOW.plus(OmokGameSink.MOVE_LIMIT).plusSeconds(1));
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .expectNextMatches(message -> message.type().equals("GAME_END"))
+                .expectComplete()
+                .verify(Duration.ofSeconds(2));
     }
 }
