@@ -1,7 +1,7 @@
 "use client"
 
 import { DODGE_RULES } from "@/lib/dodge-engine"
-import { DODGE_PLAYER_COLOR_COUNT, type DodgeGridPlayer } from "@/lib/dodge-play"
+import { DODGE_PLAYER_COLOR_COUNT, describeStackBadge, type DodgeGridPlayer } from "@/lib/dodge-play"
 
 // 격자 위 말의 타입은 lib/dodge-play.ts 에 있다(리듀서가 같은 타입으로 상태를 만든다).
 // 여기서 다시 내보내는 것은 화면 쪽에서 <DodgeGrid /> 만 import 하고도 쓸 수 있게 하려는 것뿐이다.
@@ -18,6 +18,8 @@ export type { DodgeGridPlayer } from "@/lib/dodge-play"
  *
  * <p>붉은 계열은 비워 뒀다 — 장애물이 destructive(빨강)이라 말과 헷갈리면 안 된다.
  * 색만으로 여덟을 구분하는 것은 어차피 무리라(색각 이상 포함) 말 위에 번호도 함께 그린다.
+ * 그 번호는 색과 달리 <b>접히지 않는다</b>(playerNumberOf) — 아홉 번째 배정부터 색은 1번과
+ * 같아지지만 번호는 9로 남는다.
  */
 export const DODGE_PLAYER_COLORS = [
     "bg-sky-500",
@@ -38,9 +40,14 @@ void _paletteLengthMatchesColorCount
 interface DodgeGridProps {
     players: DodgeGridPlayer[]
     obstacles: { x: number; y: number }[]
+    /**
+     * 접근성 이름. 여기서 만들지 않고 받는다 — 첫 프레임 전에는 인원을 세면 안 되는데
+     * (describeGridLabel), 그 판단은 화면 상태를 아는 lib 쪽에 있고 테스트로 고정돼 있다.
+     */
+    label: string
 }
 
-export default function DodgeGrid({ players, obstacles }: DodgeGridProps) {
+export default function DodgeGrid({ players, obstacles, label }: DodgeGridProps) {
     const obstacleAt = new Set(obstacles.map((o) => `${o.x},${o.y}`))
 
     // 한 칸에 여러 명이 설 수 있다 — 서버의 DodgeGame 은 말끼리의 충돌을 보지 않는다.
@@ -59,7 +66,7 @@ export default function DodgeGrid({ players, obstacles }: DodgeGridProps) {
     return (
         <div
             role="img"
-            aria-label={`장애물피하기 격자 ${DODGE_RULES.cols}×${DODGE_RULES.rows} — 생존 ${players.length}명, 장애물 ${obstacles.length}개`}
+            aria-label={label}
             className="w-full max-w-[min(100%,60vh)]"
             style={{ aspectRatio: `${DODGE_RULES.cols} / ${DODGE_RULES.rows}` }}
         >
@@ -80,6 +87,12 @@ export default function DodgeGrid({ players, obstacles }: DodgeGridProps) {
                     // 같은 칸에 내가 있으면 반드시 내 말을 그린다 — 내 말이 남의 말에 가려
                     // 사라지면 어디에 있는지 모른 채 조작하게 된다.
                     const shown = stack?.find((player) => player.isSelf) ?? stack?.[0]
+                    // 가려진 말들. 번호를 직접 그린다 — title 은 터치 기기에서 보이지 않는다.
+                    const stackBadge = describeStackBadge(
+                        (stack ?? [])
+                            .filter((player) => player !== shown)
+                            .map((player) => player.playerNumber)
+                    )
 
                     return (
                         <div key={index} className="relative bg-background">
@@ -96,15 +109,15 @@ export default function DodgeGrid({ players, obstacles }: DodgeGridProps) {
                                         shown.isSelf ? "ring-2 ring-foreground" : "",
                                     ].join(" ")}
                                 >
-                                    {shown.colorIndex + 1}
+                                    {shown.playerNumber > 0 ? shown.playerNumber : "?"}
                                 </span>
                             ) : null}
-                            {stack && stack.length > 1 ? (
+                            {stackBadge ? (
                                 <span
-                                    aria-hidden
-                                    className="absolute right-0 top-0 rounded-sm bg-foreground px-0.5 text-[0.5rem] font-bold leading-none text-background"
+                                    title={stack?.map((player) => player.displayName).join(", ")}
+                                    className="absolute -right-0.5 -top-0.5 rounded-sm bg-foreground px-0.5 text-[0.5rem] font-bold leading-none text-background"
                                 >
-                                    +{stack.length - 1}
+                                    {stackBadge}
                                 </span>
                             ) : null}
                         </div>

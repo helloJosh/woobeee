@@ -1,5 +1,6 @@
 import { gameAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
+import type { SocketStatus } from "@/lib/game-socket"
 import type { GameType, RoomSummary } from "@/lib/types"
 
 /**
@@ -164,6 +165,28 @@ export function clearStoredGuestToken(roomId: string): void {
     } catch {
         // 위와 같다.
     }
+}
+
+/**
+ * 소켓이 참가를 거절당했을 때 이 방의 게스트 토큰을 버린다. 돌려주는 값은 실제로 버렸는지다.
+ *
+ * <p>게스트 토큰은 6시간 TTL 로 sessionStorage 에 남아 새로고침 복구에 쓰이는데, 그보다 먼저
+ * 죽는 경우(방이 정리됐다, 서버가 재시작해 Redis 항목이 사라졌다)를 알 수 있는 지점은 소켓
+ * JOIN 이 거절되는 순간뿐이다 — 게이트는 이미 언마운트된 뒤다. 지우지 않으면 새로고침할
+ * 때마다 게이트가 죽은 토큰을 다시 꺼내 소켓에 물리고, 게스트는 닉네임 폼으로 돌아갈 길이
+ * 영영 없다.
+ *
+ * <p>두 게임 화면이 같은 이펙트를 쓰는데, 그 안에 조건을 두면 테스트가 닿지 않는다("closed
+ * 에서도 지운다" 로 바꿔도 아무 테스트가 깨지지 않는다 — 그러면 잠깐 끊긴 게스트가 자리를
+ * 잃는다). 조건을 여기로 내려 고정한다. `rejected` 만 종단이면서 <b>서버가 우리를 거부한</b>
+ * 상태다. `closed` 는 우리가 닫았거나 재시도를 다 쓴 것이라 토큰은 여전히 멀쩡할 수 있다.
+ */
+export function discardGuestTokenOnRejection(roomId: string, status: SocketStatus): boolean {
+    if (status !== "rejected") {
+        return false
+    }
+    clearStoredGuestToken(roomId)
+    return true
 }
 
 function isStoredGuestToken(value: unknown): value is StoredGuestToken {

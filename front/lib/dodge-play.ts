@@ -1,4 +1,4 @@
-import type { DirectionName } from "@/lib/dodge-engine"
+import { DODGE_RULES, type DirectionName } from "@/lib/dodge-engine"
 import { getFriendlyErrorMessage } from "@/lib/errors/error-utils"
 import {
     isServerMessage,
@@ -197,25 +197,60 @@ export function appendColorOrder(order: string[], participantIds: string[]): str
 }
 
 /**
- * 말 색·번호를 정하는 0-based 인덱스. 배정 순서에 없는 사람(프레임보다 명단이 늦게 온 아주
+ * 말 색을 정하는 0-based 팔레트 인덱스. 배정 순서에 없는 사람(프레임보다 명단이 늦게 온 아주
  * 짧은 순간)은 0 으로 떨어뜨린다 — 그리지 않는 것보다 낫다.
+ *
+ * <p>이것만 나머지 연산으로 접힌다. 말 위에 그리는 번호는 {@link playerNumberOf} 가 접지 않고
+ * 그대로 준다 — 둘 다 접으면 아홉 번째 참가자가 첫 번째와 색도 번호도 같아져 구분이 사라진다.
  */
 export function colorIndexOf(order: string[], participantId: string): number {
     const index = order.indexOf(participantId)
     return index < 0 ? 0 : index % DODGE_PLAYER_COLOR_COUNT
 }
 
+/**
+ * 말 위에 그리는 1-based 번호. <b>접지 않는다.</b> 정원이 8명이어도 한 방을 거쳐 간 사람은
+ * 그보다 많을 수 있다 — 한 명이 나가고 다른 한 명이 들어오거나, 게스트가 sessionStorage 를
+ * 잃고 새 `g:<uuid>` 로 다시 들어오면 아홉 번째 배정이 생긴다. 그때 번호까지 접히면 색이 같은
+ * 두 사람을 갈라 놓는 것이 아무것도 남지 않는다.
+ *
+ * <p>배정 순서에 없으면 0 이다. 화면은 그것을 번호 대신 "?" 로 그린다 — 근거 없는 1 을
+ * 찍는 것보다 모른다고 말하는 쪽이 낫다.
+ */
+export function playerNumberOf(order: string[], participantId: string): number {
+    const index = order.indexOf(participantId)
+    return index < 0 ? 0 : index + 1
+}
+
 export interface DodgeGridPlayer {
     participantId: string
     displayName: string
+    /** 항상 판 안이다 — toGridPlayers 가 격자 범위로 자른다. */
     x: number
     y: number
-    /** 0-based. 컴포넌트의 색 팔레트 인덱스이자 말에 그리는 번호(+1)다. */
+    /** 0-based 팔레트 인덱스. 9번째부터 색이 돈다. */
     colorIndex: number
+    /** 말 위에 그리는 번호. 1-based, 접히지 않는다. 0 이면 알 수 없다는 뜻이다. */
+    playerNumber: number
     isSelf: boolean
 }
 
-/** 지금 판 위에 있는 말들. 탈락자는 서버 프레임에서 이미 빠져 있으므로 여기에도 없다. */
+/** 좌표를 격자 안으로 자른다. clampToBoard 의 이유는 toGridPlayers 주석 참고. */
+function clamp(value: number, max: number): number {
+    if (!Number.isFinite(value)) {
+        return 0
+    }
+    return Math.min(Math.max(Math.round(value), 0), max)
+}
+
+/**
+ * 지금 판 위에 있는 말들. 탈락자는 서버 프레임에서 이미 빠져 있으므로 여기에도 없다.
+ *
+ * <p>좌표는 격자 안으로 자른다. 서버(DodgeGame.advanceOneTick)가 이미 범위를 벗어나는 이동을
+ * 막으므로 오늘은 잘릴 일이 없지만, 만에 하나 범위 밖 좌표가 오면 격자는 그 말을 <b>아무 데도
+ * 그리지 않으면서</b> "생존 N명" 에는 계속 센다 — 화면과 숫자가 어긋난 채 조용히 사라지는 것이
+ * 가장 나쁜 실패다. 가장자리에 그려 두면 적어도 눈에 보인다.
+ */
 export function toGridPlayers(
     state: DodgeRoomState,
     selfParticipantId: string | null
@@ -226,9 +261,10 @@ export function toGridPlayers(
         // 명단보다 프레임이 먼저 오거나 명단에서 빠진 뒤에도 좌표가 남아 있을 수 있다.
         // 그때는 식별자라도 보여 준다 — 빈 이름표보다 낫다.
         displayName: nameOf.get(position.participantId) ?? position.participantId,
-        x: position.x,
-        y: position.y,
+        x: clamp(position.x, DODGE_RULES.cols - 1),
+        y: clamp(position.y, DODGE_RULES.rows - 1),
         colorIndex: colorIndexOf(state.colorOrder, position.participantId),
+        playerNumber: playerNumberOf(state.colorOrder, position.participantId),
         isSelf: position.participantId === selfParticipantId,
     }))
 }
@@ -237,6 +273,7 @@ export interface DodgeRosterEntry {
     participantId: string
     displayName: string
     colorIndex: number
+    playerNumber: number
     isSelf: boolean
     alive: boolean
 }
@@ -255,10 +292,43 @@ export function toRoster(
         participantId: participant.participantId,
         displayName: participant.displayName,
         colorIndex: colorIndexOf(state.colorOrder, participant.participantId),
+        playerNumber: playerNumberOf(state.colorOrder, participant.participantId),
         isSelf: participant.participantId === selfParticipantId,
         // 프레임을 아직 못 받았으면 아무도 탈락하지 않았다. frameSeen 주석 참고.
         alive: !state.frameSeen || onBoard.has(participant.participantId),
     }))
+}
+
+/**
+ * 격자의 접근성 이름. 프레임을 받기 전에는 인원을 세지 않는다 — positions 가 아직 비어 있어
+ * "생존 0명" 이 되는데, 그것은 눈에 보이는 안내(describeDodgeProgress)와 정반대의 말이다.
+ * 스크린리더 사용자만 다른 사실을 듣게 된다.
+ */
+export function describeGridLabel(state: DodgeRoomState): string {
+    const size = `장애물피하기 격자 ${DODGE_RULES.cols}×${DODGE_RULES.rows}`
+    if (!state.frameSeen) {
+        return `${size} — 첫 프레임을 기다리는 중입니다`
+    }
+    return `${size} — 생존 ${state.positions.length}명, 장애물 ${state.obstacles.length}개`
+}
+
+/**
+ * 한 칸에 여러 명이 겹쳤을 때 가려진 말들을 가리키는 짧은 표시.
+ *
+ * <p>이름을 title 속성에만 두면 터치 기기에서는 영영 보이지 않는다(hover 가 없다) — 방향 패드를
+ * 두는 화면에서 터치를 이류 취급할 수는 없다. 대신 가려진 말의 <b>번호</b>를 직접 그린다.
+ * 번호는 판 아래 대응표에서 이름으로 되짚을 수 있으므로, 칸 하나에 이름을 욱여넣지 않고도
+ * 누가 겹쳐 있는지 알 수 있다.
+ */
+export function describeStackBadge(hiddenPlayerNumbers: number[]): string {
+    if (hiddenPlayerNumbers.length === 0) {
+        return ""
+    }
+    // 12픽셀짜리 칸 귀퉁이에 들어갈 수 있는 것은 두 개까지다. 그 이상은 세어 준다.
+    if (hiddenPlayerNumbers.length > 2) {
+        return `+${hiddenPlayerNumbers.length}명`
+    }
+    return `+${hiddenPlayerNumbers.map((number) => (number > 0 ? `${number}` : "?")).join("·")}`
 }
 
 /**
@@ -340,24 +410,91 @@ export function isTypingElement(
 
 /** 마지막으로 <b>실제로 나간</b> 이동 명령. 보내지 못한 프레임은 여기 기록하지 않는다. */
 export interface SentMove {
-    tick: number
+    /** 보낸 시각(ms). Date.now() 든 performance.now() 든 호출자가 일관되게 주면 된다. */
+    sentAt: number
     direction: DirectionName
 }
 
 /**
- * 같은 틱에 같은 방향을 다시 보낼 필요가 있는가.
- *
- * <p>키를 누르고 있으면 브라우저 자동 반복이 초당 30번쯤 keydown 을 낸다. 서버 틱은 초당
- * 10번이고 참가자당 <b>마지막 입력 하나만</b> 남기므로(DodgeGameSink.onGameCommand 의
- * `buffer.put`), 그 셋 중 둘은 언제나 버려질 프레임이다 — 8명이 동시에 누르면 초당 240 프레임이
- * 소켓으로 나가고 그중 80개만 쓰인다. 틱·방향이 같으면 보내지 않는다.
- *
- * <p><b>중요:</b> 호출자는 `GameSocket.send` 가 seq(숫자)를 돌려줬을 때만 그 값을 기록해야
- * 한다. send 는 소켓이 열려 있지 않으면 프레임을 버리고 `null` 을 돌려주는데, 그것을 "보냈다"
- * 로 기록하면 그 틱 동안 같은 방향이 영영 막힌다 — 재접속 직후 첫 입력이 사라지는 경로다.
+ * 같은 방향을 다시 보내기까지의 최소 간격. 서버 틱(100ms)보다 짧게 잡는다 — 이 값이 틱보다
+ * 길면 어떤 틱은 입력 없이 지나간다.
  */
-export function shouldSendMove(last: SentMove | null, next: SentMove): boolean {
-    return last === null || last.tick !== next.tick || last.direction !== next.direction
+export const MOVE_MIN_INTERVAL_MS = 40
+
+/**
+ * 같은 방향을 다시 보낼 때가 됐는가.
+ *
+ * <p>키를 누르고 있으면 브라우저 자동 반복이 초당 30번쯤 keydown 을 낸다. 서버는 참가자당
+ * <b>마지막 입력 하나만</b> 남기므로(DodgeGameSink.onGameCommand 의 `buffer.put`) 그 대부분은
+ * 어차피 버려진다. 그래도 겹치는 프레임을 조금 줄인다 — 다만 <b>기준은 벽시계 시간이지 틱
+ * 번호가 아니다.</b>
+ *
+ * <p>처음에는 `state.tick` 으로 접었는데 그것은 틀렸다. 틱 번호는 DODGE_TICK 이 도착해야만
+ * 올라가므로, 지터·GC·소켓 배칭으로 프레임 하나가 150ms 늦으면 그 창 동안의 자동 반복이 전부
+ * 눌리고, 서버는 빈 버퍼를 비우며, 키를 누르고 있는데도 말이 한 틱을 제자리에 선다. 100ms 틱
+ * 반사 게임에서 그건 끊김으로 보인다. 시간 기준은 프레임이 늦어도 계속 흐른다.
+ *
+ * <p>방향이 바뀌면 간격과 무관하게 즉시 보낸다. 꺾는 입력을 40ms 늦추는 것이야말로 이 게임에서
+ * 가장 비싼 지연이다.
+ */
+export function shouldSendMove(
+    last: SentMove | null,
+    next: SentMove,
+    minIntervalMs: number = MOVE_MIN_INTERVAL_MS
+): boolean {
+    if (last === null || last.direction !== next.direction) {
+        return true
+    }
+    return next.sentAt - last.sentAt >= minIntervalMs
+}
+
+export interface MoveAttemptInput {
+    state: DodgeRoomState
+    selfParticipantId: string | null
+    socketStatus: SocketStatus
+    /** 지금까지 실제로 나간 마지막 이동. 아직 없으면 null. */
+    lastSent: SentMove | null
+    direction: DirectionName
+    /** 지금 시각(ms). 화면은 Date.now() 를 넘긴다. */
+    now: number
+    /** `GameSocket.send` 를 감싼 것. 소켓이 없거나 닫혀 있으면 null 을 돌려줘야 한다. */
+    send: (direction: DirectionName) => number | null
+}
+
+export interface MoveAttempt {
+    /** 프레임이 실제로 소켓으로 나갔는가. */
+    sent: boolean
+    /** 호출자가 그대로 저장할 새 기록. 나가지 않았으면 이전 기록 그대로다. */
+    lastSent: SentMove | null
+}
+
+/**
+ * 이동 한 번의 <b>전부</b> — 보낼 자격이 있는지, 지금 보내도 되는지, 그리고 결과를 어떻게
+ * 기록할지.
+ *
+ * <p>이 셋을 한 함수로 묶어 둔 이유는 마지막 하나 때문이다. `GameSocket.send` 는 소켓이 열려
+ * 있지 않으면 프레임을 <b>버리고 null 을 돌려준다</b>. 그것을 "보냈다" 로 기록하면 그 뒤
+ * minIntervalMs 동안 같은 방향이 막혀, 재접속 직후의 첫 입력이 조용히 사라진다. 그 판단이
+ * 컴포넌트 안에 있으면 테스트가 닿지 않는다 — 리뷰의 변이(모든 send 를 기록하도록 바꾸기)가
+ * 초록을 유지한 자리가 정확히 거기였다. 그래서 여기로 내렸고, 아래 테스트가 null 경로를 직접
+ * 고정한다. 화면은 돌려받은 lastSent 를 그대로 저장하기만 한다.
+ */
+export function attemptMove(input: MoveAttemptInput): MoveAttempt {
+    if (!canMoveInDodge(input.state, input.selfParticipantId, input.socketStatus)) {
+        return { sent: false, lastSent: input.lastSent }
+    }
+
+    const next: SentMove = { sentAt: input.now, direction: input.direction }
+    if (!shouldSendMove(input.lastSent, next)) {
+        return { sent: false, lastSent: input.lastSent }
+    }
+
+    const seq = input.send(input.direction)
+    // 버려진 프레임은 없던 일이다. 기록을 그대로 두어야 다음 시도가 곧바로 다시 나간다.
+    if (typeof seq !== "number") {
+        return { sent: false, lastSent: input.lastSent }
+    }
+    return { sent: true, lastSent: next }
 }
 
 /**

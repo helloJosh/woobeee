@@ -10,18 +10,19 @@ import DodgeGrid, { DODGE_PLAYER_COLORS } from "@/components/game/dodge-grid"
 import RoomJoinGate from "@/components/game/room-join-gate"
 import RoomSidebar from "@/components/game/room-sidebar"
 import { createGameSocket, type GameSocket, type SocketStatus } from "@/lib/game-socket"
-import { clearStoredGuestToken, readStoredGuestIdentity, roomPath } from "@/lib/game-join"
+import { discardGuestTokenOnRejection, readStoredGuestIdentity, roomPath } from "@/lib/game-join"
 import { describeSocketStatus, isSocketSettled, resolveSelfParticipantId } from "@/lib/game-room"
 import {
+    attemptMove,
     canMoveInDodge,
     describeDodgeOutcome,
     describeDodgeProgress,
+    describeGridLabel,
     directionForKey,
     initialDodgeRoomState,
     isSelfEliminated,
     isTypingElement,
     reduceDodgeRoom,
-    shouldSendMove,
     sortedRanks,
     toGridPlayers,
     toRoster,
@@ -131,17 +132,10 @@ function DodgeRoomScreen() {
         }
     }, [token, roomId, inviteCode])
 
-    /**
-     * 거절당한 게스트 토큰은 버린다. 오목 화면과 같은 이유다 — 게스트 토큰은 6시간 TTL 로
-     * sessionStorage 에 남아 새로고침 복구에 쓰이는데, 그보다 먼저 죽는 경우(방이 정리됐다,
-     * 서버가 재시작해 Redis 항목이 사라졌다)를 알 수 있는 지점은 소켓 JOIN 이 거절되는
-     * 여기뿐이다. 지우지 않으면 새로고침할 때마다 게이트가 죽은 토큰을 다시 꺼내 소켓에
-     * 물리고, 게스트는 닉네임 폼으로 돌아갈 길이 영영 없다.
-     */
+    // 거절당한 게스트 토큰은 버린다. 어떤 상태에서 버려야 하는지는 discardGuestTokenOnRejection
+    // 이 안다(그 판단이 여기 있으면 테스트가 닿지 않는다).
     useEffect(() => {
-        if (socketStatus === "rejected") {
-            clearStoredGuestToken(roomId)
-        }
+        discardGuestTokenOnRejection(roomId, socketStatus)
     }, [socketStatus, roomId])
 
     const selfParticipantId = resolveSelfParticipantId({
@@ -151,26 +145,22 @@ function DodgeRoomScreen() {
     })
 
     /**
-     * 이동 한 번. 키보드와 화면 방향 버튼이 같은 문을 쓴다.
-     *
-     * <p>send 는 소켓이 열려 있지 않으면 프레임을 버리고 null 을 돌려준다. 그 경우를
-     * "보냈다" 로 기록하면 같은 틱 동안 같은 방향이 막혀, 재접속 직후의 첫 입력이 조용히
-     * 사라진다. 숫자를 돌려받았을 때만 기록한다.
+     * 이동 한 번. 키보드와 화면 방향 버튼이 같은 문을 쓴다. 자격·간격·버려진 프레임 판단은
+     * 전부 attemptMove 안에 있다 — 여기서는 결과를 그대로 저장하기만 한다.
      */
     const move = useCallback(
         (direction: DirectionName) => {
-            const snapshot = stateRef.current
-            if (!canMoveInDodge(snapshot, selfParticipantId, socketStatus)) {
-                return
-            }
-            const next: SentMove = { tick: snapshot.tick, direction }
-            if (!shouldSendMove(lastSentMoveRef.current, next)) {
-                return
-            }
-            const seq = socketRef.current?.send("DODGE_MOVE", { direction })
-            if (typeof seq === "number") {
-                lastSentMoveRef.current = next
-            }
+            const attempt = attemptMove({
+                state: stateRef.current,
+                selfParticipantId,
+                socketStatus,
+                lastSent: lastSentMoveRef.current,
+                direction,
+                now: Date.now(),
+                send: (moveDirection) =>
+                    socketRef.current?.send("DODGE_MOVE", { direction: moveDirection }) ?? null,
+            })
+            lastSentMoveRef.current = attempt.lastSent
         },
         [selfParticipantId, socketStatus]
     )
@@ -268,7 +258,11 @@ function DodgeRoomScreen() {
                     </Alert>
                 ) : null}
 
-                <DodgeGrid players={players} obstacles={state.obstacles} />
+                <DodgeGrid
+                    players={players}
+                    obstacles={state.obstacles}
+                    label={describeGridLabel(state)}
+                />
 
                 <div className="flex min-h-5 flex-wrap items-center justify-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
                     {statusLine ? <span>{statusLine}</span> : null}
@@ -296,7 +290,7 @@ function DodgeRoomScreen() {
                                         entry.alive ? "" : "opacity-40",
                                     ].join(" ")}
                                 >
-                                    {entry.colorIndex + 1}
+                                    {entry.playerNumber > 0 ? entry.playerNumber : "?"}
                                 </span>
                                 <span className="max-w-[8rem] truncate">
                                     {entry.displayName}

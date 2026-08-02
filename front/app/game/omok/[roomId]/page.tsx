@@ -10,7 +10,7 @@ import OmokBoard from "@/components/game/omok-board"
 import RoomJoinGate from "@/components/game/room-join-gate"
 import RoomSidebar from "@/components/game/room-sidebar"
 import { createGameSocket, type GameSocket, type SocketStatus } from "@/lib/game-socket"
-import { clearStoredGuestToken, readStoredGuestIdentity, roomPath } from "@/lib/game-join"
+import { discardGuestTokenOnRejection, readStoredGuestIdentity, roomPath } from "@/lib/game-join"
 import {
     OMOK_BOARD_SIZE,
     canPlaceStone,
@@ -117,19 +117,10 @@ function OmokRoomScreen() {
         }
     }, [token, roomId, inviteCode])
 
-    /**
-     * 거절당한 게스트 토큰은 버린다.
-     *
-     * <p>게스트 토큰은 6시간 TTL 로 sessionStorage 에 남아 새로고침 복구에 쓰이는데, 그보다
-     * 먼저 죽는 경우(방이 정리됐다, 서버가 재시작해 Redis 항목이 사라졌다)를 알 수 있는
-     * 지점은 소켓 JOIN 이 거절되는 여기뿐이다 — 게이트는 이미 언마운트된 뒤다. 지우지 않으면
-     * 새로고침할 때마다 게이트가 죽은 토큰을 다시 꺼내 소켓에 물리고, 게스트는 닉네임 폼으로
-     * 돌아갈 길이 영영 없다.
-     */
+    // 거절당한 게스트 토큰은 버린다. 어떤 상태에서 버려야 하는지는 discardGuestTokenOnRejection
+    // 이 안다 — 그 판단이 이 이펙트 안에 있으면 테스트가 닿지 않는다.
     useEffect(() => {
-        if (socketStatus === "rejected") {
-            clearStoredGuestToken(roomId)
-        }
+        discardGuestTokenOnRejection(roomId, socketStatus)
     }, [socketStatus, roomId])
 
     const selfParticipantId = resolveSelfParticipantId({

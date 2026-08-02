@@ -1,15 +1,20 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
     DODGE_PLAYER_COLOR_COUNT,
+    MOVE_MIN_INTERVAL_MS,
     appendColorOrder,
+    attemptMove,
     canMoveInDodge,
     colorIndexOf,
     describeDodgeOutcome,
     describeDodgeProgress,
+    describeGridLabel,
+    describeStackBadge,
     directionForKey,
     initialDodgeRoomState,
     isSelfEliminated,
     isTypingElement,
+    playerNumberOf,
     reduceDodgeRoom,
     shouldSendMove,
     sortedRanks,
@@ -17,6 +22,7 @@ import {
     toRoster,
     type DodgeRoomState,
 } from "./dodge-play"
+import { DODGE_RULES } from "./dodge-engine"
 import type { ServerMessage } from "./game-socket"
 import type { ParticipantView } from "./types"
 
@@ -246,6 +252,22 @@ describe("colour assignment", () => {
         expect(colorIndexOf(order, `p${DODGE_PLAYER_COLOR_COUNT}`)).toBe(0)
         expect(colorIndexOf(order, "nobody")).toBe(0)
     })
+
+    it("does NOT wrap the drawn number — the ninth player must not read as the first", () => {
+        // 정원이 8명이어도 한 방을 거쳐 간 사람은 더 많을 수 있다(한 명 나가고 한 명 들어오기,
+        // sessionStorage 를 잃은 게스트의 새 g:<uuid>). 색은 돌아도 번호는 돌면 안 된다.
+        const order = Array.from({ length: DODGE_PLAYER_COLOR_COUNT + 1 }, (_, i) => `p${i}`)
+        const ninth = `p${DODGE_PLAYER_COLOR_COUNT}`
+
+        expect(colorIndexOf(order, ninth)).toBe(colorIndexOf(order, "p0"))
+        expect(playerNumberOf(order, ninth)).toBe(DODGE_PLAYER_COLOR_COUNT + 1)
+        expect(playerNumberOf(order, "p0")).toBe(1)
+        expect(playerNumberOf(order, ninth)).not.toBe(playerNumberOf(order, "p0"))
+    })
+
+    it("reports 0 for an id it has never assigned, so the screen can say '?' instead of '1'", () => {
+        expect(playerNumberOf(["a"], "nobody")).toBe(0)
+    })
 })
 
 describe("toGridPlayers / toRoster", () => {
@@ -268,6 +290,25 @@ describe("toGridPlayers / toRoster", () => {
     it("falls back to the participant id when the frame arrives before the roster", () => {
         const orphan = apply(initialDodgeRoomState, tickMessage(1, [{ participantId: "g:zzz", x: 0, y: 0 }]))
         expect(toGridPlayers(orphan, null)[0].displayName).toBe("g:zzz")
+    })
+
+    it("clamps an out-of-range position onto the board instead of dropping the marker", () => {
+        // 서버가 오늘은 범위를 지키지만, 어긋난 좌표가 오면 격자는 그 말을 아무 데도 그리지
+        // 않으면서 "생존 N명" 에는 계속 센다 — 조용히 사라지는 것이 가장 나쁜 실패다.
+        const strange = apply(
+            initialDodgeRoomState,
+            roomState([HOST, GUEST]),
+            tickMessage(1, [
+                { participantId: "m:1", x: -3, y: 99 },
+                { participantId: "g:abc", x: 999, y: -1 },
+            ])
+        )
+        const players = toGridPlayers(strange, "m:1")
+
+        expect(players).toHaveLength(2)
+        expect(players[0]).toMatchObject({ x: 0, y: DODGE_RULES.rows - 1 })
+        expect(players[1]).toMatchObject({ x: DODGE_RULES.cols - 1, y: 0 })
+        expect(players.every((p) => Number.isInteger(p.x) && Number.isInteger(p.y))).toBe(true)
     })
 
     it("reports everyone as alive before the first frame and marks the missing ones after", () => {
@@ -372,23 +413,129 @@ describe("keyboard input", () => {
 })
 
 describe("shouldSendMove", () => {
-    it("drops key auto-repeat of the same direction inside one tick", () => {
-        const sent = { tick: 12, direction: "LEFT" } as const
-        expect(shouldSendMove(sent, { tick: 12, direction: "LEFT" })).toBe(false)
+    it("thins auto-repeat of the same direction inside the interval", () => {
+        const sent = { sentAt: 1_000, direction: "LEFT" } as const
+        expect(shouldSendMove(sent, { sentAt: 1_010, direction: "LEFT" })).toBe(false)
+        expect(shouldSendMove(sent, { sentAt: 1_000 + MOVE_MIN_INTERVAL_MS, direction: "LEFT" })).toBe(true)
     })
 
-    it("allows a new tick, a new direction, and the very first move", () => {
-        const sent = { tick: 12, direction: "LEFT" } as const
-        expect(shouldSendMove(sent, { tick: 13, direction: "LEFT" })).toBe(true)
-        expect(shouldSendMove(sent, { tick: 12, direction: "RIGHT" })).toBe(true)
-        expect(shouldSendMove(null, { tick: 12, direction: "LEFT" })).toBe(true)
+    it("lets a direction change through immediately — turning is the reflex that matters", () => {
+        const sent = { sentAt: 1_000, direction: "LEFT" } as const
+        expect(shouldSendMove(sent, { sentAt: 1_001, direction: "RIGHT" })).toBe(true)
     })
 
-    it("keeps letting the same move through while nothing was recorded as sent", () => {
-        // send 가 null 을 돌려준 프레임(소켓이 닫혀 있었다)은 기록되지 않으므로, 다음 시도가
-        // 막히지 않는다는 것이 이 잠금의 유일한 안전 조건이다.
-        expect(shouldSendMove(null, { tick: 12, direction: "LEFT" })).toBe(true)
-        expect(shouldSendMove(null, { tick: 12, direction: "LEFT" })).toBe(true)
+    it("keeps the interval shorter than a server tick so no tick goes unfed", () => {
+        expect(MOVE_MIN_INTERVAL_MS).toBeLessThan(DODGE_RULES.tickMs)
+    })
+
+    it("does not freeze a held key while a frame is late", () => {
+        // 이 케이스가 이 함수를 벽시계 시간에 묶어 두는 이유다. 예전에는 state.tick 으로
+        // 접었는데, 틱 번호는 DODGE_TICK 이 도착해야만 오른다 — 프레임이 150ms 늦으면 그
+        // 창 안의 자동 반복이 전부 눌려 말이 제자리에 선다. 시간은 프레임과 무관하게 흐른다.
+        const sent = { sentAt: 1_000, direction: "LEFT" } as const
+        expect(shouldSendMove(sent, { sentAt: 1_150, direction: "LEFT" })).toBe(true)
+    })
+
+    it("always allows the first move", () => {
+        expect(shouldSendMove(null, { sentAt: 0, direction: "LEFT" })).toBe(true)
+    })
+})
+
+describe("attemptMove", () => {
+    const playing = apply(
+        initialDodgeRoomState,
+        roomState([HOST, GUEST]),
+        { type: "GAME_START", payload: { roomId: "r1" } },
+        tickMessage(1, [
+            { participantId: "m:1", x: 2, y: 15 },
+            { participantId: "g:abc", x: 9, y: 15 },
+        ])
+    )
+
+    function attempt(overrides: Partial<Parameters<typeof attemptMove>[0]> = {}) {
+        const send = overrides.send ?? vi.fn(() => 7)
+        return {
+            send,
+            result: attemptMove({
+                state: playing,
+                selfParticipantId: "m:1",
+                socketStatus: "joined",
+                lastSent: null,
+                direction: "LEFT",
+                now: 1_000,
+                send,
+                ...overrides,
+            }),
+        }
+    }
+
+    it("sends and records when everything is in order", () => {
+        const { send, result } = attempt()
+
+        expect(send).toHaveBeenCalledWith("LEFT")
+        expect(result).toEqual({ sent: true, lastSent: { sentAt: 1_000, direction: "LEFT" } })
+    })
+
+    /**
+     * 이 두 케이스가 이 함수가 존재하는 이유다. GameSocket.send 는 소켓이 열려 있지 않으면
+     * 프레임을 버리고 null 을 돌려준다. 그것을 "보냈다" 로 기록하면 그 뒤 간격 동안 같은
+     * 방향이 막혀 재접속 직후의 첫 입력이 사라진다. 판단이 컴포넌트 안에 있으면 이 단언을
+     * 쓸 수 없다.
+     */
+    it("does not record a dropped frame, so the very next attempt still goes out", () => {
+        const dropped = vi.fn(() => null)
+        const first = attempt({ send: dropped }).result
+
+        expect(first).toEqual({ sent: false, lastSent: null })
+
+        const second = attemptMove({
+            state: playing,
+            selfParticipantId: "m:1",
+            socketStatus: "joined",
+            lastSent: first.lastSent,
+            direction: "LEFT",
+            now: 1_001, // 간격보다 훨씬 짧다. 기록이 남았다면 여기서 막힌다.
+            send: dropped,
+        })
+
+        expect(dropped).toHaveBeenCalledTimes(2)
+        expect(second.sent).toBe(false)
+    })
+
+    it("keeps the previous record when the send is dropped mid-run", () => {
+        const previous = { sentAt: 900, direction: "UP" } as const
+        const { result } = attempt({ send: vi.fn(() => null), lastSent: previous })
+
+        expect(result.lastSent).toBe(previous)
+    })
+
+    it("does not even call send when the gate is shut", () => {
+        const send = vi.fn(() => 7)
+
+        expect(attempt({ send, socketStatus: "open" }).result.sent).toBe(false)
+        expect(attempt({ send, socketStatus: "reconnecting" }).result.sent).toBe(false)
+        expect(attempt({ send, selfParticipantId: null }).result.sent).toBe(false)
+        expect(attempt({ send, state: initialDodgeRoomState }).result.sent).toBe(false)
+        // 탈락자는 관전자다.
+        expect(
+            attempt({
+                send,
+                state: apply(playing, tickMessage(2, [{ participantId: "g:abc", x: 9, y: 14 }])),
+            }).result.sent
+        ).toBe(false)
+        expect(send).not.toHaveBeenCalled()
+    })
+
+    it("does not call send when the interval has not elapsed", () => {
+        const send = vi.fn(() => 7)
+        const { result } = attempt({
+            send,
+            lastSent: { sentAt: 990, direction: "LEFT" },
+            now: 1_000,
+        })
+
+        expect(send).not.toHaveBeenCalled()
+        expect(result.sent).toBe(false)
     })
 })
 
@@ -441,6 +588,29 @@ describe("status text", () => {
         expect(describeDodgeOutcome({ winnerParticipantId: "", ranks: [] }, "m:1")).toBe(
             "게임 종료 — 승자가 없습니다."
         )
+    })
+
+    it("does not let the grid's accessible name count survivors before the first frame", () => {
+        const justStarted = apply(
+            initialDodgeRoomState,
+            roomState([HOST, GUEST]),
+            { type: "GAME_START", payload: { roomId: "r1" } }
+        )
+
+        // 눈에 보이는 안내는 "기다리는 중" 인데 스크린리더만 "생존 0명" 을 듣는 일이 없어야 한다.
+        expect(describeGridLabel(justStarted)).not.toContain("생존")
+        expect(describeGridLabel(playing)).toContain("생존 2명")
+        expect(describeGridLabel(playing)).toContain(`${DODGE_RULES.cols}×${DODGE_RULES.rows}`)
+    })
+
+    it("draws hidden stack mates as numbers, which touch devices can actually see", () => {
+        // title 속성은 hover 가 없는 기기에서 영영 보이지 않는다. 번호는 판 아래 대응표로
+        // 이름까지 되짚을 수 있다.
+        expect(describeStackBadge([])).toBe("")
+        expect(describeStackBadge([5])).toBe("+5")
+        expect(describeStackBadge([5, 7])).toBe("+5·7")
+        expect(describeStackBadge([1, 2, 3])).toBe("+3명")
+        expect(describeStackBadge([0])).toBe("+?")
     })
 
     it("sorts the rank table by rank without mutating the payload", () => {

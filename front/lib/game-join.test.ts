@@ -25,12 +25,14 @@ import {
     clearStoredGuestToken,
     decideJoinGate,
     describeJoinBlock,
+    discardGuestTokenOnRejection,
     joinRoomAsGuest,
     readStoredGuestIdentity,
     readStoredGuestToken,
     storeGuestToken,
     type JoinGateInput,
 } from "./game-join"
+import type { SocketStatus } from "./game-socket"
 
 // ---------------------------------------------------------------------------
 // sessionStorage 스텁. jsdom 을 끌어오지 않는 이유는 이 모듈이 브라우저에 기대는 것이
@@ -197,6 +199,37 @@ describe("guest token storage", () => {
         storeGuestToken("R1", "tok-1", "g:aaa")
         clearStoredGuestToken("R1")
         expect(readStoredGuestToken("R1")).toBeNull()
+    })
+
+    /**
+     * 두 게임 화면이 소켓 상태 이펙트에서 부르는 문. 조건이 이펙트 안에 있으면 테스트가 닿지
+     * 않아, "closed 에서도 지운다" 같은 변경이 아무 테스트도 깨뜨리지 않은 채 들어온다 —
+     * 그러면 잠깐 끊긴 게스트가 재접속할 자리를 잃는다.
+     */
+    it("discards the token only when the server rejected the join", () => {
+        storeGuestToken("R1", "tok-1", "g:aaa")
+
+        expect(discardGuestTokenOnRejection("R1", "rejected")).toBe(true)
+        expect(readStoredGuestToken("R1")).toBeNull()
+    })
+
+    it("keeps the token for every status that is not a rejection", () => {
+        const survives: SocketStatus[] = ["connecting", "open", "joined", "reconnecting", "closed"]
+
+        for (const status of survives) {
+            storeGuestToken("R1", "tok-1", "g:aaa")
+            expect(discardGuestTokenOnRejection("R1", status)).toBe(false)
+            expect(readStoredGuestToken("R1")).toBe("tok-1")
+        }
+    })
+
+    it("only touches the rejected room", () => {
+        storeGuestToken("R1", "tok-1", "g:aaa")
+        storeGuestToken("R2", "tok-2", "g:bbb")
+
+        discardGuestTokenOnRejection("R1", "rejected")
+
+        expect(readStoredGuestToken("R2")).toBe("tok-2")
     })
 
     it("expires the entry at exactly the server TTL and removes it", () => {
