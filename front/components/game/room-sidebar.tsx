@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Check, Copy, Crown, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { canStartRoom, copyTextToClipboard, isRoomHost } from "@/lib/room-sidebar"
 import type { ParticipantView, RoomStatus } from "@/lib/types"
 
 interface RoomSidebarProps {
@@ -25,15 +26,30 @@ export default function RoomSidebar({
     onStart,
 }: RoomSidebarProps) {
     const [copied, setCopied] = useState(false)
+    const copiedTimeoutRef = useRef<number | null>(null)
+
+    useEffect(() => {
+        return () => {
+            if (copiedTimeoutRef.current !== null) {
+                window.clearTimeout(copiedTimeoutRef.current)
+            }
+        }
+    }, [])
 
     const self = participants.find((p) => p.participantId === selfParticipantId)
-    const isHost = selfParticipantId !== null && selfParticipantId === hostParticipantId
-    const everyoneReady = participants.length >= 2 && participants.every((p) => p.ready)
+    const isHost = isRoomHost(selfParticipantId, hostParticipantId)
+    const everyoneReady = canStartRoom(participants)
 
     const copyInvite = async () => {
-        await navigator.clipboard.writeText(inviteUrl)
+        const success = await copyTextToClipboard(inviteUrl)
+        if (!success) {
+            return
+        }
         setCopied(true)
-        window.setTimeout(() => setCopied(false), 1500)
+        if (copiedTimeoutRef.current !== null) {
+            window.clearTimeout(copiedTimeoutRef.current)
+        }
+        copiedTimeoutRef.current = window.setTimeout(() => setCopied(false), 1500)
     }
 
     return (
@@ -54,35 +70,41 @@ export default function RoomSidebar({
 
             <div className="space-y-2">
                 <h2 className="text-sm font-medium">참가자 ({participants.length})</h2>
-                <ul className="space-y-1">
-                    {participants.map((participant) => (
-                        <li
-                            key={participant.participantId}
-                            className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-                        >
-                            <span className="flex min-w-0 items-center gap-1.5">
-                                {participant.participantId === hostParticipantId ? (
-                                    <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                                ) : null}
-                                <span className="truncate">{participant.displayName}</span>
-                                {participant.connection === "DISCONNECTED" ? (
-                                    <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                ) : null}
-                            </span>
-                            {status === "WAITING" ? (
-                                <span
-                                    className={
-                                        participant.ready
-                                            ? "text-xs text-emerald-600"
-                                            : "text-xs text-muted-foreground"
-                                    }
-                                >
-                                    {participant.ready ? "준비" : "대기"}
+                {participants.length === 0 ? (
+                    <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                        아직 참가자가 없습니다.
+                    </p>
+                ) : (
+                    <ul className="space-y-1">
+                        {participants.map((participant) => (
+                            <li
+                                key={participant.participantId}
+                                className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                            >
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                    {participant.participantId === hostParticipantId ? (
+                                        <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                                    ) : null}
+                                    <span className="truncate">{participant.displayName}</span>
+                                    {participant.connection === "DISCONNECTED" ? (
+                                        <WifiOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                    ) : null}
                                 </span>
-                            ) : null}
-                        </li>
-                    ))}
-                </ul>
+                                {status === "WAITING" ? (
+                                    <span
+                                        className={
+                                            participant.ready
+                                                ? "text-xs text-emerald-600"
+                                                : "text-xs text-muted-foreground"
+                                        }
+                                    >
+                                        {participant.ready ? "준비" : "대기"}
+                                    </span>
+                                ) : null}
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
 
             {status === "WAITING" ? (
