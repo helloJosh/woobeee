@@ -289,9 +289,14 @@ export function isServerMessage<T extends ServerMessageType>(
  * - `rejected`    참가가 확정되기 전에 서버가 정상 종료(1000)로 세션을 닫았다. 종단 상태
  * - `closed`      호출자가 닫았거나, 재시도를 다 썼거나, 참가 이후 서버가 정상 종료했다. 종단 상태
  *
- * `open` 과 `joined` 를 나눈 이유: 서버는 JOIN 을 거절할 때 메시지를 보내지 않고 그냥 세션을
- * 닫는다(GameWebSocketHandler:145, :162, :164). 그래서 "핸드셰이크됨" 을 "참가됨" 으로 쓰면
- * 화면이 왕복 하나만큼 이르게 입력을 열고, 거절당한 재접속을 성공으로 착각한다.
+ * `open` 과 `joined` 를 나눈 이유: 핸드셰이크는 언제나 성공하므로 "핸드셰이크됨" 을 "참가됨" 으로
+ * 쓰면 화면이 왕복 하나만큼 이르게 입력을 열고, 거절당한 재접속을 성공으로 착각한다. JOIN 확정
+ * 신호는 첫 ROOM_STATE 다.
+ *
+ * <p>`rejected` 에는 이유가 따라온다 — 서버는 참가를 거절할 때 세션을 닫기 직전에 코드가 실린
+ * ERROR 프레임을 그 세션에 직접 써 준다(GameWebSocketHandler.rejectWithReason). 토큰 인증
+ * 실패와 방의 거절(틀린 초대 코드·정원 초과·이미 시작) 둘 다 그렇다. 그 코드가
+ * `onStatusChange` 의 두 번째 인자로 온다.
  */
 export type SocketStatus =
     | "connecting"
@@ -311,7 +316,12 @@ export interface GameSocketOptions {
      */
     token: string | (() => string)
     onMessage: (message: ServerMessage) => void
-    onStatusChange?: (status: SocketStatus) => void
+    /**
+     * @param errorCode `rejected` 일 때만, 그리고 서버가 이유를 보내 준 경우에만 채워진다.
+     *   `game_*` 문자열이므로 `getFriendlyErrorMessage(errorCode)` 로 문구를 만든다.
+     *   프레임이 오기 전에 연결이 끊기면 없을 수 있으니 폴백 문구를 준비해 둘 것.
+     */
+    onStatusChange?: (status: SocketStatus, errorCode?: string) => void
 }
 
 export interface GameSocket {
@@ -382,14 +392,14 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
     let retryTimer: ReturnType<typeof setTimeout> | undefined
 
     /** 종단 상태는 한 번만 알린다 — 나중의 close() 가 rejected 를 closed 로 덮어쓰지 않게. */
-    const setStatus = (status: SocketStatus) => {
+    const setStatus = (status: SocketStatus, errorCode?: string) => {
         if (settled) {
             return
         }
         if (status === "closed" || status === "rejected") {
             settled = true
         }
-        options.onStatusChange?.(status)
+        options.onStatusChange?.(status, errorCode)
     }
 
     const resolveToken = (): string =>
@@ -417,6 +427,8 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
 
         // 이 연결에서 서버가 참가를 확정했는지. 확정 전까지는 재시도 카운터를 되돌리지 않는다.
         let joinConfirmed = false
+        // 참가 확정 전에 받은 ERROR 의 코드. 서버가 거절 직전에 보내 주는 그 프레임이다.
+        let rejectionCode: string | undefined
 
         current.onopen = () => {
             // 여기서 retries 를 0 으로 되돌리면 안 된다. 핸드셰이크는 언제나 성공하므로
@@ -452,6 +464,12 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
                 setStatus("joined")
             }
 
+            // 참가가 확정되기 전의 ERROR 는 거절 사유다. 곧바로 onclose 가 이어지므로
+            // 여기서 붙잡아 두었다가 rejected 와 함께 올려 보낸다.
+            if (!joinConfirmed && isServerMessage(message, "ERROR")) {
+                rejectionCode = message.payload.code
+            }
+
             options.onMessage(message)
         }
 
@@ -464,11 +482,11 @@ export function createGameSocket(options: GameSocketOptions): GameSocket {
             }
 
             if (!shouldReconnect(event.code, retries)) {
-                // 참가가 확정되기 전의 정상 종료는 서버의 거절이다 — 왜인지는 알 수 없다.
-                // 서버는 그 ERROR 를 방 허브로 보내는데, 거절당한 세션은 아직 그 허브를
-                // 구독하지 않았기 때문이다(GameWebSocketHandler:158). 상태만 구분해 준다.
+                // 참가가 확정되기 전의 정상 종료는 서버의 거절이다. 이유는 닫히기 직전에
+                // 이 세션에 직접 온 ERROR 프레임에 실려 있다(방 허브가 아니라 — 이 세션은
+                // 아직 허브를 구독하지 않았다). 그 코드를 상태와 함께 올려 보낸다.
                 const rejected = !joinConfirmed && event.code === NORMAL_CLOSURE
-                setStatus(rejected ? "rejected" : "closed")
+                setStatus(rejected ? "rejected" : "closed", rejected ? rejectionCode : undefined)
                 return
             }
 

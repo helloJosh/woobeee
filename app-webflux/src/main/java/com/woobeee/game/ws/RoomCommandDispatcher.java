@@ -35,15 +35,21 @@ public class RoomCommandDispatcher {
      * roomId/inviteCode 3인자 버전. 검증이 끝난 뒤 별도로 할 일이 없는 호출자(테스트 등)를 위한
      * 편의 오버로드다.
      */
-    public boolean join(String roomId, String inviteCode, GameParticipant participant) {
+    public Optional<GameErrorCode> join(String roomId, String inviteCode, GameParticipant participant) {
         return join(roomId, inviteCode, participant, () -> { });
     }
 
     /**
-     * 방 참가를 검증하고 확정한다. 성공/실패를 boolean 으로 돌려준다 — {@link GameWebSocketHandler}
-     * 는 이 값을 보고서야 세션을 "참가함" 상태로 만들어야 한다(C2). 검증(초대 코드, 정원, 진행 상태)
-     * 전에 세션을 허브에 구독시키면, 유효한 토큰이지만 틀린 초대 코드를 댄 참가자가 다른 참가자의
-     * ROOM_STATE 를 계속 엿듣게 된다.
+     * 방 참가를 검증하고 확정한다. 성공이면 빈 {@link Optional}, 거절이면 그 이유를 돌려준다 —
+     * {@link GameWebSocketHandler} 는 이 값을 보고서야 세션을 "참가함" 상태로 만들어야 한다(C2).
+     * 검증(초대 코드, 정원, 진행 상태) 전에 세션을 허브에 구독시키면, 유효한 토큰이지만 틀린 초대
+     * 코드를 댄 참가자가 다른 참가자의 ROOM_STATE 를 계속 엿듣게 된다.
+     *
+     * <p><b>거절을 방에 브로드캐스트하지 않는다</b> — 다른 명령들과 다른 점이다. 거절당한 사람은
+     * 아직 이 방 사람이 아니므로 그의 실패는 방의 일이 아니고, 무엇보다 그 세션은 아직 허브를
+     * 구독하지 않았으므로 브로드캐스트는 정작 당사자에게 닿지 않는다 — 남들만 남의 실패를
+     * 받아 보게 된다. 그래서 이유를 호출자에게 돌려주고, 호출자가 그 세션에 직접 써 준다
+     * ({@code GameWebSocketHandler.rejectWithReason}).
      *
      * <p>{@code onValidated} 는 참가가 실제로 확정된 직후, 이 참가에 대한 ROOM_STATE 를 방에
      * 브로드캐스트하기 직전에 불린다. 호출자는 여기서 허브 구독을 열어 자신의 참가로 인한
@@ -54,8 +60,13 @@ public class RoomCommandDispatcher {
      * 지킨 채 빈 화면만 보게 된다. 그래서 ROOM_STATE 뒤에 싱크의 {@code onRejoin} 을 불러
      * GAME_SNAPSHOT 을 내보낸다. 최초 참가는 따라잡을 상태가 없으므로 부르지 않는다.
      */
-    public boolean join(String roomId, String inviteCode, GameParticipant participant, Runnable onValidated) {
-        return guard(roomId, null, () -> {
+    public Optional<GameErrorCode> join(
+            String roomId,
+            String inviteCode,
+            GameParticipant participant,
+            Runnable onValidated
+    ) {
+        return attempt(() -> {
             RoomService.JoinOutcome outcome = roomService.join(roomId, inviteCode, participant);
             Room room = outcome.room();
             onValidated.run();
@@ -152,18 +163,30 @@ public class RoomCommandDispatcher {
         roomHub.broadcast(room.roomId(), ServerMessage.of("ROOM_STATE", RoomStateProjector.project(room)));
     }
 
-    /** @return true면 action이 예외 없이 끝났다는 뜻이다. false면 ERROR로 흡수됐다는 뜻이다. */
-    private boolean guard(String roomId, Long ackSeq, Runnable action) {
+    /**
+     * action 을 돌리고 실패하면 그 이유를 코드로 돌려준다. 아무 데도 알리지 않는다 — 알릴 곳을
+     * 고르는 것은 호출자의 몫이다. 방에 알려야 하는 명령은 {@link #guard}, 거절당한 세션에게만
+     * 알려야 하는 참가는 {@link #join} 이 쓴다.
+     *
+     * @return 성공이면 빈 Optional, 실패면 그 이유
+     */
+    private Optional<GameErrorCode> attempt(Runnable action) {
         try {
             action.run();
-            return true;
+            return Optional.empty();
         } catch (ResponseStatusException exception) {
-            roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.from(exception)));
-            return false;
+            return Optional.of(GameErrorCode.of(exception));
         } catch (RuntimeException exception) {
-            // 예외 메시지는 싣지 않는다 — HTTP catch-all 과 같은 규칙이다.
-            roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.of(GameErrorCode.UNEXPECTED)));
-            return false;
+            // 예외 메시지는 밖으로 내보내지 않는다 — HTTP catch-all 과 같은 규칙이다.
+            return Optional.of(GameErrorCode.UNEXPECTED);
         }
+    }
+
+    /** @return true면 action이 예외 없이 끝났다는 뜻이다. false면 ERROR로 흡수돼 방에 나갔다는 뜻이다. */
+    private boolean guard(String roomId, Long ackSeq, Runnable action) {
+        Optional<GameErrorCode> failure = attempt(action);
+        failure.ifPresent(errorCode ->
+                roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.of(errorCode))));
+        return failure.isEmpty();
     }
 }

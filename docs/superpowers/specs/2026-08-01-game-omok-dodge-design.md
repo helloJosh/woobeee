@@ -243,7 +243,7 @@ TTL   방 수명과 동일 (기본 6시간, 방 소멸 시 삭제)
 | `OMOK_REJECTED` | `ackSeq`, `reason` | 금수·차례아님·이미 놓인 자리 |
 | `DODGE_TICK` | `tick`, `positions[]`, `obstacles[]`, `eliminated[]` | 매 틱, 방 전체에 |
 | `GAME_END` | `winnerParticipantId`, `ranks[]` | 종료 시 |
-| `ERROR` | `ackSeq`, `status`, `code`, `message` | 처리 실패. `code` 는 HTTP 봉투와 같은 `game_*` 문자열이고(같은 `GameErrorCode` 카탈로그), 숫자 상태는 `status` 다. 참가 인증에 실패한 세션에는 소켓을 닫기 직전에 이 프레임을 직접 한 번 써 준다 — 그 세션은 아직 방 허브를 구독하지 않아 브로드캐스트가 닿지 않는다 |
+| `ERROR` | `ackSeq`, `status`, `code`, `message` | 처리 실패. `code` 는 HTTP 봉투와 같은 `game_*` 문자열이고(같은 `GameErrorCode` 카탈로그), 숫자 상태는 `status` 다. 참가가 거절된 세션에는 소켓을 닫기 직전에 이 프레임을 직접 한 번 써 준다(토큰 인증 실패와 방의 거절 둘 다) — 그 세션은 아직 방 허브를 구독하지 않아 브로드캐스트가 닿지 않는다. 그래서 참가 거절만은 방에 브로드캐스트하지 않고 이유를 호출자에게 돌려준다 |
 
 `GAME_END` 에 `gameResultId` 를 싣지 않는다. 결과 id 는 DB 기록과 기보 업로드가 끝나야 나오는데,
 업로드가 느리거나 타임아웃 나는 동안 플레이어가 승패를 못 보는 편이 훨씬 나쁘다. 종료는 즉시

@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,13 +72,17 @@ class GameWebSocketHandlerTest {
                 .thenAnswer(invocation -> {
                     Runnable onValidated = invocation.getArgument(3);
                     onValidated.run();
-                    return true;
+                    return Optional.empty();
                 });
     }
 
     private void stubJoinFails() {
+        stubJoinRejects(GameErrorCode.ROOM_FULL);
+    }
+
+    private void stubJoinRejects(GameErrorCode errorCode) {
         when(dispatcher.join(anyString(), anyString(), any(GameParticipant.class), any(Runnable.class)))
-                .thenReturn(false);
+                .thenReturn(Optional.of(errorCode));
     }
 
     private WebSocketSession sessionEmitting(String... payloads) {
@@ -151,6 +156,49 @@ class GameWebSocketHandlerTest {
     }
 
     /**
+     * 순서를 기록하는 세션. {@code send} 는 넘어온 publisher 를 실제로 구독해 나간 프레임을,
+     * {@code close} 는 구독 시점에 CLOSE 를 같은 로그에 남긴다. 그래서 "닫기 전에 보냈는가"를
+     * 내용이 아니라 <b>순서</b>로 검사할 수 있다.
+     */
+    private WebSocketSession loggingSession(List<String> log, String... payloads) {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("session-1");
+        when(session.receive()).thenReturn(Flux.fromArray(payloads).map(payload -> {
+            WebSocketMessage message = mock(WebSocketMessage.class);
+            when(message.getPayloadAsText()).thenReturn(payload);
+            return message;
+        }));
+        when(session.textMessage(anyString())).thenAnswer(invocation -> {
+            WebSocketMessage message = mock(WebSocketMessage.class);
+            when(message.getPayloadAsText()).thenReturn(invocation.getArgument(0));
+            return message;
+        });
+        when(session.send(any())).thenAnswer(invocation -> {
+            Publisher<WebSocketMessage> messages = invocation.getArgument(0);
+            return Flux.from(messages)
+                    .doOnNext(message -> log.add("SEND " + message.getPayloadAsText()))
+                    .then();
+        });
+        when(session.close()).thenAnswer(invocation -> Mono.<Void>fromRunnable(() -> log.add("CLOSE")));
+        return session;
+    }
+
+    private static void assertRejectedWith(List<String> log, GameErrorCode expected) {
+        assertThat(log).isNotEmpty();
+        int frame = -1;
+        for (int i = 0; i < log.size(); i++) {
+            if (log.get(i).startsWith("SEND ") && log.get(i).contains("\"type\":\"ERROR\"")) {
+                frame = i;
+                break;
+            }
+        }
+        assertThat(frame).as("an ERROR frame must be written to the rejected session").isNotNegative();
+        assertThat(log.get(frame)).contains(expected.code());
+        // 순서가 요점이다: close().then(send(...)) 로 바꿔치기하면 여기서 깨져야 한다.
+        assertThat(log.indexOf("CLOSE")).as("CLOSE must come after the ERROR frame").isGreaterThan(frame);
+    }
+
+    /**
      * GAME-AC-28 — 인증 실패는 세션을 닫기 <b>전에</b> 이유를 알려 준다.
      *
      * <p>이 세션은 아직 방 허브를 구독하지 않았으므로(허브 구독은 dispatcher.join 이 통과한
@@ -163,34 +211,35 @@ class GameWebSocketHandlerTest {
         when(authenticator.authenticate(eq("room-1"), eq("tok")))
                 .thenReturn(Mono.error(GameErrorCode.INVALID_GAME_TOKEN.asException()));
 
-        List<String> sent = new CopyOnWriteArrayList<>();
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("session-1");
-        when(session.receive()).thenReturn(Flux.just(
-                        "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}")
-                .map(payload -> {
-                    WebSocketMessage message = mock(WebSocketMessage.class);
-                    when(message.getPayloadAsText()).thenReturn(payload);
-                    return message;
-                }));
-        when(session.textMessage(anyString())).thenAnswer(invocation -> {
-            sent.add(invocation.getArgument(0));
-            return mock(WebSocketMessage.class);
-        });
-        when(session.send(any())).thenAnswer(invocation -> {
-            Publisher<WebSocketMessage> messages = invocation.getArgument(0);
-            return Flux.from(messages).then();
-        });
-        when(session.close()).thenReturn(Mono.empty());
+        List<String> log = new CopyOnWriteArrayList<>();
+        WebSocketSession session = loggingSession(log,
+                "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}");
 
         handler.handle(session).subscribe();
 
-        assertThat(sent).anySatisfy(text -> {
-            assertThat(text).contains("\"type\":\"ERROR\"");
-            assertThat(text).contains(GameErrorCode.INVALID_GAME_TOKEN.code());
-        });
-        verify(session).close();
+        assertRejectedWith(log, GameErrorCode.INVALID_GAME_TOKEN);
         verify(dispatcher, never()).join(anyString(), anyString(), any(), any());
+    }
+
+    /**
+     * GAME-AC-28 — 토큰은 멀쩡한데 방이 거절한 경우(틀린 초대 코드, 정원 초과, 이미 시작)도
+     * 같다. 이쪽이 오히려 더 흔하다 — 게이트가 방 요약을 읽은 뒤 마지막 자리가 차는 경합이
+     * 여기로 온다. 예전에는 이 경로가 아무것도 보내지 않고 닫았고, 그 사이 ERROR 는 방 허브로
+     * 나가 <b>다른 참가자들만</b> 받았다.
+     */
+    @Test
+    void aJoinRejectedByTheRoomAlsoSendsACodedErrorFrameBeforeClosing() {
+        when(authenticator.authenticate(eq("room-1"), eq("tok")))
+                .thenReturn(Mono.just(GameParticipant.guest("a", "손님")));
+        stubJoinRejects(GameErrorCode.ROOM_FULL);
+
+        List<String> log = new CopyOnWriteArrayList<>();
+        WebSocketSession session = loggingSession(log,
+                "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}");
+
+        handler.handle(session).subscribe();
+
+        assertRejectedWith(log, GameErrorCode.ROOM_FULL);
     }
 
     /** GAME-AC-08 */

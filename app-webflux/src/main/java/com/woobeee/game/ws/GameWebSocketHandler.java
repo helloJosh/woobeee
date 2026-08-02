@@ -14,6 +14,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -152,40 +153,48 @@ public class GameWebSocketHandler implements WebSocketHandler {
                     // 상태로 만들거나 허브에 구독시키면(C2), 유효한 토큰이지만 틀린 초대 코드를
                     // 댄 참가자가 다른 참가자들의 ROOM_STATE 를 계속 엿듣게 된다 — join 이
                     // 실패해도 state 가 non-null 이라 JOIN 데드라인도 더 이상 이 세션을 닫지
-                    // 않는다. 그래서 성공/실패를 boolean 으로 돌려받아, 실패하면 아무것도
-                    // 구독시키지 않고 세션을 닫는다.
+                    // 않는다. 그래서 거절 이유를 Optional 로 돌려받아, 거절이면 아무것도
+                    // 구독시키지 않고 이유를 써 준 뒤 세션을 닫는다.
                     //
                     // 구독은 onValidated 콜백으로 넘긴다 — dispatcher.join 이 참가를 확정한
                     // 직후, 그 참가에 대한 ROOM_STATE 를 브로드캐스트하기 직전에 불리므로
                     // 이 세션도 자신의 참가로 인한 ROOM_STATE 를 받는다.
-                    boolean joined = dispatcher.join(roomId, inviteCode, participant, () -> {
-                        state.set(new SessionState(roomId, participant.participantId()));
-                        joinedRoomId.tryEmitValue(roomId);
-                    });
-                    return joined ? Mono.<Void>empty() : session.close();
+                    Optional<GameErrorCode> rejection =
+                            dispatcher.join(roomId, inviteCode, participant, () -> {
+                                state.set(new SessionState(roomId, participant.participantId()));
+                                joinedRoomId.tryEmitValue(roomId);
+                            });
+                    return rejection
+                            .map(errorCode -> rejectWithReason(session, errorCode))
+                            .orElseGet(Mono::empty);
                 })
-                .onErrorResume(error -> rejectWithReason(session, error))
+                .onErrorResume(error -> rejectWithReason(session, codeOf(error)))
                 .then();
     }
 
+    private static GameErrorCode codeOf(Throwable error) {
+        return error instanceof ResponseStatusException statusException
+                ? GameErrorCode.of(statusException)
+                : GameErrorCode.UNEXPECTED;
+    }
+
     /**
-     * 인증 실패를 알린 뒤 세션을 닫는다.
+     * 거절 이유를 알린 뒤 세션을 닫는다. 참가가 막히는 두 갈래 — 토큰 인증 실패와, 토큰은
+     * 멀쩡한데 방이 거절한 경우(틀린 초대 코드·정원 초과·이미 시작) — 가 모두 여기로 온다.
      *
      * <p>이 세션은 아직 방 허브를 구독하지 않았다 — 구독은 {@code dispatcher.join} 이 통과한
-     * 뒤에야 일어난다. 그래서 {@code RoomCommandDispatcher.guard} 가 허브로 내보내는 ERROR 는
-     * 이 세션에 절대 닿지 않는다. 프레임을 세션에 <b>직접</b> 써야 하는 것은 그래서다. 이게
-     * 없으면 게스트 토큰이 만료된 사람에게 소켓이 조용히 닫히기만 하고, 화면은 왜 거절됐는지
-     * 말해 줄 방법이 없다.
+     * 뒤에야 일어난다. 그래서 허브로 나가는 ERROR 브로드캐스트는 이 세션에 절대 닿지 않는다.
+     * 프레임을 세션에 <b>직접</b> 써야 하는 것은 그래서다. 이게 없으면 소켓이 조용히 닫히기만
+     * 하고 화면은 왜 거절됐는지 말해 줄 방법이 없다. 방이 거절한 쪽은 예전에 더 나빴다 —
+     * 그 ERROR 가 방 허브로 나가 <b>다른 참가자들만</b> 남의 실패를 받아 봤다. 그래서
+     * {@code dispatcher.join} 은 이제 방에 알리지 않고 이유만 돌려준다.
      *
      * <p>여기서 {@code session.send} 를 한 번 더 부르는 것이 바깥의 outbound 스트림과 겹치지
      * 않는 이유: outbound 는 {@code joinedRoomId} 가 값을 낼 때까지 아무것도 쓰지 않는데,
-     * 참가에 실패한 이 경로에서는 그 값이 영영 오지 않는다. 쓰는 쪽은 이 프레임 하나뿐이다.
+     * 그 값은 {@code onValidated} 안에서만 나오고 참가에 실패한 이 두 경로는 그 콜백에 닿지
+     * 못한다. 쓰는 쪽은 이 프레임 하나뿐이다.
      */
-    private Mono<Void> rejectWithReason(WebSocketSession session, Throwable error) {
-        GameErrorCode errorCode = error instanceof ResponseStatusException statusException
-                ? GameErrorCode.of(statusException)
-                : GameErrorCode.UNEXPECTED;
-
+    private Mono<Void> rejectWithReason(WebSocketSession session, GameErrorCode errorCode) {
         String frame = toTextMessage(ServerMessage.of("ERROR", ErrorPayload.of(errorCode)));
         return session.send(Mono.just(session.textMessage(frame)))
                 .onErrorResume(ignored -> Mono.empty())

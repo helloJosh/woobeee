@@ -125,6 +125,29 @@ class RoomCommandDispatcherTest {
                 .verifyComplete();
     }
 
+    /**
+     * GAME-AC-28 — 거절당한 참가 시도는 <b>방에 알리지 않는다</b>. 거절당한 사람은 아직 방
+     * 사람이 아니므로 그 실패는 방의 일이 아니고, 무엇보다 그 세션은 아직 허브를 구독하지
+     * 않아 브로드캐스트가 정작 당사자에게는 닿지 않는다 — 남들만 남의 실패를 구경하게 된다.
+     * 대신 이유를 호출자에게 돌려주고, 호출자가 그 세션에 직접 써 준다.
+     */
+    @Test
+    void aRejectedJoinTellsTheCallerWhyAndDoesNotBotherTheRoom() {
+        StepVerifier.create(hub.subscribe("room-1"))
+                .expectSubscription()
+                .then(() -> assertThat(dispatcher.join("room-1", "WRONG", GUEST))
+                        .contains(GameErrorCode.INVALID_INVITE_CODE))
+                .expectNoEvent(Duration.ofMillis(200))
+                .thenCancel()
+                .verify(Duration.ofSeconds(5));
+    }
+
+    /** GAME-AC-28 — 성공한 참가는 아무 이유도 돌려주지 않는다. */
+    @Test
+    void anAcceptedJoinReportsNoReason() {
+        assertThat(dispatcher.join("room-1", "code", GUEST)).isEmpty();
+    }
+
     @Test
     void aFailedCommandEmitsErrorToTheHubInsteadOfThrowing() {
         StepVerifier.create(hub.subscribe("room-1").take(1))
