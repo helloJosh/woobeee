@@ -55,6 +55,10 @@ function fallbackCopyToClipboard(text: string): boolean {
     if (typeof document === "undefined") {
         return false
     }
+    // select() 는 포커스를 가져간다. 복사 후 원래 있던 곳으로 돌려놓지 않으면 키보드로
+    // 조작하던 사용자가 위치를 잃는다. position:fixed 라 문서 높이는 늘지 않으므로
+    // 스크롤은 건드리지 않는다.
+    const previouslyFocused = document.activeElement as HTMLElement | null
     const textarea = document.createElement("textarea")
     textarea.value = text
     textarea.style.position = "fixed"
@@ -68,5 +72,6 @@ function fallbackCopyToClipboard(text: string): boolean {
         return false
     } finally {
         document.body.removeChild(textarea)
+        previouslyFocused?.focus?.()
     }
 }

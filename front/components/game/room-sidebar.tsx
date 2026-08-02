@@ -26,6 +26,7 @@ export default function RoomSidebar({
     onStart,
 }: RoomSidebarProps) {
     const [copied, setCopied] = useState(false)
+    const [copyFailed, setCopyFailed] = useState(false)
     const copiedTimeoutRef = useRef<number | null>(null)
 
     useEffect(() => {
@@ -42,6 +43,9 @@ export default function RoomSidebar({
 
     const copyInvite = async () => {
         const success = await copyTextToClipboard(inviteUrl)
+        // 두 경로가 모두 실패하면 아무 표시도 없는 것이 가장 나쁘다 — 위 입력칸에서
+        // 직접 복사하면 된다고 알려준다.
+        setCopyFailed(!success)
         if (!success) {
             return
         }
@@ -66,6 +70,11 @@ export default function RoomSidebar({
                         {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                     </Button>
                 </div>
+                {copyFailed ? (
+                    <p className="text-xs text-destructive">
+                        자동 복사에 실패했습니다. 위 주소를 직접 선택해 복사해 주세요.
+                    </p>
+                ) : null}
             </div>
 
             <div className="space-y-2">
