@@ -35,8 +35,19 @@ class RoomCommandDispatcherTest {
     private RoomCommandDispatcher dispatcher;
     private Room room;
 
+    /**
+     * 명령을 낸 세션 하나에게만 가는 프레임. 실제 서버에서는
+     * {@code GameWebSocketHandler} 가 세션마다 두는 {@code Sinks.Many} 다.
+     *
+     * <p>이 목록과 {@link #hub} 를 나란히 보는 것이 I2 테스트의 요점이다: 어떤 실패가 어디로
+     * 가는지를 <b>양쪽에서</b> 확인하지 않으면, 여전히 방 전체로 나가고 있어도 통과한다.
+     */
+    private final List<ServerMessage> personal = new CopyOnWriteArrayList<>();
+    private final SessionChannel caller = personal::add;
+
     @BeforeEach
     void setUp() {
+        personal.clear();
         GameIdGenerator ids = new GameIdGenerator() {
             @Override
             public String nextRoomId() {
@@ -83,7 +94,7 @@ class RoomCommandDispatcherTest {
         dispatcher.join("room-1", "code", GUEST);
 
         StepVerifier.create(hub.subscribe("room-1").take(1))
-                .then(() -> dispatcher.ready("room-1", GUEST.participantId(), true))
+                .then(() -> dispatcher.ready("room-1", GUEST.participantId(), true, caller))
                 .assertNext(message -> {
                     RoomStatePayload payload = (RoomStatePayload) message.payload();
                     assertThat(payload.participants().get(1).ready()).isTrue();
@@ -110,11 +121,11 @@ class RoomCommandDispatcherTest {
     @Test
     void startWithNoRegisteredSinkStillFlipsRoomStatusAndAnnouncesGameStart() {
         dispatcher.join("room-1", "code", GUEST);
-        dispatcher.ready("room-1", HOST.participantId(), true);
-        dispatcher.ready("room-1", GUEST.participantId(), true);
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
 
         StepVerifier.create(hub.subscribe("room-1").take(2))
-                .then(() -> dispatcher.start("room-1", HOST.participantId()))
+                .then(() -> dispatcher.start("room-1", HOST.participantId(), caller))
                 .expectNextMatches(message -> message.type().equals("ROOM_STATE"))
                 .expectNextMatches(message -> message.type().equals("GAME_START"))
                 .verifyComplete();
@@ -149,12 +160,13 @@ class RoomCommandDispatcherTest {
                     .isEmpty();
 
             // 대조군: 같은 구독자가 실제 브로드캐스트는 받는다는 것을 보인다. 이게 없으면
-            // 위의 isEmpty() 는 구독이 아예 붙지 않아도 통과한다.
-            dispatcher.start("room-1", GUEST.participantId());
+            // 위의 isEmpty() 는 구독이 아예 붙지 않아도 통과한다. 성공한 ready 의
+            // ROOM_STATE 를 쓴다 — 실패한 명령의 ERROR 는 이제 방으로 가지 않는다(I2).
+            dispatcher.ready("room-1", HOST.participantId(), true, caller);
             assertThat(broadcasts)
                     .as("the collector really is wired to this room")
                     .hasSize(1);
-            assertThat(broadcasts.getFirst().type()).isEqualTo("ERROR");
+            assertThat(broadcasts.getFirst().type()).isEqualTo("ROOM_STATE");
         } finally {
             subscription.dispose();
         }
@@ -167,11 +179,10 @@ class RoomCommandDispatcherTest {
     }
 
     @Test
-    void aFailedCommandEmitsErrorToTheHubInsteadOfThrowing() {
-        StepVerifier.create(hub.subscribe("room-1").take(1))
-                .then(() -> dispatcher.start("room-1", HOST.participantId()))
-                .assertNext(message -> assertThat(message.type()).isEqualTo("ERROR"))
-                .verifyComplete();
+    void aFailedCommandEmitsErrorToTheCallerInsteadOfThrowing() {
+        dispatcher.start("room-1", HOST.participantId(), caller);
+
+        assertThat(personal).extracting(ServerMessage::type).containsExactly("ERROR");
     }
 
     /**
@@ -180,16 +191,97 @@ class RoomCommandDispatcherTest {
      */
     @Test
     void aFailedCommandCarriesTheErrorCodeNotJustAMessage() {
-        StepVerifier.create(hub.subscribe("room-1").take(1))
-                .then(() -> dispatcher.start("room-1", HOST.participantId()))
-                .assertNext(message -> {
-                    assertThat(message.type()).isEqualTo("ERROR");
-                    ErrorPayload payload = (ErrorPayload) message.payload();
-                    assertThat(payload.code()).isEqualTo(GameErrorCode.NOT_ENOUGH_PLAYERS.code());
-                    assertThat(payload.status()).isEqualTo(409);
-                })
-                .expectComplete()
-                .verify(Duration.ofSeconds(2));
+        dispatcher.start("room-1", HOST.participantId(), caller);
+
+        assertThat(personal).hasSize(1);
+        ErrorPayload payload = (ErrorPayload) personal.getFirst().payload();
+        assertThat(payload.code()).isEqualTo(GameErrorCode.NOT_ENOUGH_PLAYERS.code());
+        assertThat(payload.status()).isEqualTo(409);
+    }
+
+    /**
+     * I2 — 방 안의 실패는 <b>그것을 낸 세션</b>에게만 간다.
+     *
+     * <p>예전에는 {@code guard} 가 무조건 허브로 흘려보냈다. 그래서 방장이 아닌 사람이 START
+     * 를 한 번 누르면 "방장만 게임을 시작할 수 있습니다" 가 여덟 명 화면에 전부 떴다 — 정작
+     * 방장에게도. {@code ackSeq} 로는 갈라낼 수 없다: seq 는 클라이언트마다 1부터 세므로 서로
+     * 겹친다.
+     *
+     * <p>여기서 방 구독자를 실제로 붙여 두고 <b>아무것도 오지 않는 것</b>까지 확인한다.
+     * {@code personal} 만 보면, 양쪽으로 다 보내는 구현도 통과한다.
+     */
+    @Test
+    void aStartRefusedBecauseTheCallerIsNotTheHostReachesOnlyThatCaller() {
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
+        personal.clear();
+
+        List<ServerMessage> broadcasts = new CopyOnWriteArrayList<>();
+        Disposable subscription = hub.subscribe("room-1").subscribe(broadcasts::add);
+
+        try {
+            dispatcher.start("room-1", GUEST.participantId(), caller);
+
+            assertThat(personal).hasSize(1);
+            assertThat(((ErrorPayload) personal.getFirst().payload()).code())
+                    .isEqualTo(GameErrorCode.NOT_HOST.code());
+            assertThat(broadcasts)
+                    .as("the room must not be told why one player's START failed")
+                    .isEmpty();
+        } finally {
+            subscription.dispose();
+        }
+    }
+
+    /** I2 — 준비 토글의 실패도 같다. 방이 알 이유가 없다. */
+    @Test
+    void aReadyRefusedForANonMemberReachesOnlyThatCaller() {
+        List<ServerMessage> broadcasts = new CopyOnWriteArrayList<>();
+        Disposable subscription = hub.subscribe("room-1").subscribe(broadcasts::add);
+
+        try {
+            dispatcher.ready("room-1", "not-a-member", true, caller);
+
+            assertThat(personal).hasSize(1);
+            assertThat(((ErrorPayload) personal.getFirst().payload()).code())
+                    .isEqualTo(GameErrorCode.NOT_A_MEMBER.code());
+            assertThat(broadcasts).isEmpty();
+        } finally {
+            subscription.dispose();
+        }
+    }
+
+    /**
+     * I2 의 경계 — {@link RoomCommandDispatcher#join} 이 입장 확정 전후를 가르는 것과 같은
+     * 구분이다. {@code roomService.start} 가 통과한 뒤에 실패하면 방은 이미 IN_PROGRESS 로
+     * 넘어갔고 그 ROOM_STATE 가 방에 나갔다. 그런데 게임은 시작되지 않았다 — 전원이
+     * "시작됐다고 들었는데 아무것도 오지 않는" 상태다. 그건 진짜 방의 소식이므로 허브로 간다.
+     */
+    @Test
+    void aStartThatFailsAfterTheRoomFlippedIsRoomNewsNotACallerError() {
+        List<String> log = new ArrayList<>();
+        RecordingSink sink = new RecordingSink(GameType.OMOK, log);
+        sink.throwOnStart = true;
+        dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
+        dispatcher.join("room-1", "code", GUEST);
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
+        personal.clear();
+
+        List<ServerMessage> broadcasts = new CopyOnWriteArrayList<>();
+        Disposable subscription = hub.subscribe("room-1").subscribe(broadcasts::add);
+
+        try {
+            dispatcher.start("room-1", HOST.participantId(), caller);
+
+            assertThat(personal)
+                    .as("the room already flipped, so this is not 'your START was refused'")
+                    .isEmpty();
+            assertThat(broadcasts).extracting(ServerMessage::type).contains("ERROR");
+        } finally {
+            subscription.dispose();
+        }
     }
 
     /**
@@ -226,16 +318,15 @@ class RoomCommandDispatcherTest {
         RecordingSink sink = new RecordingSink(GameType.OMOK, log);
         dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
 
-        StepVerifier.create(hub.subscribe("room-1").take(1))
-                .then(() -> dispatcher.gameCommand("room-1", "not-a-member",
-                        new ClientMessage("OMOK_PLACE", 7L, null)))
-                .assertNext(message -> {
-                    ErrorPayload payload = (ErrorPayload) message.payload();
-                    assertThat(payload.code()).isEqualTo(GameErrorCode.NOT_A_MEMBER.code());
-                    assertThat(payload.status()).isEqualTo(403);
-                })
-                .expectComplete()
-                .verify(Duration.ofSeconds(2));
+        dispatcher.gameCommand("room-1", "not-a-member",
+                new ClientMessage("OMOK_PLACE", 7L, null), caller);
+
+        assertThat(personal).hasSize(1);
+        ErrorPayload payload = (ErrorPayload) personal.getFirst().payload();
+        assertThat(payload.code()).isEqualTo(GameErrorCode.NOT_A_MEMBER.code());
+        assertThat(payload.status()).isEqualTo(403);
+        // ackSeq 는 그대로 실려야 한다 — 화면이 "내가 낸 명령의 응답" 을 알아보는 근거다.
+        assertThat(personal.getFirst().ackSeq()).isEqualTo(7L);
     }
 
     @Test
@@ -279,12 +370,12 @@ class RoomCommandDispatcherTest {
         RecordingSink sink = new RecordingSink(GameType.OMOK, log);
         dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
         dispatcher.join("room-1", "code", GUEST);
-        dispatcher.ready("room-1", HOST.participantId(), true);
-        dispatcher.ready("room-1", GUEST.participantId(), true);
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
 
         hub.subscribe("room-1").take(2).subscribe(message -> log.add(message.type()));
 
-        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.start("room-1", HOST.participantId(), caller);
 
         assertThat(log).containsExactly("ROOM_STATE", "onStart", "GAME_START");
     }
@@ -300,9 +391,9 @@ class RoomCommandDispatcherTest {
         RecordingSink sink = new RecordingSink(GameType.OMOK, log);
         dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
         dispatcher.join("room-1", "code", GUEST);
-        dispatcher.ready("room-1", HOST.participantId(), true);
-        dispatcher.ready("room-1", GUEST.participantId(), true);
-        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
+        dispatcher.start("room-1", HOST.participantId(), caller);
         dispatcher.disconnected("room-1", GUEST.participantId());
         log.clear();
 
@@ -345,9 +436,9 @@ class RoomCommandDispatcherTest {
         RecordingSink sink = new RecordingSink(GameType.OMOK, log);
         dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
         dispatcher.join("room-1", "code", GUEST);
-        dispatcher.ready("room-1", HOST.participantId(), true);
-        dispatcher.ready("room-1", GUEST.participantId(), true);
-        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
+        dispatcher.start("room-1", HOST.participantId(), caller);
         dispatcher.disconnected("room-1", GUEST.participantId());
         log.clear();
 
@@ -369,13 +460,10 @@ class RoomCommandDispatcherTest {
         RecordingSink sink = new RecordingSink(GameType.OMOK, log);
         dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
 
-        StepVerifier.create(hub.subscribe("room-1").take(1))
-                .then(() -> dispatcher.gameCommand("room-1", "not-a-member",
-                        new ClientMessage("OMOK_PLACE", 7L, null)))
-                .assertNext(message -> assertThat(message.type()).isEqualTo("ERROR"))
-                .expectComplete()
-                .verify(Duration.ofSeconds(2));
+        dispatcher.gameCommand("room-1", "not-a-member",
+                new ClientMessage("OMOK_PLACE", 7L, null), caller);
 
+        assertThat(personal).extracting(ServerMessage::type).containsExactly("ERROR");
         assertThat(log).isEmpty();
     }
 
@@ -394,9 +482,9 @@ class RoomCommandDispatcherTest {
         RecordingSink sink = new RecordingSink(GameType.OMOK, log);
         dispatcher = new RoomCommandDispatcher(roomService, hub, List.of(sink));
         dispatcher.join("room-1", "code", GUEST);
-        dispatcher.ready("room-1", HOST.participantId(), true);
-        dispatcher.ready("room-1", GUEST.participantId(), true);
-        dispatcher.start("room-1", HOST.participantId());
+        dispatcher.ready("room-1", HOST.participantId(), true, caller);
+        dispatcher.ready("room-1", GUEST.participantId(), true, caller);
+        dispatcher.start("room-1", HOST.participantId(), caller);
         dispatcher.disconnected("room-1", GUEST.participantId());
         sink.throwOnRejoin = true;
 
@@ -439,6 +527,7 @@ class RoomCommandDispatcherTest {
         private final List<String> log;
         boolean throwOnParticipantGone = false;
         boolean throwOnRejoin = false;
+        boolean throwOnStart = false;
 
         RecordingSink(GameType gameType, List<String> log) {
             this.gameType = gameType;
@@ -453,6 +542,9 @@ class RoomCommandDispatcherTest {
         @Override
         public void onStart(Room room) {
             log.add("onStart");
+            if (throwOnStart) {
+                throw new IllegalStateException("boom");
+            }
         }
 
         @Override

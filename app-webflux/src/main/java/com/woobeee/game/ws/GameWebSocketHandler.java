@@ -2,11 +2,14 @@ package com.woobeee.game.ws;
 
 import com.woobeee.game.api.error.GameErrorCode;
 import com.woobeee.game.ws.payload.ErrorPayload;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.reactive.socket.WebSocketHandler;
 import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
@@ -24,6 +27,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * 메시지로 받는다. 쿼리 파라미터로 받지 않는 이유는 URL 이 접근 로그에 남기 때문이다.
  */
 public class GameWebSocketHandler implements WebSocketHandler {
+    private static final Logger log = LoggerFactory.getLogger(GameWebSocketHandler.class);
+
     private final JoinAuthenticator joinAuthenticator;
     private final RoomCommandDispatcher dispatcher;
     private final RoomHub roomHub;
@@ -59,6 +64,18 @@ public class GameWebSocketHandler implements WebSocketHandler {
         // 아무 메시지도 나가지 않는다. 그래서 방 id 를 Sinks.One 으로 늦게 넘긴다.
         Sinks.One<String> joinedRoomId = Sinks.one();
 
+        // 이 세션에게만 가는 프레임(명령 실패 사유). 허브 구독과 **합쳐서** 하나의 send 에
+        // 물린다 — 세션에 직접 쓰면 outbound 가 이미 흐르는 중이라 writer 가 둘이 된다.
+        // unicast 는 구독 전에 낸 것도 버퍼에 담아 두므로, JOIN 직후의 프레임도 잃지 않는다.
+        Sinks.Many<ServerMessage> personal = Sinks.many().unicast().onBackpressureBuffer();
+        SessionChannel caller = message -> {
+            Sinks.EmitResult result = personal.tryEmitNext(message);
+            if (result != Sinks.EmitResult.OK) {
+                log.warn("Direct send to session {} failed with type={} result={}",
+                        session.getId(), message.type(), result);
+            }
+        };
+
         Disposable joinTimer = Mono.delay(joinDeadline, timerScheduler)
                 .filter(ignored -> state.get() == null)
                 .flatMap(ignored -> session.close())
@@ -66,12 +83,16 @@ public class GameWebSocketHandler implements WebSocketHandler {
 
         Mono<Void> inbound = session.receive()
                 .map(WebSocketMessage::getPayloadAsText)
-                .concatMap(text -> handleText(session, state, joinedRoomId, text))
-                .then();
+                .concatMap(text -> handleText(session, state, joinedRoomId, caller, text))
+                .then()
+                // 받을 것이 끝났으면 이 세션에게 더 보낼 것도 없다. 완료시키지 않으면
+                // 아래 merge 가 끝나지 않는다.
+                .doFinally(signal -> personal.tryEmitComplete());
 
         Mono<Void> outbound = session.send(
-                joinedRoomId.asMono()
-                        .flatMapMany(roomHub::subscribe)
+                Flux.merge(
+                                joinedRoomId.asMono().flatMapMany(roomHub::subscribe),
+                                personal.asFlux())
                         .map(this::toTextMessage)
                         .map(session::textMessage)
         );
@@ -94,6 +115,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
             WebSocketSession session,
             AtomicReference<SessionState> state,
             Sinks.One<String> joinedRoomId,
+            SessionChannel caller,
             String text
     ) {
         ClientMessage message = parse(text);
@@ -117,13 +139,14 @@ public class GameWebSocketHandler implements WebSocketHandler {
             case "READY" -> dispatcher.ready(
                     joined.roomId(),
                     joined.participantId(),
-                    message.payload() != null && message.payload().path("ready").asBoolean(false)
+                    message.payload() != null && message.payload().path("ready").asBoolean(false),
+                    caller
             );
-            case "START" -> dispatcher.start(joined.roomId(), joined.participantId());
+            case "START" -> dispatcher.start(joined.roomId(), joined.participantId(), caller);
             case "JOIN" -> {
                 // 이미 참가한 세션의 중복 JOIN 은 무시한다.
             }
-            default -> dispatcher.gameCommand(joined.roomId(), joined.participantId(), message);
+            default -> dispatcher.gameCommand(joined.roomId(), joined.participantId(), message, caller);
         }
         return Mono.empty();
     }

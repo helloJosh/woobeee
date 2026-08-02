@@ -288,8 +288,8 @@ class GameWebSocketHandlerTest {
 
         handler.handle(session).subscribe();
 
-        verify(dispatcher).ready("room-1", "m:11", true);
-        verify(dispatcher).start("room-1", "m:11");
+        verify(dispatcher).ready(eq("room-1"), eq("m:11"), eq(true), any(SessionChannel.class));
+        verify(dispatcher).start(eq("room-1"), eq("m:11"), any(SessionChannel.class));
     }
 
     @Test
@@ -303,7 +303,7 @@ class GameWebSocketHandlerTest {
 
         handler.handle(session).subscribe();
 
-        verify(dispatcher).gameCommand(eq("room-1"), eq("m:11"), any(ClientMessage.class));
+        verify(dispatcher).gameCommand(eq("room-1"), eq("m:11"), any(ClientMessage.class), any(SessionChannel.class));
     }
 
     /**
@@ -425,12 +425,96 @@ class GameWebSocketHandlerTest {
         verify(session, times(2)).close();
     }
 
+    /**
+     * I2 — 명령 실패는 그 세션에게만, 그리고 <b>outbound 스트림 하나를 통해</b> 나간다.
+     *
+     * <p>두 가지를 함께 본다.
+     * <ol>
+     *   <li>ERROR 가 그 세션에 실제로 도착한다. 세션마다 두는 {@code Sinks.Many} 를 허브
+     *       구독과 합쳐 두지 않으면 아무 데도 가지 않는다.
+     *   <li>{@code session.send} 는 정확히 한 번만 불린다. 참가 거절({@code rejectWithReason})
+     *       처럼 세션에 직접 쓰면 여기서 두 번이 되고, 그것이 곧 살아 있는 outbound 와 경합하는
+     *       두 번째 writer 다 — 참가 거절 쪽은 outbound 가 아직 흐르지 않는 시점이라 안전하지만
+     *       이 경로는 그렇지 않다.
+     * </ol>
+     *
+     * <p>방을 함께 보고 있는 다른 구독자에게는 가지 않는 것까지 확인한다. 그것이 원래의 결함이다:
+     * 방장이 아닌 사람의 START 실패가 여덟 명 화면에 전부 떴다.
+     */
+    @Test
+    void aFailedCommandReachesOnlyThatSessionAndOnlyThroughTheOutboundStream() {
+        GameIdGenerator ids = new GameIdGenerator() {
+            @Override
+            public String nextRoomId() {
+                return "room-1";
+            }
+
+            @Override
+            public String nextInviteCode() {
+                return "code";
+            }
+
+            @Override
+            public String nextGuestId() {
+                return "guest-1";
+            }
+
+            @Override
+            public int nextSeed() {
+                return 42;
+            }
+        };
+        RoomRegistry registry =
+                new RoomRegistry(ids, Clock.fixed(Instant.parse("2026-08-01T00:00:00Z"), ZoneOffset.UTC));
+        RoomService roomService = new RoomService(registry);
+        RoomHub realHub = new RoomHub();
+        RoomCommandDispatcher realDispatcher = new RoomCommandDispatcher(roomService, realHub, List.of());
+        roomService.create(GameType.OMOK, GameParticipant.member(11L, "host"));
+
+        GameWebSocketHandler realHandler = new GameWebSocketHandler(
+                authenticator,
+                realDispatcher,
+                realHub,
+                new ObjectMapper(),
+                Duration.ofSeconds(10),
+                Duration.ofSeconds(30),
+                scheduler
+        );
+
+        when(authenticator.authenticate(eq("room-1"), eq("tok")))
+                .thenReturn(Mono.just(GameParticipant.member(11L, "host")));
+
+        // 방을 함께 보고 있는 다른 사람. 이 세션의 실패는 여기 닿으면 안 된다.
+        List<ServerMessage> otherPlayer = new CopyOnWriteArrayList<>();
+        realHub.subscribe("room-1").subscribe(otherPlayer::add);
+
+        List<String> log = new CopyOnWriteArrayList<>();
+        WebSocketSession session = loggingSession(log,
+                "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}",
+                // 방에 혼자이므로 NOT_ENOUGH_PLAYERS 로 거절된다.
+                "{\"type\":\"START\",\"seq\":2}");
+
+        realHandler.handle(session).subscribe();
+
+        assertThat(log)
+                .as("the caller must be told why its START failed")
+                .anySatisfy(entry -> assertThat(entry)
+                        .contains("\"type\":\"ERROR\"")
+                        .contains(GameErrorCode.NOT_ENOUGH_PLAYERS.code()));
+        assertThat(otherPlayer)
+                .as("the room must not see one player's command failure")
+                .extracting(ServerMessage::type)
+                .containsOnly("ROOM_STATE");
+        verify(session, times(1)).send(any());
+    }
+
     @Test
     void messagesBeforeJoinAreIgnored() {
         WebSocketSession session = sessionEmitting("{\"type\":\"READY\",\"seq\":1,\"payload\":{\"ready\":true}}");
 
         handler.handle(session).subscribe();
 
-        verify(dispatcher, never()).ready(anyString(), anyString(), org.mockito.ArgumentMatchers.anyBoolean());
+        verify(dispatcher, never())
+                .ready(anyString(), anyString(), org.mockito.ArgumentMatchers.anyBoolean(), any());
     }
 }

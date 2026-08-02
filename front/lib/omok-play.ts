@@ -218,11 +218,14 @@ function applyServerMessage(state: OmokRoomState, message: ServerMessage): OmokR
             ...state,
             notice: getFriendlyErrorMessage(message.payload.code),
             // ERROR 도 내 착수에 대한 응답일 수 있다 — RoomCommandDispatcher.gameCommand 는
-            // guard(roomId, message.seq(), ...) 로 감싸여 있어 실패하면 그 명령의 seq 가
-            // ackSeq 로 돌아온다. 여기서 비워 두지 않으면 응답을 이미 받은 seq 가 영영 남고,
-            // seq 는 클라이언트마다 따로 0 부터 세므로 나중에 상대의 OMOK_PLACE 가 같은 값을
-            // 쓰는 순간 상대의 금수 안내가 내 화면에 뜬다 — pendingPlaceSeq 가 막으려던 바로
-            // 그 일이다. 내 것이 아닌 ERROR 는 대기 중인 seq 를 건드리지 않는다.
+            // guard(caller, message.seq(), ...) 로 감싸여 있어 실패하면 그 명령의 seq 가
+            // ackSeq 로 돌아온다. 여기서 비워 두지 않으면 응답을 이미 받은 seq 가 영영 남는다.
+            //
+            // ackSeq 를 대조하는 이유는 seq 겹침 때문이 아니다. 서버는 이제 명령 실패를 그
+            // 명령을 낸 세션에게만 보내므로(SessionChannel) 남의 seq 가 여기 올 일은 없다.
+            // 그래도 방 전체에 가는 ERROR 는 여전히 있고(이탈 정리 실패, 시작 후 사고),
+            // 그런 프레임에는 ackSeq 가 없다 — 대조 없이 비우면 그것들이 대기 중인 착수의
+            // 잠금을 임의로 풀어 버린다.
             pendingPlaceSeq: message.ackSeq === state.pendingPlaceSeq ? null : state.pendingPlaceSeq,
         }
     }

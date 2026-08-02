@@ -98,16 +98,48 @@ public class RoomCommandDispatcher {
         return failure;
     }
 
-    public void ready(String roomId, String participantId, boolean ready) {
-        guard(roomId, null, () -> broadcastRoomState(roomService.setReady(roomId, participantId, ready)));
+    /**
+     * 실패는 {@code caller} 에게만 간다. 준비 토글이 거절되는 이유(방이 없다, 이 방의 멤버가
+     * 아니다)는 전부 그 사람 사정이고, 방 사람들이 알아야 할 일은 성공했을 때의 ROOM_STATE 뿐이다.
+     */
+    public void ready(String roomId, String participantId, boolean ready, SessionChannel caller) {
+        guard(caller, null, () -> broadcastRoomState(roomService.setReady(roomId, participantId, ready)));
     }
 
-    public void start(String roomId, String participantId) {
-        guard(roomId, null, () -> {
+    /**
+     * 시작 시도. <b>실패의 목적지가 두 곳</b>이라는 점이 다른 명령과 다르다 — {@link #join} 이
+     * 입장 확정 전후를 가르는 것과 같은 이유다.
+     *
+     * <p>{@code roomService.start} 가 던진 것(방장이 아니다, 인원이 모자란다, 아직 준비가 안
+     * 됐다)은 방 상태를 하나도 건드리지 않은 채 거절된 것이므로 누른 사람에게만 간다. 예전에는
+     * 이것이 방 전체로 나가, 방장이 아닌 사람이 START 를 누르면 여덟 명 화면에 전부
+     * "방장만 게임을 시작할 수 있습니다" 가 떴다.
+     *
+     * <p>그러나 {@code start} 가 통과한 뒤의 실패는 다르다. 그 시점에 방은 이미 IN_PROGRESS 로
+     * 넘어갔고 그 사실이 ROOM_STATE 로 방에 나갔다 — 그다음 {@code sink.onStart} 나 GAME_START
+     * 방송이 실패하면 <b>모두가</b> "시작됐다고 들었는데 게임이 오지 않는" 상태에 놓인다.
+     * 그건 진짜로 방의 소식이므로 허브로 보낸다.
+     */
+    public void start(String roomId, String participantId, SessionChannel caller) {
+        AtomicBoolean started = new AtomicBoolean(false);
+
+        Optional<GameErrorCode> failure = attempt(() -> {
             Room room = roomService.start(roomId, participantId);
+            // 상태 전환은 여기서 끝났다. 이 뒤의 실패는 더 이상 "네 START 가 거절됐다" 가 아니다.
+            started.set(true);
+
             broadcastRoomState(room);
             Optional.ofNullable(sinks.get(room.gameType())).ifPresent(sink -> sink.onStart(room));
             roomHub.broadcast(roomId, ServerMessage.of("GAME_START", Map.of("roomId", roomId)));
+        });
+
+        failure.ifPresent(errorCode -> {
+            ServerMessage message = ServerMessage.of("ERROR", ErrorPayload.of(errorCode));
+            if (started.get()) {
+                roomHub.broadcast(roomId, message);
+            } else {
+                caller.send(message);
+            }
         });
     }
 
@@ -116,8 +148,8 @@ public class RoomCommandDispatcher {
      * 코드가 틀려 join 이 실패한 세션이라도(혹은 애초에 이 방에 들어온 적 없는 세션이라도)
      * roomId 만 알면 게임 명령을 sink 까지 흘려보낼 수 있었다. 여기서 먼저 멤버십을 확인한다.
      */
-    public void gameCommand(String roomId, String participantId, ClientMessage message) {
-        guard(roomId, message.seq(), () -> {
+    public void gameCommand(String roomId, String participantId, ClientMessage message, SessionChannel caller) {
+        guard(caller, message.seq(), () -> {
             Room room = roomService.requireRoomById(roomId);
             if (room.member(participantId).isEmpty()) {
                 throw GameErrorCode.NOT_A_MEMBER.asException();
@@ -135,12 +167,20 @@ public class RoomCommandDispatcher {
         roomService.findRoom(roomId).ifPresent(this::broadcastRoomState);
     }
 
+    /**
+     * 이탈 정리의 실패는 계속 방으로 간다 — 여기에는 알릴 세션이 없다. 유예 만료 타이머가
+     * 부르는 시점에 그 소켓은 이미 사라진 뒤이고, 무엇보다 {@link #settle} 이 실패했다는 것은
+     * 방의 명단·방장·게임 상태가 어긋났을 수 있다는 뜻이라 실제로 방의 소식이다.
+     */
     public void confirmLeave(String roomId, String participantId) {
-        guard(roomId, null, () -> settle(roomId, participantId, () -> roomService.confirmLeave(roomId, participantId)));
+        guard(roomHubChannel(roomId), null,
+                () -> settle(roomId, participantId, () -> roomService.confirmLeave(roomId, participantId)));
     }
 
+    /** {@link #confirmLeave} 와 같다. 명시적 LEAVE 를 낸 세션은 곧바로 닫히는 중이다. */
     public void leaveNow(String roomId, String participantId) {
-        guard(roomId, null, () -> settle(roomId, participantId, () -> roomService.leaveNow(roomId, participantId)));
+        guard(roomHubChannel(roomId), null,
+                () -> settle(roomId, participantId, () -> roomService.leaveNow(roomId, participantId)));
     }
 
     /**
@@ -201,9 +241,19 @@ public class RoomCommandDispatcher {
         }
     }
 
-    /** action 을 돌리고, 실패하면 그 이유를 ERROR 로 방에 흘려보낸다. */
-    private void guard(String roomId, Long ackSeq, Runnable action) {
+    /**
+     * action 을 돌리고, 실패하면 그 이유를 ERROR 로 {@code destination} 에 흘려보낸다.
+     *
+     * <p>목적지를 인자로 받는 것이 핵심이다. 예전에는 언제나 방 허브였고, 그래서 한 사람의
+     * 실패가 방 전체의 배너가 됐다.
+     */
+    private void guard(SessionChannel destination, Long ackSeq, Runnable action) {
         attempt(action).ifPresent(errorCode ->
-                roomHub.broadcast(roomId, ServerMessage.ack("ERROR", ackSeq, ErrorPayload.of(errorCode))));
+                destination.send(ServerMessage.ack("ERROR", ackSeq, ErrorPayload.of(errorCode))));
+    }
+
+    /** 방 전체가 목적지인 경우. 알릴 세션이 없는 이탈 정리 경로만 쓴다. */
+    private SessionChannel roomHubChannel(String roomId) {
+        return message -> roomHub.broadcast(roomId, message);
     }
 }
