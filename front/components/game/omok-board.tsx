@@ -37,67 +37,70 @@ export default function OmokBoard({ size, placements, disabled, onPlace }: OmokB
 
     return (
         <div className="aspect-square w-full max-w-[min(100%,80vh)]">
-            <div className="relative h-full w-full rounded-md border bg-amber-50 p-2 dark:bg-amber-950/30">
-                <svg
-                    aria-hidden
-                    className="pointer-events-none absolute inset-2 text-amber-900/50 dark:text-amber-200/40"
-                    width="100%"
-                    height="100%"
-                    viewBox={`0 0 ${size} ${size}`}
-                    preserveAspectRatio="none"
-                >
-                    {lineOffsets.map((offset) => (
-                        <g key={offset} stroke="currentColor" strokeWidth={0.06}>
-                            <line x1={offset} y1={0.5} x2={offset} y2={size - 0.5} />
-                            <line x1={0.5} y1={offset} x2={size - 0.5} y2={offset} />
-                        </g>
-                    ))}
-                    {starPoints.map(([x, y]) => (
-                        <circle key={`${x}-${y}`} cx={x + 0.5} cy={y + 0.5} r={0.13} fill="currentColor" />
-                    ))}
-                </svg>
-                <div
-                    className="relative grid h-full w-full"
-                    style={{
-                        gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
-                        // 행도 함께 고정한다. auto 로 두면 빈 칸의 높이가 내용에 맞춰져
-                        // 판이 컨테이너 높이를 채우지 못하는 브라우저가 생긴다.
-                        gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`,
-                    }}
-                >
-                    {Array.from({ length: size * size }, (_, index) => {
-                        const x = index % size
-                        const y = Math.floor(index / size)
-                        const stone = stoneAt.get(`${x},${y}`)
-                        const isLastMove = lastMove !== null && lastMove.x === x && lastMove.y === y
+            <div className="h-full w-full rounded-md border bg-amber-50 p-2 dark:bg-amber-950/30">
+                {/* 패딩 없는 래퍼 하나가 SVG(선)와 버튼 격자에 정확히 같은 박스를 준다.
+                    SVG 를 패딩 있는 컨테이너에 absolute 로 띄우면 width:100% 가 패딩 박스
+                    기준으로 잡혀 격자보다 크게 늘어나고, 선과 돌이 반 칸씩 어긋난다. */}
+                <div className="relative h-full w-full">
+                    <svg
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 h-full w-full text-amber-900/50 dark:text-amber-200/40"
+                        viewBox={`0 0 ${size} ${size}`}
+                        preserveAspectRatio="none"
+                    >
+                        {lineOffsets.map((offset) => (
+                            <g key={offset} stroke="currentColor" strokeWidth={0.06}>
+                                <line x1={offset} y1={0.5} x2={offset} y2={size - 0.5} />
+                                <line x1={0.5} y1={offset} x2={size - 0.5} y2={offset} />
+                            </g>
+                        ))}
+                        {starPoints.map(([x, y]) => (
+                            <circle key={`${x}-${y}`} cx={x + 0.5} cy={y + 0.5} r={0.13} fill="currentColor" />
+                        ))}
+                    </svg>
+                    <div
+                        className="relative grid h-full w-full"
+                        style={{
+                            gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
+                            // 행도 함께 고정한다. auto 로 두면 빈 칸의 높이가 내용에 맞춰져
+                            // 판이 컨테이너 높이를 채우지 못하는 브라우저가 생긴다.
+                            gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`,
+                        }}
+                    >
+                        {Array.from({ length: size * size }, (_, index) => {
+                            const x = index % size
+                            const y = Math.floor(index / size)
+                            const stone = stoneAt.get(`${x},${y}`)
+                            const isLastMove = lastMove !== null && lastMove.x === x && lastMove.y === y
 
-                        return (
-                            <button
-                                key={index}
-                                type="button"
-                                disabled={disabled || stone !== undefined}
-                                onClick={() => onPlace(x, y)}
-                                aria-label={`${x + 1}, ${y + 1}`}
-                                className="relative flex items-center justify-center disabled:cursor-default"
-                            >
-                                {stone ? (
-                                    <span
-                                        className={
-                                            stone === "BLACK"
-                                                ? "block h-[85%] w-[85%] rounded-full bg-neutral-900 shadow-sm"
-                                                : "block h-[85%] w-[85%] rounded-full border border-neutral-400 bg-white shadow-sm"
-                                        }
-                                    />
-                                ) : null}
-                                {isLastMove ? (
-                                    <span
-                                        aria-hidden
-                                        className="pointer-events-none absolute inset-[15%] rounded-full ring-2 ring-rose-500"
-                                    />
-                                ) : null}
-                            </button>
-                        )
-                    })}
+                            return (
+                                <button
+                                    key={index}
+                                    type="button"
+                                    disabled={disabled || stone !== undefined}
+                                    onClick={() => onPlace(x, y)}
+                                    aria-label={`${x + 1}, ${y + 1}`}
+                                    className="relative flex items-center justify-center disabled:cursor-default"
+                                >
+                                    {stone ? (
+                                        <span
+                                            className={
+                                                stone === "BLACK"
+                                                    ? "block h-[85%] w-[85%] rounded-full bg-neutral-900 shadow-sm"
+                                                    : "block h-[85%] w-[85%] rounded-full border border-neutral-400 bg-white shadow-sm"
+                                            }
+                                        />
+                                    ) : null}
+                                    {isLastMove ? (
+                                        <span
+                                            aria-hidden
+                                            className="pointer-events-none absolute inset-[15%] rounded-full ring-2 ring-rose-500"
+                                        />
+                                    ) : null}
+                                </button>
+                            )
+                        })}
+                    </div>
                 </div>
             </div>
         </div>
