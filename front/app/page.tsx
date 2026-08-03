@@ -1,22 +1,7 @@
-import Link from "next/link"
-import { Button } from "@/components/ui/button"
+import GameHub from "@/components/game/game-hub"
 
+// 게임 허브가 곧 메인 화면이다. 랜딩과 허브를 따로 두던 구조를 접었다 —
+// 허브 UI 자체는 components/game/game-hub.tsx 에 있고, /game 은 여기로 리다이렉트한다.
 export default function HomePage() {
-    return (
-        <main className="mx-auto flex min-h-[70vh] w-full max-w-3xl flex-col items-center justify-center px-4 text-center">
-            <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">woobeee</h1>
-            <p className="mt-4 text-balance text-muted-foreground">
-                친구와 같이 오목과 장애물피하기를 하고, 기술블로그를 읽는 곳입니다.
-            </p>
-
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-                <Button asChild size="lg">
-                    <Link href="/game">게임하러 가기</Link>
-                </Button>
-                <Button asChild variant="outline" size="lg">
-                    <Link href="/blog">기술블로그</Link>
-                </Button>
-            </div>
-        </main>
-    )
+    return <GameHub />
 }
