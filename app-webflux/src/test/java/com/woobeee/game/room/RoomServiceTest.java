@@ -195,6 +195,7 @@ class RoomServiceTest {
                 .satisfies(e -> assertThat(statusOf(e)).isEqualTo(HttpStatus.FORBIDDEN));
     }
 
+    /** GAME-AC-29 */
     @Test
     void omokNeedsTwoReadyMembersToStart() {
         Room room = service.create(GameType.OMOK, HOST);
@@ -203,6 +204,21 @@ class RoomServiceTest {
         assertThatThrownBy(() -> service.start(room.roomId(), HOST.participantId()))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(e -> assertThat(statusOf(e)).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    /**
+     * GAME-AC-29 — 장애물피하기는 혼자서도 시작할 수 있다(연습 모드). 틱 종료 규칙의 1인
+     * 예외({@code DodgeGame}의 {@code participantIds.size() > 1} 조건)와 짝을 이룬다 —
+     * 엔진은 이미 1인 게임을 지원하는데 방이 막고 있으면 그 예외는 죽은 코드다.
+     */
+    @Test
+    void dodgeStartsWithASingleReadyPlayer() {
+        Room room = service.create(GameType.DODGE, HOST);
+        service.setReady(room.roomId(), HOST.participantId(), true);
+
+        service.start(room.roomId(), HOST.participantId());
+
+        assertThat(room.status()).isEqualTo(RoomStatus.IN_PROGRESS);
     }
 
     @Test

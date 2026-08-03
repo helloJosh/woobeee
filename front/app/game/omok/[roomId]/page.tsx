@@ -313,6 +313,7 @@ function OmokRoomScreen() {
             </div>
 
             <RoomSidebar
+                gameType="OMOK"
                 participants={state.participants}
                 hostParticipantId={state.hostParticipantId}
                 status={state.status}

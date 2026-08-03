@@ -44,7 +44,7 @@
 | 항목 | 오목 | 장애물피하기 |
 | --- | --- | --- |
 | 정원 | 2 | 8 |
-| 시작 조건 | 2명 모두 READY | 2명 이상 모두 READY |
+| 시작 조건 | 2명 모두 READY | 1명 이상 모두 READY — 혼자서도 시작할 수 있다(연습 모드). 틱 종료 규칙의 1인 예외(아래 장애물피하기 절)와 짝이다 |
 
 - 방 TTL 6시간. 참가자가 0이 되면 즉시 소멸.
 - 소켓이 끊기면 `DISCONNECTED` 로 두고 30초 유예. 유예 안에 재접속하면 자리를 잇는다.
@@ -205,6 +205,7 @@ xorshift 는 0에서 멈춘다.
 | GAME-AC-26 | 게임 HTTP API 의 실패 응답은 `ApiResponse` 봉투(`header.isSuccessful=false`, `header.resultCode`, `header.message`=코드)로 나가고, 초대 코드 오류·닉네임 중복·정원 초과·진행 중·방 없음·권한 없음이 각자 다른 코드를 싣는다. 코드가 없는 예외는 상태별 폴백 코드로, 예상 못 한 예외는 `500 game_unexpected` 로 뭉개고 예외 메시지를 본문에 흘리지 않는다. `front/lib/errors/error-messages.ts` 와 카탈로그는 **양방향**으로 일치해야 한다(지도에 없는 코드도, 코드 없는 지도 키도 실패) | `GameApiErrorEnvelopeTest`, `GameErrorCodeTest` |
 | GAME-AC-27 | 게스트 토큰은 정원이 찬 방과 이미 시작된 방에는 발급되지 않는다(Redis 에 아무것도 쓰지 않는다). 자리가 남은 `WAITING` 방에는 그대로 발급된다. 닉네임 중복 검사가 상태·정원 검사보다 먼저 돌므로, 이미 그 방에 있는 이름에게는 정원·상태 오류가 가지 않는다 | `GuestIdentityServiceTest.refusesATokenForAFullRoom`·`refusesATokenWhenTheGameHasAlreadyStarted`·`stillIssuesForARoomWithSpaceThatHasNotStarted`·`someoneAlreadyInAFullRoomIsToldTheNicknameIsTakenNotThatTheRoomIsFull`, `GameApiErrorEnvelopeTest` |
 | GAME-AC-28 | WebSocket `ERROR` 도 HTTP 봉투와 같은 `GameErrorCode` 카탈로그를 쓴다 — `{status, code, message}` 이고 `code` 는 `game_*` 문자열이다. 카탈로그 밖 예외는 `game_unexpected` 로 뭉개고 예외 메시지를 싣지 않는다. 참가가 거절된 세션은 아직 방 허브를 구독하지 않으므로, 닫히기 **전에** 그 프레임을 세션에 직접 받는다 — 토큰 인증 실패와 방의 거절(틀린 초대 코드·정원 초과·이미 시작) 두 갈래 모두. 방의 거절은 방에 브로드캐스트하지 않는다(당사자에게는 닿지 않고 남들만 받는다) | `RoomCommandDispatcherTest.aFailedCommandCarriesTheErrorCodeNotJustAMessage`·`anUnexpectedFailureCarriesTheGenericCodeAndLeaksNothing`·`aGameCommandFromANonMemberCarriesTheNotAMemberCode`·`aRejectedJoinTellsTheCallerWhyAndDoesNotBotherTheRoom`·`anAcceptedJoinReportsNoReason`, `GameWebSocketHandlerTest.aFailedAuthenticationSendsACodedErrorFrameBeforeClosing`·`aJoinRejectedByTheRoomAlsoSendsACodedErrorFrameBeforeClosing` |
+| GAME-AC-29 | 시작 최소 인원은 게임 종류별이다 — 장애물피하기는 방장 혼자 READY 상태여도 시작할 수 있고(연습 모드), 오목은 2인 미만이면 거절한다. 프론트의 시작 버튼 활성화 판단도 같은 규칙을 쓴다 | `RoomServiceTest.dodgeStartsWithASingleReadyPlayer`·`omokNeedsTwoReadyMembersToStart`, `front/lib/room-sidebar.test.ts` |
 
 ## 비기능 요구사항
 

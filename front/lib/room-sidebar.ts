@@ -1,16 +1,20 @@
-import type { ParticipantView } from "@/lib/types"
+import type { GameType, ParticipantView } from "@/lib/types"
 
 /**
  * RoomSidebar 컴포넌트가 그리기만 하도록 뽑아낸 방 상태 판단과 클립보드 복사. game-join.ts /
  * game-hub.ts 와 같은 이유로 React 에 의존하지 않는다 — 여기서 값이 조용히 틀리면 몇 주를
- * 그대로 갈 종류라, 컴포넌트 밖에 두고 (Task 9 의 vitest 가 들어오면) 테스트로 고정한다.
+ * 그대로 갈 종류라, 컴포넌트 밖에 두고 lib/room-sidebar.test.ts 로 고정한다.
  */
 
 /**
- * app-webflux 의 `RoomService.MIN_PLAYERS`(2)와 같은 값이다. 여기서 값을 바꿔도 서버 판정은
- * 그대로이므로, 바꾸려면 RoomService 를 먼저 고친다.
+ * app-webflux 의 `GameType.minPlayersToStart` 와 같은 값이다(GAME-AC-29). 장애물피하기는
+ * 혼자서도 시작할 수 있다(연습 모드). 여기서 값을 바꿔도 서버 판정은 그대로이므로, 바꾸려면
+ * `GameType` 을 먼저 고친다.
  */
-export const MIN_ROOM_PLAYERS_TO_START = 2
+export const MIN_PLAYERS_TO_START: Record<GameType, number> = {
+    OMOK: 2,
+    DODGE: 1,
+}
 
 /** 소유자 표시(왕관 아이콘)와 "게임 시작" 버튼 노출 여부가 같이 쓰는 판단. */
 export function isRoomHost(selfParticipantId: string | null, hostParticipantId: string): boolean {
@@ -19,16 +23,17 @@ export function isRoomHost(selfParticipantId: string | null, hostParticipantId: 
 
 /**
  * `Room.beginGame(String, int)` 의 인원·준비 조건과 같다 — `members.size() >= minPlayers`
- * 그리고 `members.values().stream().allMatch(RoomMember::ready)`(방장 포함 전원). 정원 일치
- * (오목 2인 고정)나 방장 여부, 방 상태(WAITING)는 서버가 최종 판정하므로 여기서 다시 걸지
- * 않는다 — 이 함수가 참이어도 서버가 `NOT_ALL_READY`/`NOT_HOST` 등으로 거절할 수 있고, 그건
- * 정상이다. 이 값은 그 결과를 미리 보여주는 것뿐이지, 서버를 대신하는 것이 아니다. 느슨하게
- * (예: 전원 대신 정원만 채우면 된다고) 바꾸면 버튼은 활성화된 채 서버만 계속 거절하는 어긋난
- * 화면이 된다.
+ * (게임 종류별, 위 MIN_PLAYERS_TO_START) 그리고 `members.values().stream()
+ * .allMatch(RoomMember::ready)`(방장 포함 전원). 정원 일치(오목 2인 고정)나 방장 여부, 방
+ * 상태(WAITING)는 서버가 최종 판정하므로 여기서 다시 걸지 않는다 — 이 함수가 참이어도 서버가
+ * `NOT_ALL_READY`/`NOT_HOST` 등으로 거절할 수 있고, 그건 정상이다. 이 값은 그 결과를 미리
+ * 보여주는 것뿐이지, 서버를 대신하는 것이 아니다. 느슨하게(예: 전원 대신 정원만 채우면
+ * 된다고) 바꾸면 버튼은 활성화된 채 서버만 계속 거절하는 어긋난 화면이 된다.
  */
-export function canStartRoom(participants: ParticipantView[]): boolean {
+export function canStartRoom(participants: ParticipantView[], gameType: GameType): boolean {
     return (
-        participants.length >= MIN_ROOM_PLAYERS_TO_START && participants.every((participant) => participant.ready)
+        participants.length >= MIN_PLAYERS_TO_START[gameType] &&
+        participants.every((participant) => participant.ready)
     )
 }
 

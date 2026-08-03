@@ -400,6 +400,7 @@ function DodgeRoomScreen() {
             </div>
 
             <RoomSidebar
+                gameType="DODGE"
                 participants={state.participants}
                 hostParticipantId={state.hostParticipantId}
                 status={state.status}

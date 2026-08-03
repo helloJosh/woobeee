@@ -4,9 +4,10 @@ import { useEffect, useRef, useState } from "react"
 import { Check, Copy, Crown, WifiOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { canStartRoom, copyTextToClipboard, isRoomHost } from "@/lib/room-sidebar"
-import type { ParticipantView, RoomStatus } from "@/lib/types"
+import type { GameType, ParticipantView, RoomStatus } from "@/lib/types"
 
 interface RoomSidebarProps {
+    gameType: GameType
     participants: ParticipantView[]
     hostParticipantId: string
     status: RoomStatus
@@ -17,6 +18,7 @@ interface RoomSidebarProps {
 }
 
 export default function RoomSidebar({
+    gameType,
     participants,
     hostParticipantId,
     status,
@@ -39,7 +41,7 @@ export default function RoomSidebar({
 
     const self = participants.find((p) => p.participantId === selfParticipantId)
     const isHost = isRoomHost(selfParticipantId, hostParticipantId)
-    const everyoneReady = canStartRoom(participants)
+    const everyoneReady = canStartRoom(participants, gameType)
 
     const copyInvite = async () => {
         const success = await copyTextToClipboard(inviteUrl)

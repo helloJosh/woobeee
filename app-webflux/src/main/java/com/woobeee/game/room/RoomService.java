@@ -8,8 +8,6 @@ import java.util.Optional;
 
 @Service
 public class RoomService {
-    private static final int MIN_PLAYERS = 2;
-
     private final RoomRegistry roomRegistry;
 
     public RoomService(RoomRegistry roomRegistry) {
@@ -109,7 +107,7 @@ public class RoomService {
     public Room start(String roomId, String requesterParticipantId) {
         Room room = requireMember(roomId, requesterParticipantId);
 
-        Room.StartResult result = room.beginGame(requesterParticipantId, MIN_PLAYERS);
+        Room.StartResult result = room.beginGame(requesterParticipantId, room.gameType().minPlayersToStart());
         return switch (result) {
             case STARTED -> room;
             case NOT_HOST -> throw GameErrorCode.NOT_HOST.asException();
