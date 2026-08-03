@@ -50,6 +50,8 @@
 - 소켓이 끊기면 `DISCONNECTED` 로 두고 30초 유예. 유예 안에 재접속하면 자리를 잇는다.
 - 명시적 `LEAVE` 는 유예 없이 즉시 이탈.
 - 게임 시작 후 새 참가자는 받지 않는다. 재접속은 새 참가가 아니므로 허용된다.
+- 게임이 끝나면 방은 `FINISHED` 가 되고, 아무 멤버나 `REMATCH` 로 `WAITING` 으로 되돌릴 수
+  있다(GAME-AC-30). 전원의 준비 상태가 풀리고, `WAITING` 이므로 새 참가자도 다시 받는다.
 - 방장이 빠지면 참가 순서상 다음 사람이 방장이 된다.
 - TTL 로 방이 만료되면 `RoomSweeper` 가 `RoomCommandDispatcher.settle` 을 거치지 않고 바로
   치운다. 그래서 진행 중이던 게임의 sink는 그 사실을 알지 못한다. 오목(`OmokGameSink`)에서는
@@ -206,6 +208,7 @@ xorshift 는 0에서 멈춘다.
 | GAME-AC-27 | 게스트 토큰은 정원이 찬 방과 이미 시작된 방에는 발급되지 않는다(Redis 에 아무것도 쓰지 않는다). 자리가 남은 `WAITING` 방에는 그대로 발급된다. 닉네임 중복 검사가 상태·정원 검사보다 먼저 돌므로, 이미 그 방에 있는 이름에게는 정원·상태 오류가 가지 않는다 | `GuestIdentityServiceTest.refusesATokenForAFullRoom`·`refusesATokenWhenTheGameHasAlreadyStarted`·`stillIssuesForARoomWithSpaceThatHasNotStarted`·`someoneAlreadyInAFullRoomIsToldTheNicknameIsTakenNotThatTheRoomIsFull`, `GameApiErrorEnvelopeTest` |
 | GAME-AC-28 | WebSocket `ERROR` 도 HTTP 봉투와 같은 `GameErrorCode` 카탈로그를 쓴다 — `{status, code, message}` 이고 `code` 는 `game_*` 문자열이다. 카탈로그 밖 예외는 `game_unexpected` 로 뭉개고 예외 메시지를 싣지 않는다. 참가가 거절된 세션은 아직 방 허브를 구독하지 않으므로, 닫히기 **전에** 그 프레임을 세션에 직접 받는다 — 토큰 인증 실패와 방의 거절(틀린 초대 코드·정원 초과·이미 시작) 두 갈래 모두. 방의 거절은 방에 브로드캐스트하지 않는다(당사자에게는 닿지 않고 남들만 받는다) | `RoomCommandDispatcherTest.aFailedCommandCarriesTheErrorCodeNotJustAMessage`·`anUnexpectedFailureCarriesTheGenericCodeAndLeaksNothing`·`aGameCommandFromANonMemberCarriesTheNotAMemberCode`·`aRejectedJoinTellsTheCallerWhyAndDoesNotBotherTheRoom`·`anAcceptedJoinReportsNoReason`, `GameWebSocketHandlerTest.aFailedAuthenticationSendsACodedErrorFrameBeforeClosing`·`aJoinRejectedByTheRoomAlsoSendsACodedErrorFrameBeforeClosing` |
 | GAME-AC-29 | 시작 최소 인원은 게임 종류별이다 — 장애물피하기는 방장 혼자 READY 상태여도 시작할 수 있고(연습 모드), 오목은 2인 미만이면 거절한다. 프론트의 시작 버튼 활성화 판단도 같은 규칙을 쓴다 | `RoomServiceTest.dodgeStartsWithASingleReadyPlayer`·`omokNeedsTwoReadyMembersToStart`, `front/lib/room-sidebar.test.ts` |
+| GAME-AC-30 | 재대국: 게임이 끝나면 sink 가 방 상태를 `FINISHED` 로 전환하고(구 known-gap G3), `FINISHED` 방에는 아무 멤버나 `REMATCH` 를 걸 수 있다 — 방은 `WAITING` 으로 돌아가고 전원의 준비 상태가 풀리며, 그 ROOM_STATE 가 방 전체에 나간다. 끝나지 않은 방의 REMATCH 는 `game_rematchNotFinished` 로 그 사람에게만 거절된다. 프론트 리듀서는 FINISHED 고정을 유지하되 WAITING 복귀만 통과시킨다 | `OmokGameSinkTest.aWinFlipsTheRoomStatusToFinished`, `DodgeGameSinkTest.aFinishedGameFlipsTheRoomStatusToFinished`, `RoomServiceTest.rematchRearmsAFinishedRoomAndClearsEveryReadyFlag`·`rematchIsRefusedWhileTheGameIsStillRunning`·`rematchRequiresMembership`, `RoomCommandDispatcherTest.rematchBroadcastsTheRearmedRoomState`·`aRefusedRematchGoesOnlyToTheCaller`, `GameWebSocketHandlerTest.rematchIsForwardedToTheDispatcher`, `front/lib/omok-play.test.ts`·`front/lib/dodge-play.test.ts` |
 
 ## 비기능 요구사항
 

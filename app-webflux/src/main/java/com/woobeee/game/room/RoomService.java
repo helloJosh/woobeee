@@ -138,6 +138,19 @@ public class RoomService {
                 .orElseThrow(GameErrorCode.ROOM_NOT_FOUND::asException);
     }
 
+    /**
+     * 재대국(GAME-AC-30). 방의 아무 멤버나 걸 수 있다 — 어차피 전원이 다시 READY 를 눌러야
+     * 시작되므로 방장만으로 좁힐 이유가 없다. FINISHED 가 아니면 거절한다.
+     */
+    public Room rematch(String roomId, String participantId) {
+        Room room = requireMember(roomId, participantId);
+
+        if (!room.rearmForRematch()) {
+            throw GameErrorCode.REMATCH_NOT_FINISHED.asException();
+        }
+        return room;
+    }
+
     private Room requireMember(String roomId, String participantId) {
         Room room = roomRegistry.find(roomId)
                 .orElseThrow(GameErrorCode.ROOM_NOT_FOUND::asException);

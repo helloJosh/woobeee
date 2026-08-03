@@ -408,6 +408,7 @@ function DodgeRoomScreen() {
                 selfParticipantId={selfParticipantId}
                 onReadyToggle={(ready) => socketRef.current?.send("READY", { ready })}
                 onStart={() => socketRef.current?.send("START")}
+                onRematch={() => socketRef.current?.send("REMATCH")}
             />
         </main>
     )

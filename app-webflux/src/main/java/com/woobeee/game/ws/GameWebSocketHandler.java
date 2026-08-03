@@ -154,6 +154,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
                     caller
             );
             case "START" -> dispatcher.start(joined.roomId(), joined.participantId(), caller);
+            case "REMATCH" -> dispatcher.rematch(joined.roomId(), joined.participantId(), caller);
             case "JOIN" -> {
                 // 이미 참가한 세션의 중복 JOIN 은 무시한다.
             }

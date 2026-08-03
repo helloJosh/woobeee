@@ -99,6 +99,19 @@ describe("reduceDodgeRoom / ROOM_STATE", () => {
 
         expect(afterLateRoomState.status).toBe("FINISHED")
     })
+
+    it("re-arms when ROOM_STATE comes back WAITING after a rematch (GAME-AC-30)", () => {
+        // 재대국은 서버가 방을 WAITING 으로 되돌리며 시작된다. FINISHED 고정이 WAITING 까지
+        // 삼키면 재대국 방송이 와도 사이드바가 준비 단계로 돌아가지 못한다.
+        const finished = apply(
+            initialDodgeRoomState,
+            roomState([HOST, GUEST]),
+            { type: "GAME_START", payload: { roomId: "r1" } },
+            { type: "GAME_END", payload: { winnerParticipantId: "m:1", ranks: [] } }
+        )
+
+        expect(apply(finished, roomState([HOST, GUEST])).status).toBe("WAITING")
+    })
 })
 
 describe("reduceDodgeRoom / frames", () => {

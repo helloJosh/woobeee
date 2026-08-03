@@ -8,6 +8,7 @@ import com.woobeee.game.result.GameResultService;
 import com.woobeee.game.room.GameIdGenerator;
 import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
+import com.woobeee.game.room.RoomStatus;
 import com.woobeee.game.ws.ClientMessage;
 import com.woobeee.game.ws.RoomHub;
 import com.woobeee.game.ws.ServerMessage;
@@ -405,6 +406,23 @@ class DodgeGameSinkTest {
         sink.onParticipantGone(room, "g:a");
 
         assertThat(sink.gameOf("room-1").survivors()).doesNotContain("g:a");
+    }
+
+    /**
+     * GAME-AC-30 (구 known-gap G3 의 dodge 측): 재대국은 방이 FINISHED 일 때만 허용되므로,
+     * 게임이 끝나면 sink 가 방 상태를 FINISHED 로 전환해야 한다. 이 전환이 없으면 방은 6시간
+     * TTL 까지 IN_PROGRESS 로 남아 재대국이 영영 불가능하다.
+     */
+    @Test
+    void aFinishedGameFlipsTheRoomStatusToFinished() {
+        room.setStatus(RoomStatus.IN_PROGRESS);
+        sink.onStart(room);
+
+        sink.onParticipantGone(room, "g:a");
+        sink.onParticipantGone(room, "g:b");
+        scheduler.advanceTimeBy(Duration.ofMillis(100));
+
+        assertThat(room.status()).isEqualTo(RoomStatus.FINISHED);
     }
 
     @Test

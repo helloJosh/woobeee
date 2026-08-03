@@ -86,14 +86,26 @@ describe("reduceOmokRoom / ROOM_STATE", () => {
     })
 
     it("never downgrades a finished game back to IN_PROGRESS (known-gap G3)", () => {
-        // 서버는 판이 끝나도 방을 IN_PROGRESS 로 둔다. 상대가 접속을 끊는 것만으로 오는
-        // 다음 ROOM_STATE 가 끝난 판을 되살리면 canPlaceStone 이 다시 참이 된다.
+        // 서버는 이제 게임이 끝나면 방을 FINISHED 로 넘기지만, 종료 신호와 경합해 늦게
+        // 도착하는 IN_PROGRESS ROOM_STATE 는 여전히 있을 수 있다. 그것이 끝난 판을
+        // 되살리면 canPlaceStone 이 다시 참이 된다.
         const finished = apply(started, {
             type: "GAME_END",
             payload: { winnerParticipantId: "m:1", ranks: [] },
         })
 
         expect(apply(finished, roomState("IN_PROGRESS")).status).toBe("FINISHED")
+    })
+
+    it("re-arms when ROOM_STATE comes back WAITING after a rematch (GAME-AC-30)", () => {
+        // 재대국은 서버가 방을 WAITING 으로 되돌리며 시작된다. 위의 FINISHED 고정이
+        // WAITING 까지 삼키면 재대국 방송이 와도 사이드바가 준비 단계로 돌아가지 못한다.
+        const finished = apply(started, {
+            type: "GAME_END",
+            payload: { winnerParticipantId: "m:1", ranks: [] },
+        })
+
+        expect(apply(finished, roomState("WAITING")).status).toBe("WAITING")
     })
 })
 

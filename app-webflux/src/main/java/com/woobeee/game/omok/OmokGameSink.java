@@ -241,6 +241,10 @@ public class OmokGameSink implements GameCommandSink {
      * 페이로드는 winnerParticipantId 와 ranks 만 싣고, record 호출은 방송 뒤에 구독만 해 둔다.
      */
     private void finish(Room room, OmokGame game, String winnerParticipantId) {
+        // 재대국(GAME-AC-30)은 방이 FINISHED 일 때만 열린다. 이 전환이 없으면 방은 6시간
+        // TTL 까지 IN_PROGRESS 로 남는다.
+        room.finishGame();
+
         Map<String, String> names = displayNames.getOrDefault(room.roomId(), Map.of());
         Map<String, Long> ids = memberIds.getOrDefault(room.roomId(), Map.of());
         Instant start = startedAt.getOrDefault(room.roomId(), clock.instant());

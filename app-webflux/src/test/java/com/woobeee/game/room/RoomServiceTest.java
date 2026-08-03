@@ -233,6 +233,48 @@ class RoomServiceTest {
         assertThat(room.status()).isEqualTo(RoomStatus.IN_PROGRESS);
     }
 
+    /**
+     * GAME-AC-30 — 끝난 방은 아무 멤버나 재대국을 걸 수 있고, 방은 WAITING 으로 돌아가며
+     * 전원의 준비 상태가 풀린다(새 판이므로 다시 READY 를 받아야 한다).
+     */
+    @Test
+    void rematchRearmsAFinishedRoomAndClearsEveryReadyFlag() {
+        Room room = service.create(GameType.OMOK, HOST);
+        service.join(room.roomId(), "code", GUEST);
+        service.setReady(room.roomId(), HOST.participantId(), true);
+        service.setReady(room.roomId(), GUEST.participantId(), true);
+        service.start(room.roomId(), HOST.participantId());
+        room.setStatus(RoomStatus.FINISHED);
+
+        service.rematch(room.roomId(), GUEST.participantId());
+
+        assertThat(room.status()).isEqualTo(RoomStatus.WAITING);
+        assertThat(room.members()).allSatisfy(member -> assertThat(member.ready()).isFalse());
+    }
+
+    /** GAME-AC-30 — 아직 끝나지 않은 게임(WAITING/IN_PROGRESS)에는 재대국을 걸 수 없다. */
+    @Test
+    void rematchIsRefusedWhileTheGameIsStillRunning() {
+        Room room = service.create(GameType.DODGE, HOST);
+        service.setReady(room.roomId(), HOST.participantId(), true);
+        service.start(room.roomId(), HOST.participantId());
+
+        assertThatThrownBy(() -> service.rematch(room.roomId(), HOST.participantId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(statusOf(e)).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    /** GAME-AC-30 — 그 방의 멤버가 아니면 재대국을 걸 수 없다. */
+    @Test
+    void rematchRequiresMembership() {
+        Room room = service.create(GameType.OMOK, HOST);
+        room.setStatus(RoomStatus.FINISHED);
+
+        assertThatThrownBy(() -> service.rematch(room.roomId(), GUEST.participantId()))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(statusOf(e)).isEqualTo(HttpStatus.FORBIDDEN));
+    }
+
     /** GAME-AC-09 */
     @Test
     void explicitLeaveRemovesTheMemberWithoutGrace() {

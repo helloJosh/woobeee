@@ -15,6 +15,7 @@ interface RoomSidebarProps {
     selfParticipantId: string | null
     onReadyToggle: (ready: boolean) => void
     onStart: () => void
+    onRematch: () => void
 }
 
 export default function RoomSidebar({
@@ -26,6 +27,7 @@ export default function RoomSidebar({
     selfParticipantId,
     onReadyToggle,
     onStart,
+    onRematch,
 }: RoomSidebarProps) {
     const [copied, setCopied] = useState(false)
     const [copyFailed, setCopyFailed] = useState(false)
@@ -134,6 +136,14 @@ export default function RoomSidebar({
                         </Button>
                     ) : null}
                 </div>
+            ) : null}
+
+            {status === "FINISHED" ? (
+                // 재대국(GAME-AC-30). 아무 멤버나 누를 수 있다 — 방은 WAITING 으로 돌아가고
+                // 전원이 다시 READY 를 눌러야 시작되므로 방장으로 좁힐 이유가 없다.
+                <Button className="w-full" disabled={!self} onClick={onRematch}>
+                    다시하기
+                </Button>
             ) : null}
         </aside>
     )

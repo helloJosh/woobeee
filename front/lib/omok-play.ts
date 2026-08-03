@@ -98,17 +98,16 @@ function applyServerMessage(state: OmokRoomState, message: ServerMessage): OmokR
             ...state,
             participants: message.payload.participants,
             hostParticipantId: message.payload.hostParticipantId,
-            // 서버는 게임이 끝나도 방 상태를 IN_PROGRESS 로 둔다(CLAUDE.md 의 known-gap G3).
-            // 그대로 받아들이면 GAME_END 로 FINISHED 가 된 화면이 다음 ROOM_STATE(상대가
-            // 접속을 끊는 것만으로도 온다) 한 번에 "진행 중" 으로 되돌아간다.
-            //
-            // 사이드바의 준비·시작 버튼은 이것과 무관하다 — RoomSidebar 는 그 블록을
-            // status === "WAITING" 에서만 그리고 서버는 시작 뒤에 WAITING 을 보내지 않는다.
-            // 실제로 어긋나는 것은 이 status 를 읽는 두 곳이다: describeTurn 이 끝난 판에
-            // 대해 "상대 차례" 를 만들고(지금은 statusLine 에서 outcome 이 먼저 걸려 가려질
-            // 뿐이다 — 그 우연에 기대고 싶지 않다), canPlaceStone 이 IN_PROGRESS 를 참으로
-            // 보게 된다. 끝난 판은 끝난 판으로 남긴다.
-            status: state.status === "FINISHED" ? "FINISHED" : message.payload.status,
+            // 끝난 판(FINISHED)은 뒤늦게 도착한 IN_PROGRESS ROOM_STATE(종료 신호와 경합해
+            // 상대가 접속을 끊는 것만으로도 온다)가 되살리지 못하게 고정한다 — 되살아나면
+            // describeTurn 이 끝난 판에 "상대 차례" 를 만들고 canPlaceStone 이 다시 참이 된다.
+            // 단 WAITING 은 통과시킨다: 재대국(GAME-AC-30)은 서버가 방을 WAITING 으로
+            // 되돌리며 시작되므로, 그것까지 삼키면 재대국 방송이 와도 화면이 준비 단계로
+            // 돌아가지 못한다.
+            status:
+                state.status === "FINISHED" && message.payload.status !== "WAITING"
+                    ? "FINISHED"
+                    : message.payload.status,
         }
     }
 

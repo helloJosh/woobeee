@@ -292,6 +292,21 @@ class GameWebSocketHandlerTest {
         verify(dispatcher).start(eq("room-1"), eq("m:11"), any(SessionChannel.class));
     }
 
+    /** GAME-AC-30 */
+    @Test
+    void rematchIsForwardedToTheDispatcher() {
+        when(authenticator.authenticate(eq("room-1"), eq("tok")))
+                .thenReturn(Mono.just(GameParticipant.member(11L, "host")));
+        WebSocketSession session = sessionEmitting(
+                "{\"type\":\"JOIN\",\"seq\":1,\"payload\":{\"roomId\":\"room-1\",\"inviteCode\":\"code\",\"token\":\"tok\"}}",
+                "{\"type\":\"REMATCH\",\"seq\":2}"
+        );
+
+        handler.handle(session).subscribe();
+
+        verify(dispatcher).rematch(eq("room-1"), eq("m:11"), any(SessionChannel.class));
+    }
+
     @Test
     void gameSpecificMessagesAreForwardedToTheDispatcher() {
         when(authenticator.authenticate(eq("room-1"), eq("tok")))

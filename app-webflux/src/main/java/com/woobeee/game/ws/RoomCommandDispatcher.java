@@ -107,6 +107,15 @@ public class RoomCommandDispatcher {
     }
 
     /**
+     * 재대국(GAME-AC-30). 성공하면 WAITING 으로 돌아간 ROOM_STATE 가 방 전체에 나가고,
+     * 실패(방이 아직 FINISHED 가 아니다, 멤버가 아니다)는 준비 토글과 같은 이유로 누른
+     * 사람에게만 간다.
+     */
+    public void rematch(String roomId, String participantId, SessionChannel caller) {
+        guard(caller, null, () -> broadcastRoomState(roomService.rematch(roomId, participantId)));
+    }
+
+    /**
      * 시작 시도. <b>실패의 목적지가 두 곳</b>이라는 점이 다른 명령과 다르다 — {@link #join} 이
      * 입장 확정 전후를 가르는 것과 같은 이유다.
      *

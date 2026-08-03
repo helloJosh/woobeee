@@ -8,6 +8,7 @@ import com.woobeee.game.room.GameType;
 import com.woobeee.game.room.Room;
 import com.woobeee.game.room.RoomRegistry;
 import com.woobeee.game.room.RoomService;
+import com.woobeee.game.room.RoomStatus;
 import com.woobeee.game.ws.payload.ErrorPayload;
 import com.woobeee.game.ws.payload.RoomStatePayload;
 import org.junit.jupiter.api.BeforeEach;
@@ -100,6 +101,36 @@ class RoomCommandDispatcherTest {
                     assertThat(payload.participants().get(1).ready()).isTrue();
                 })
                 .verifyComplete();
+    }
+
+    /**
+     * GAME-AC-30 — 재대국이 통과하면 WAITING 으로 돌아간 ROOM_STATE 가 방 전체에 나간다.
+     * 전원의 준비 상태가 풀린 것도 같은 방송에 실린다.
+     */
+    @Test
+    void rematchBroadcastsTheRearmedRoomState() {
+        dispatcher.join("room-1", "code", GUEST);
+        room.setStatus(RoomStatus.FINISHED);
+
+        StepVerifier.create(hub.subscribe("room-1").take(1))
+                .then(() -> dispatcher.rematch("room-1", GUEST.participantId(), caller))
+                .assertNext(message -> {
+                    assertThat(message.type()).isEqualTo("ROOM_STATE");
+                    RoomStatePayload payload = (RoomStatePayload) message.payload();
+                    assertThat(payload.status()).isEqualTo("WAITING");
+                    assertThat(payload.participants()).allSatisfy(p -> assertThat(p.ready()).isFalse());
+                })
+                .verifyComplete();
+    }
+
+    /** GAME-AC-30 — 아직 끝나지 않은 방에 건 재대국의 실패는 누른 사람에게만 간다. */
+    @Test
+    void aRefusedRematchGoesOnlyToTheCaller() {
+        dispatcher.rematch("room-1", HOST.participantId(), caller);
+
+        assertThat(personal).hasSize(1);
+        ErrorPayload payload = (ErrorPayload) personal.getFirst().payload();
+        assertThat(payload.code()).isEqualTo(GameErrorCode.REMATCH_NOT_FINISHED.code());
     }
 
     @Test

@@ -175,22 +175,23 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 기보 재생 상한 처리 불일치 | 공유 스텝 함수(`stepReplay`)는 같은데 상한에서의 태도가 다르다 — `rerunReplay` 는 `REPLAY_MAX_TICKS` 에서 던지고 마이페이지 뷰어는 조용히 자른다(Plan 4 문서 기준). 잘린 기보가 정상 재생처럼 보인다. 뷰어도 사용자에게 드러내야 한다 |
 | 장애물 생성 상한 경계 미검증 | 스폰 확률 상한 테스트가 실제로 상한이 걸리는 틱 900 이 아니라 100000 을 쓴다. 값 자체는 고정돼 있으나 경계는 산술로만 보장된다 |
 | 시나리오 생성자 입력 미검증 | `DodgeGame` 의 package-private 시나리오 생성자가 `startingPositions` 가 `participantIds` 를 모두 덮는지 확인하지 않는다. 덮지 않으면 참가자가 `finalRanks` 에서 조용히 빠진다. 현재 호출자는 하나뿐이고 올바르게 만든다 |
-| 방 상태가 `FINISHED` 로 가지 않음 (G3) | 게임이 끝나도 `RoomStatus` 는 `IN_PROGRESS` 로 남아 TTL 까지 그대로다. 재대국 불가이고 `ROOM_STATE` 가 사실과 다르다. 테스트: `OmokGameSinkTest#aWinFlipsTheRoomStatusToFinished` (`@Tag("known-gap")`) |
 
 ### 알려진 결함을 실행 가능한 테스트로 고정한 것 (`known-gap`)
 
-위 표의 G1/G2/G3/G4/G5 다섯 항목은 리뷰에서 발견됐지만 의도적으로 미루기로 한 결함이다. 각각을
-"오늘은 실패하고, 결함이 고쳐지면 통과하는" 테스트로 고정해 뒀다 — 메모가 아니라 실행 가능한
-할 일이다. **테스트는 여섯 개다**: G2 만 결과가 게임 종류에 따라 다르므로 둘로 나뉜다(오목은 정적
-누수, 장애물피하기는 이미 사라진 방의 결과 행을 쓰는 능동적 오염). 여섯 테스트 모두
-`@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test` 에서는 제외된다(그래서 위 기본 검증 명령은
-계속 321개 그린을 유지한다 — core 6 / app-mvc 36 / app-webflux 279. 포함해서 돌리면 327개 중
-321개 통과, 6개 실패다). 루트 `pom.xml` 의 `known.gap.excludedGroups` 프로퍼티(기본값
-`known-gap`)가 surefire의 `excludedGroups` 를 구동한다.
+위 표의 G1/G2/G4/G5 네 항목은 리뷰에서 발견됐지만 의도적으로 미루기로 한 결함이다. (원래
+G3 — 게임이 끝나도 방이 `FINISHED` 로 가지 않음 — 도 있었으나 재대국(GAME-AC-30) 구현과 함께
+고쳐져 일반 테스트로 승격됐다.) 각각을 "오늘은 실패하고, 결함이 고쳐지면 통과하는" 테스트로
+고정해 뒀다 — 메모가 아니라 실행 가능한 할 일이다. **테스트는 다섯 개다**: G2 만 결과가 게임
+종류에 따라 다르므로 둘로 나뉜다(오목은 정적 누수, 장애물피하기는 이미 사라진 방의 결과 행을
+쓰는 능동적 오염). 다섯 테스트 모두 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test`
+에서는 제외된다(그래서 위 기본 검증 명령은 계속 338개 그린을 유지한다 — core 6 / app-mvc 36 /
+app-webflux 296. 포함해서 돌리면 343개 중 338개 통과, 5개 실패다). 루트 `pom.xml` 의
+`known.gap.excludedGroups` 프로퍼티(기본값 `known-gap`)가 surefire의 `excludedGroups` 를
+구동한다.
 
 ```bash
 ./mvnw -pl core,app-mvc,app-webflux -am test                              # 기본: known-gap 제외, 그린 유지
-./mvnw -pl core,app-mvc,app-webflux -am test -Dknown.gap.excludedGroups=   # known-gap 포함: 여섯 개가 실패해야 정상
+./mvnw -pl core,app-mvc,app-webflux -am test -Dknown.gap.excludedGroups=   # known-gap 포함: 다섯 개가 실패해야 정상
 ```
 
 G5 테스트(`GameResultParticipantsForeignKeyTest`)는 `docker compose` 의 Postgres(`localhost:9432/market`,

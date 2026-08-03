@@ -96,11 +96,16 @@ function applyServerMessage(state: DodgeRoomState, message: ServerMessage): Dodg
             participants,
             hostParticipantId: message.payload.hostParticipantId,
             colorOrder: appendColorOrder(state.colorOrder, participants.map((p) => p.participantId)),
-            // 서버는 게임이 끝나도 방 상태를 IN_PROGRESS 로 둔다(CLAUDE.md 의 known-gap G3).
-            // 그대로 받아들이면 GAME_END 로 FINISHED 가 된 화면이 다음 ROOM_STATE(누군가
-            // 접속을 끊는 것만으로도 온다) 한 번에 "진행 중" 으로 되돌아가고, 그 순간
+            // 끝난 판(FINISHED)은 뒤늦게 도착한 IN_PROGRESS ROOM_STATE(종료 신호와 경합해
+            // 누군가 접속을 끊는 것만으로도 온다)가 되살리지 못하게 고정한다 — 되살아나면
             // canMoveInDodge 가 다시 참이 되어 끝난 판에 이동 명령을 쏘기 시작한다.
-            status: state.status === "FINISHED" ? "FINISHED" : message.payload.status,
+            // 단 WAITING 은 통과시킨다: 재대국(GAME-AC-30)은 서버가 방을 WAITING 으로
+            // 되돌리며 시작되므로, 그것까지 삼키면 재대국 방송이 와도 화면이 준비 단계로
+            // 돌아가지 못한다.
+            status:
+                state.status === "FINISHED" && message.payload.status !== "WAITING"
+                    ? "FINISHED"
+                    : message.payload.status,
         }
     }
 

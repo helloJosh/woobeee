@@ -372,6 +372,10 @@ public class DodgeGameSink implements GameCommandSink {
     private void finish(Room room, DodgeGame game) {
         String roomId = room.roomId();
 
+        // 재대국(GAME-AC-30)은 방이 FINISHED 일 때만 열린다. 이 전환이 없으면 방은 6시간
+        // TTL 까지 IN_PROGRESS 로 남는다.
+        room.finishGame();
+
         Disposable timer = timers.remove(roomId);
         if (timer != null) {
             timer.dispose();

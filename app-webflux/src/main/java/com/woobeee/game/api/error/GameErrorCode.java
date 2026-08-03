@@ -39,6 +39,7 @@ public enum GameErrorCode {
     NOT_ENOUGH_PLAYERS(HttpStatus.CONFLICT, "game_notEnoughPlayers", "At least two players are required"),
     OMOK_REQUIRES_TWO(HttpStatus.CONFLICT, "game_omokRequiresTwo", "Omok requires exactly two players"),
     NOT_ALL_READY(HttpStatus.CONFLICT, "game_notAllReady", "All players must be ready"),
+    REMATCH_NOT_FINISHED(HttpStatus.CONFLICT, "game_rematchNotFinished", "The game has not finished yet"),
 
     /* ===== 결과 · 기보 ===== */
     NOT_A_PARTICIPANT(HttpStatus.FORBIDDEN, "game_notAParticipant", "Not a participant of this game"),

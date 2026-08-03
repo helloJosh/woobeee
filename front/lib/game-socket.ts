@@ -39,6 +39,8 @@ export interface ClientMessagePayloads {
     READY: { ready: boolean }
     /** 방장만 가능. 페이로드를 읽지 않는다. */
     START: Record<string, never>
+    /** 재대국(GAME-AC-30). FINISHED 방을 WAITING 으로 되돌린다. 아무 멤버나 가능, 페이로드 없음. */
+    REMATCH: Record<string, never>
     OMOK_PLACE: { x: number; y: number }
     DODGE_MOVE: { direction: DodgeDirection }
 }

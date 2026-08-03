@@ -156,15 +156,12 @@ class OmokGameSinkTest {
     }
 
     /**
-     * G3 known gap: nothing ever flips {@link RoomStatus} to {@code FINISHED} once a game ends.
-     * {@code OmokGameSink.finish} broadcasts GAME_END, records the result, and clears its own
-     * per-room maps, but never touches {@code room.status()} — so the room the client-visible
-     * ROOM_STATE payload describes stays {@code IN_PROGRESS} until its 6-hour TTL sweep, and
-     * nothing (e.g. a rematch flow gated on the room being finished/waiting) can rely on the
-     * room's own status to know the game is over.
+     * GAME-AC-30 (formerly known-gap G3): the rematch flow is gated on the room being
+     * {@code FINISHED}, so {@code OmokGameSink.finish} must flip {@code room.status()} when the
+     * game ends. Without this the room stays {@code IN_PROGRESS} until its 6-hour TTL sweep and
+     * a rematch is never possible.
      */
-    @Tag("known-gap")
-    @DisplayName("G3: a win never flips the room's status out of IN_PROGRESS")
+    @DisplayName("a win flips the room's status to FINISHED")
     @Test
     void aWinFlipsTheRoomStatusToFinished() {
         room.setStatus(RoomStatus.IN_PROGRESS);

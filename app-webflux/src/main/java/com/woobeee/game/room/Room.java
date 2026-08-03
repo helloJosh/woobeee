@@ -98,6 +98,32 @@ public final class Room {
         this.status = status;
     }
 
+    /**
+     * 게임 종료 시 sink 가 호출한다(GAME-AC-30). IN_PROGRESS 에서만 FINISHED 로 넘긴다 —
+     * 이미 재대국으로 WAITING 이 된 방을 뒤늦게 도착한 종료 신호가 되돌리면 안 된다.
+     */
+    public synchronized void finishGame() {
+        if (status == RoomStatus.IN_PROGRESS) {
+            status = RoomStatus.FINISHED;
+        }
+    }
+
+    /**
+     * 재대국(GAME-AC-30). FINISHED 에서만 WAITING 으로 돌아가고, 새 판이므로 전원의 준비
+     * 상태를 푼다. 상태 확인과 준비 해제가 한 동기화 블록이라, 이 판정 도중에
+     * {@link #beginGame(String, int)} 이 끼어들어 옛 준비 상태로 시작해 버릴 수 없다.
+     *
+     * @return 전환했으면 {@code true}, 방이 FINISHED 가 아니어서 거절했으면 {@code false}
+     */
+    public synchronized boolean rearmForRematch() {
+        if (status != RoomStatus.FINISHED) {
+            return false;
+        }
+        members.values().forEach(member -> member.ready(false));
+        status = RoomStatus.WAITING;
+        return true;
+    }
+
     /** 방장이 빠진 뒤 참가 순서상 다음 사람을 방장으로 세운다. 아무도 없으면 그대로 둔다. */
     public synchronized void promoteNextHost() {
         if (members.containsKey(hostParticipantId)) {
