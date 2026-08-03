@@ -13,56 +13,92 @@ interface OmokBoardProps {
     onPlace: (x: number, y: number) => void
 }
 
+// 15×15 표준 화점(별). 다른 크기의 판에는 그리지 않는다 — 화점 규약이 판 크기마다 달라서
+// 어설프게 일반화하느니 없는 편이 낫다.
+const STAR_POINTS_15: [number, number][] = [
+    [3, 3],
+    [11, 3],
+    [7, 7],
+    [3, 11],
+    [11, 11],
+]
+
 export default function OmokBoard({ size, placements, disabled, onPlace }: OmokBoardProps) {
     const stoneAt = new Map(placements.map((p) => [`${p.x},${p.y}`, p.color]))
     // 225칸 위에서 상대가 방금 어디에 뒀는지는 표시가 없으면 사실상 찾을 수 없다.
     // placements 는 둔 순서대로이므로 마지막 항목이 직전 착수다.
     const lastMove = placements.length > 0 ? placements[placements.length - 1] : null
 
+    // 돌은 칸이 아니라 선의 교차점 위에 놓인다. 격자선을 각 칸의 "중심"을 지나게 그리면,
+    // 칸 중앙에 놓이는 돌이 정확히 교차점 위에 올라간다 — 버튼 격자는 그대로 두고 선만
+    // 배경 SVG 로 옮기는 것이 요점이다. viewBox 한 칸 = 격자 한 칸이므로 선 좌표는 i + 0.5.
+    const lineOffsets = Array.from({ length: size }, (_, i) => i + 0.5)
+    const starPoints = size === 15 ? STAR_POINTS_15 : []
+
     return (
         <div className="aspect-square w-full max-w-[min(100%,80vh)]">
-            <div
-                className="grid h-full w-full rounded-md border bg-amber-50 p-2 dark:bg-amber-950/30"
-                style={{
-                    gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
-                    // 행도 함께 고정한다. auto 로 두면 빈 칸의 높이가 내용에 맞춰져
-                    // 판이 컨테이너 높이를 채우지 못하는 브라우저가 생긴다.
-                    gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`,
-                }}
-            >
-                {Array.from({ length: size * size }, (_, index) => {
-                    const x = index % size
-                    const y = Math.floor(index / size)
-                    const stone = stoneAt.get(`${x},${y}`)
-                    const isLastMove = lastMove !== null && lastMove.x === x && lastMove.y === y
+            <div className="relative h-full w-full rounded-md border bg-amber-50 p-2 dark:bg-amber-950/30">
+                <svg
+                    aria-hidden
+                    className="pointer-events-none absolute inset-2 text-amber-900/50 dark:text-amber-200/40"
+                    width="100%"
+                    height="100%"
+                    viewBox={`0 0 ${size} ${size}`}
+                    preserveAspectRatio="none"
+                >
+                    {lineOffsets.map((offset) => (
+                        <g key={offset} stroke="currentColor" strokeWidth={0.06}>
+                            <line x1={offset} y1={0.5} x2={offset} y2={size - 0.5} />
+                            <line x1={0.5} y1={offset} x2={size - 0.5} y2={offset} />
+                        </g>
+                    ))}
+                    {starPoints.map(([x, y]) => (
+                        <circle key={`${x}-${y}`} cx={x + 0.5} cy={y + 0.5} r={0.13} fill="currentColor" />
+                    ))}
+                </svg>
+                <div
+                    className="relative grid h-full w-full"
+                    style={{
+                        gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`,
+                        // 행도 함께 고정한다. auto 로 두면 빈 칸의 높이가 내용에 맞춰져
+                        // 판이 컨테이너 높이를 채우지 못하는 브라우저가 생긴다.
+                        gridTemplateRows: `repeat(${size}, minmax(0, 1fr))`,
+                    }}
+                >
+                    {Array.from({ length: size * size }, (_, index) => {
+                        const x = index % size
+                        const y = Math.floor(index / size)
+                        const stone = stoneAt.get(`${x},${y}`)
+                        const isLastMove = lastMove !== null && lastMove.x === x && lastMove.y === y
 
-                    return (
-                        <button
-                            key={index}
-                            type="button"
-                            disabled={disabled || stone !== undefined}
-                            onClick={() => onPlace(x, y)}
-                            aria-label={`${x + 1}, ${y + 1}`}
-                            className="relative flex items-center justify-center border border-amber-900/20 disabled:cursor-default"
-                        >
-                            {stone ? (
-                                <span
-                                    className={
-                                        stone === "BLACK"
-                                            ? "block h-[85%] w-[85%] rounded-full bg-neutral-900"
-                                            : "block h-[85%] w-[85%] rounded-full border border-neutral-400 bg-white"
-                                    }
-                                />
-                            ) : null}
-                            {isLastMove ? (
-                                <span
-                                    aria-hidden
-                                    className="pointer-events-none absolute inset-[15%] rounded-full ring-2 ring-rose-500"
-                                />
-                            ) : null}
-                        </button>
-                    )
-                })}
+                        return (
+                            <button
+                                key={index}
+                                type="button"
+                                disabled={disabled || stone !== undefined}
+                                onClick={() => onPlace(x, y)}
+                                aria-label={`${x + 1}, ${y + 1}`}
+                                className="relative flex items-center justify-center disabled:cursor-default"
+                            >
+                                {stone ? (
+                                    <span
+                                        className={
+                                            stone === "BLACK"
+                                                ? "block h-[85%] w-[85%] rounded-full bg-neutral-900 shadow-sm"
+                                                : "block h-[85%] w-[85%] rounded-full border border-neutral-400 bg-white shadow-sm"
+                                        }
+                                    />
+                                ) : null}
+                                {isLastMove ? (
+                                    <span
+                                        aria-hidden
+                                        className="pointer-events-none absolute inset-[15%] rounded-full ring-2 ring-rose-500"
+                                    />
+                                ) : null}
+                            </button>
+                        )
+                    })}
+                </div>
             </div>
         </div>
     )
