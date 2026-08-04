@@ -15,10 +15,12 @@ export const DODGE_RULES = {
     spawnSlots: 12,
     subcellsPerCell: 3,
     tickMs: 100,
-    baseSpawn: 0.05,
-    spawnStep: 0.02,
+    baseSpawn: 0.01,
+    spawnStep: 0.01,
     spawnStepTicks: 100,
-    maxSpawn: 0.2,
+    maxSpawn: 0.15,
+    fallSpeedStepTicks: 300,
+    maxFallSpeed: 3,
     minObstacleW: 2,
     maxObstacleW: 5,
     minObstacleH: 2,
@@ -81,6 +83,11 @@ export function spawnProbability(tick: number): number {
     return Math.min(raised, DODGE_RULES.maxSpawn)
 }
 
+/** 서버 DodgeRules.fallSpeed 와 같다 — 30초(300틱)마다 1씩 올라 3에서 멈춘다. */
+export function fallSpeed(tick: number): number {
+    return Math.min(1 + Math.floor(tick / DODGE_RULES.fallSpeedStepTicks), DODGE_RULES.maxFallSpeed)
+}
+
 export function startingCells(playerCount: number): Cell[] {
     const y = DODGE_RULES.rows - DODGE_RULES.playerSize
     return Array.from({ length: playerCount }, (_, i) => {
@@ -135,6 +142,10 @@ export function createDodgeGame(participantIds: string[], seed: number) {
             return frame([])
         }
 
+        const previousPositions = new Map(
+            [...positions].map(([id, cell]) => [id, { x: cell.x, y: cell.y }])
+        )
+
         for (const [participantId, name] of Object.entries(inputs)) {
             const current = positions.get(participantId)
             const delta = name ? DELTAS[name] : undefined
@@ -154,9 +165,10 @@ export function createDodgeGame(participantIds: string[], seed: number) {
             positions.set(participantId, { x, y })
         }
 
+        const fall = fallSpeed(tick)
         const fallen: Obstacle[] = []
         for (const obstacle of obstacles) {
-            const y = obstacle.y + 1
+            const y = obstacle.y + fall
             if (y < DODGE_RULES.rows) {
                 fallen.push({ x: obstacle.x, y, w: obstacle.w, h: obstacle.h })
             }
@@ -182,21 +194,47 @@ export function createDodgeGame(participantIds: string[], seed: number) {
 
         obstacles = fallen
 
-        // 충돌은 끝점 박스 겹침(AABB) 하나로 충분하다. v2 의 스왑 검사가 없어진 게 아니라
-        // 기하학적으로 필요 없어졌다: 이동량(3)이 플레이어 한 변(3)과 같아 직전·현재 박스가
-        // 빈틈없이 이어지고, 장애물은 틱당 1서브칸만 내려오므로 겹침 없이 서로를 지나치는
-        // 배치가 존재하지 않는다. 서버 DodgeGame.detectCollisions 의 주석과 같은 근거다.
+        // 충돌은 두 갈래다: (1) 끝점 박스 겹침(AABB), (2) 상호 통과(스왑) — 낙하가 2서브칸
+        // 이상인 구간에서는 위로 이동하는 플레이어와 블록이 겹침 없이 서로를 지나칠 수 있다.
+        // 참가자의 현재 박스가 장애물의 직전 박스(이번 틱 낙하량만큼 위)와 겹치고 참가자의
+        // 직전 박스가 장애물의 현재 박스와 겹치면 뚫고 지나간 것이다. 서버
+        // DodgeGame.detectCollisions 와 같은 근거·같은 식이다.
         const eliminated: string[] = []
         for (const [participantId, now] of positions) {
-            const hit = obstacles.some((obstacle) =>
-                overlapsBox(
-                    obstacle,
-                    now.x,
-                    now.y,
-                    now.x + DODGE_RULES.playerSize - 1,
-                    now.y + DODGE_RULES.playerSize - 1
+            const before = previousPositions.get(participantId)
+            const hit = obstacles.some((obstacle) => {
+                if (
+                    overlapsBox(
+                        obstacle,
+                        now.x,
+                        now.y,
+                        now.x + DODGE_RULES.playerSize - 1,
+                        now.y + DODGE_RULES.playerSize - 1
+                    )
+                ) {
+                    return true
+                }
+                if (!before) {
+                    return false
+                }
+                const obstacleBefore = { x: obstacle.x, y: obstacle.y - fall, w: obstacle.w, h: obstacle.h }
+                return (
+                    overlapsBox(
+                        obstacleBefore,
+                        now.x,
+                        now.y,
+                        now.x + DODGE_RULES.playerSize - 1,
+                        now.y + DODGE_RULES.playerSize - 1
+                    ) &&
+                    overlapsBox(
+                        obstacle,
+                        before.x,
+                        before.y,
+                        before.x + DODGE_RULES.playerSize - 1,
+                        before.y + DODGE_RULES.playerSize - 1
+                    )
                 )
-            )
+            })
             if (hit) {
                 eliminated.push(participantId)
             }
@@ -362,6 +400,8 @@ const HEADER_RULES: ReadonlyArray<[string, number]> = [
     ["spawnStep", DODGE_RULES.spawnStep],
     ["spawnStepTicks", DODGE_RULES.spawnStepTicks],
     ["maxSpawn", DODGE_RULES.maxSpawn],
+    ["fallSpeedStepTicks", DODGE_RULES.fallSpeedStepTicks],
+    ["maxFallSpeed", DODGE_RULES.maxFallSpeed],
     ["minObstacleW", DODGE_RULES.minObstacleW],
     ["maxObstacleW", DODGE_RULES.maxObstacleW],
     ["minObstacleH", DODGE_RULES.minObstacleH],

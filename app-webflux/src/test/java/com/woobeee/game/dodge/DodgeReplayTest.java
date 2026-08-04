@@ -235,10 +235,12 @@ class DodgeReplayTest {
 
         var header = new ObjectMapper().readTree(ndjson.strip().split("\n")[0]);
 
-        assertThat(header.get("baseSpawn").asDouble()).isEqualTo(0.05);
-        assertThat(header.get("spawnStep").asDouble()).isEqualTo(0.02);
+        assertThat(header.get("baseSpawn").asDouble()).isEqualTo(0.01);
+        assertThat(header.get("spawnStep").asDouble()).isEqualTo(0.01);
         assertThat(header.get("spawnStepTicks").asInt()).isEqualTo(100);
-        assertThat(header.get("maxSpawn").asDouble()).isEqualTo(0.20);
+        assertThat(header.get("maxSpawn").asDouble()).isEqualTo(0.15);
+        assertThat(header.get("fallSpeedStepTicks").asInt()).isEqualTo(300);
+        assertThat(header.get("maxFallSpeed").asInt()).isEqualTo(3);
         assertThat(header.get("prng").asText()).isEqualTo("xorshift32");
         assertThat(header.get("playerSize").asInt()).isEqualTo(3);
         assertThat(header.get("moveStep").asInt()).isEqualTo(3);

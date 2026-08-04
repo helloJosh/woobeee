@@ -27,11 +27,17 @@ final class DodgeGameTestSupport {
 
     /** 장애물이 절대 생성되지 않는 게임 — 참가자 위치와 장애물을 모두 지정한다. */
     static DodgeGame quiet(int seed, Map<String, Cell> positionOverrides, List<Obstacle> obstacles, String... players) {
+        return quietAtTick(seed, 0, positionOverrides, obstacles, players);
+    }
+
+    /** 위와 같되 시작 틱을 지정한다 — 낙하 속도가 올라간 구간을 300틱을 돌리지 않고 본다. */
+    static DodgeGame quietAtTick(
+            int seed, int startingTick, Map<String, Cell> positionOverrides, List<Obstacle> obstacles, String... players) {
         List<Cell> defaults = DodgeRules.startingCells(players.length);
         Map<String, Cell> positions = new LinkedHashMap<>();
         for (int i = 0; i < players.length; i++) {
             positions.put(players[i], positionOverrides.getOrDefault(players[i], defaults.get(i)));
         }
-        return new DodgeGame(List.of(players), seed, positions, obstacles, 0.0);
+        return new DodgeGame(List.of(players), seed, positions, obstacles, 0.0, startingTick);
     }
 }

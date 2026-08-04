@@ -49,6 +49,8 @@ public class DodgeReplayWriter {
         header.put("spawnStep", DodgeRules.SPAWN_STEP);
         header.put("spawnStepTicks", DodgeRules.SPAWN_STEP_TICKS);
         header.put("maxSpawn", DodgeRules.MAX_SPAWN);
+        header.put("fallSpeedStepTicks", DodgeRules.FALL_SPEED_STEP_TICKS);
+        header.put("maxFallSpeed", DodgeRules.MAX_FALL_SPEED);
         header.put("minObstacleW", DodgeRules.MIN_OBSTACLE_WIDTH);
         header.put("maxObstacleW", DodgeRules.MAX_OBSTACLE_WIDTH);
         header.put("minObstacleH", DodgeRules.MIN_OBSTACLE_HEIGHT);

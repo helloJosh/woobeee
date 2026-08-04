@@ -92,13 +92,17 @@
   마지막 것을 쓰고, 플레이어 박스가 격자를 벗어나는 이동은 무시한다.
 - 장애물은 서브칸 단위의 **가변 크기 블록**이다: 폭 2~5, 높이 2~3 서브칸. 스폰 슬롯 12개
   (슬롯 i 는 서브칸 x=i×3)를 0부터 오름차순으로 굴리고, 히트하면 폭 1회·높이 1회를 더 굴린다 —
-  굴림 순서와 굴림 수가 난수열의 일부다. 생성 확률은 시작 5%, 100틱(10초)마다 +2%p, 최대 20%
-  (낙하가 옛 속도의 1/3이라 체감 밀도를 비슷하게 맞춘 값이다).
-- **충돌은 끝점 박스 겹침(AABB) 하나로 판정한다.** v2 의 스왑(서로 지나침) 검사는 v3 에서
-  기하학적으로 불필요해졌다 — 이동량(3)이 플레이어 한 변(3)과 같아 직전·현재 박스가 빈틈없이
-  이어지고 장애물은 틱당 1서브칸만 내려오므로, 겹침 없이 서로를 지나치는 배치가 존재하지
-  않는다. `DodgeRulesTest.constantsKeepTunnellingImpossible` 이 이 전제를 상수 차원에서
-  고정한다 — 이동량이나 최소 장애물 크기를 바꾸면 스윕/스왑 검사를 되살려야 한다.
+  굴림 순서와 굴림 수가 난수열의 일부다.
+- **난이도 곡선은 밀도와 속도 둘 다다.** 생성 확률은 시작 1%(슬롯당), 100틱(10초)마다 +1%p,
+  최대 15% — 초반은 한가하고 후반은 쏟아진다. 낙하 속도는 틱당 1서브칸에서 시작해
+  300틱(30초)마다 1씩 올라 최대 3서브칸/틱이 된다(`DodgeRules.fallSpeed`).
+- **충돌은 끝점 박스 겹침(AABB) + 상호 통과(스왑) 검사로 판정한다.** 낙하가 1서브칸인 구간은
+  끝점 겹침만으로 완결되지만, 2서브칸 이상이 되면 위로 이동하는 플레이어와 블록이 겹침 없이
+  서로를 지나칠 수 있다 — 참가자의 현재 박스가 장애물의 직전 박스(그 틱의 낙하량만큼 위)와
+  겹치고 참가자의 직전 박스가 장애물의 현재 박스와 겹치면 충돌이다. 수평 이동은 이동량(3)이
+  플레이어 한 변(3)과 같아 끝점 검사로 충분하고, 정지한 플레이어를 블록이 통째로 건너뛰는
+  일은 최대 낙하 속도(3) < 플레이어 한 변 + 최소 블록 높이(5)가 막는다 —
+  `DodgeRulesTest.constantsKeepTunnellingImpossible` 이 이 전제들을 상수 차원에서 고정한다.
 - 순위는 탈락 역순. 같은 틱 탈락은 공동 순위. 생존자가 1명이 되면 종료한다.
   - **예외: 1인 게임.** "한 명 남음"이 종료인 것은 원래 둘 이상으로 시작한 게임에서만이다.
     참가자가 처음부터 한 명이면 그 한 명이 맞을 때까지 계속되고, 맞는 순간(생존자 0명) 끝난다 —
@@ -134,8 +138,8 @@ xorshift 는 0에서 멈춘다.
 
 격자 크기·플레이어/이동 크기·틱 간격·확률 곡선·장애물 크기 범위는 기보 헤더에 실어 보낸다
 (`cols`, `rows`, `playerSize`, `moveStep`, `spawnSlots`, `tickMs`, `prng`, `baseSpawn`,
-`spawnStep`, `spawnStepTicks`, `maxSpawn`, `minObstacleW`/`maxObstacleW`,
-`minObstacleH`/`maxObstacleH`). 클라이언트가 같은 규칙으로 재생해야
+`spawnStep`, `spawnStepTicks`, `maxSpawn`, `fallSpeedStepTicks`, `maxFallSpeed`,
+`minObstacleW`/`maxObstacleW`, `minObstacleH`/`maxObstacleH`). 클라이언트가 같은 규칙으로 재생해야
 하므로 이 값들이 곧 계약이다 — 그러므로 **리더는 이 값들을 자기 상수와 대조하고 다르면 즉시
 던진다**(`v` 가 다를 때와 같은 태도다). 헤더를 싣기만 하고 읽지 않으면, 서버 상수가 바뀐 뒤에
 저장된 옛 기보를 새 상수로 재생할 때 예외도 경고도 없이 다른 게임이 그려진다.
@@ -206,7 +210,7 @@ xorshift 는 0에서 멈춘다.
 | GAME-AC-14 | 차례가 아닌 참가자의 착수와 이미 놓인 자리 착수는 거절한다 | `OmokGameTest`, `OmokGameSinkTest` |
 | GAME-AC-15 | 수당 제한시간을 넘기면 그 참가자가 패한다 | `OmokGameTest`(`OmokGame.timeout` 단위 테스트만 있다 — 아무 곳에서도 호출하지 않아 실제로는 강제되지 않는다. 알려진 미비점) |
 | GAME-AC-16 | 틱당 입력은 참가자별 1회만 반영하고, 격자 밖 이동은 무시한다 | `DodgeGameTest`, `DodgeGameSinkTest` |
-| GAME-AC-17 | 위로 이동해 낙하 블록을 통과하려는 시도도 충돌이다. v3 은 이동량=플레이어 한 변이라 겹침 없는 통과가 기하학적으로 불가능해 끝점 AABB 겹침만으로 판정한다 — 그 전제는 `DodgeRulesTest.constantsKeepTunnellingImpossible` 이 상수 차원에서 고정한다 | `DodgeGameTest.movingUpThroughAFallingObstacleIsACollision`, `DodgeRulesTest` |
+| GAME-AC-17 | 위로 이동해 낙하 블록을 통과하려는 시도도 충돌이다 — 낙하 1서브칸 구간은 끝점 AABB 겹침이, 낙하 2서브칸 이상 구간의 교차 통과는 상호 통과(스왑) 검사가 잡는다. 상수 전제는 `DodgeRulesTest.constantsKeepTunnellingImpossible` 이 고정한다 | `DodgeGameTest.movingUpThroughAFallingObstacleIsACollision`·`mutualPassThroughAtDoubleFallSpeedIsACollision`, `DodgeRulesTest` |
 | GAME-AC-18 | 탈락 역순이 순위이고, 같은 틱 탈락은 공동 순위다 | `DodgeGameTest` |
 | GAME-AC-19 | 같은 시드와 같은 입력 로그로 재생하면 원본과 같은 결과가 나온다. 충돌로 끝난 게임과 이탈로 끝난 게임 두 종료 경로 모두 커버한다 — 이탈 경로가 실제로 깨져 있던 경로다 | `DodgeReplayTest`, `Xorshift32Test` |
 | GAME-AC-20 | 게임이 끝나면 결과 1행과 참가자 행들을 기록하고 기보를 업로드한다 | `GameResultServiceTest`, `OmokGameSinkTest`, `DodgeGameSinkTest.theGameEndsAndRecordsAResult` |

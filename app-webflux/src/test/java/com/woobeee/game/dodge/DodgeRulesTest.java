@@ -20,33 +20,46 @@ class DodgeRulesTest {
     }
 
     /**
-     * v3 충돌 판정이 끝점 겹침만으로 완결되는 전제(DodgeGame.detectCollisions 주석)를
-     * 상수 차원에서 고정한다: 이동량 = 플레이어 한 변, 그리고 상대 변위(이동량 + 낙하 1)가
-     * 두 몸높이의 합(플레이어 한 변 + 최소 장애물 높이)보다 작아야 한다. 이 부등식이 깨지는
-     * 상수 변경은 스윕/스왑 검사를 되살려야 하는 변경이다.
+     * 충돌 판정(끝점 AABB + 상호 통과 검사, DodgeGame.detectCollisions 주석)이 완결되기 위한
+     * 상수 전제 둘을 고정한다: (1) 이동량 = 플레이어 한 변 — 수평 이동의 직전·현재 박스가
+     * 빈틈없이 이어져 끝점 검사로 충분하다. (2) 최대 낙하 속도 < 플레이어 한 변 + 최소 장애물
+     * 높이 — 가만히 서 있는 플레이어를 블록이 한 틱에 통째로 건너뛰지 못한다(움직이는
+     * 플레이어와의 교차 통과는 상호 통과 검사가 잡는다). 이 부등식이 깨지는 상수 변경은
+     * 충돌 판정을 다시 설계해야 하는 변경이다.
      */
     @Test
     void constantsKeepTunnellingImpossible() {
         assertThat(DodgeRules.MOVE_STEP).isEqualTo(DodgeRules.PLAYER_SIZE);
-        assertThat(DodgeRules.MOVE_STEP + 1)
+        assertThat(DodgeRules.MAX_FALL_SPEED)
                 .isLessThan(DodgeRules.PLAYER_SIZE + DodgeRules.MIN_OBSTACLE_HEIGHT);
     }
 
     @Test
-    void spawnProbabilityStartsAtFivePercent() {
-        assertThat(DodgeRules.spawnProbability(0)).isCloseTo(0.05, within(1e-9));
-        assertThat(DodgeRules.spawnProbability(99)).isCloseTo(0.05, within(1e-9));
+    void spawnProbabilityStartsAtOnePercent() {
+        assertThat(DodgeRules.spawnProbability(0)).isCloseTo(0.01, within(1e-9));
+        assertThat(DodgeRules.spawnProbability(99)).isCloseTo(0.01, within(1e-9));
     }
 
     @Test
-    void spawnProbabilityRisesTwoPointsEveryTenSeconds() {
-        assertThat(DodgeRules.spawnProbability(100)).isCloseTo(0.07, within(1e-9));
-        assertThat(DodgeRules.spawnProbability(200)).isCloseTo(0.09, within(1e-9));
+    void spawnProbabilityRisesOnePointEveryTenSeconds() {
+        assertThat(DodgeRules.spawnProbability(100)).isCloseTo(0.02, within(1e-9));
+        assertThat(DodgeRules.spawnProbability(200)).isCloseTo(0.03, within(1e-9));
     }
 
     @Test
-    void spawnProbabilityCapsAtTwentyPercent() {
-        assertThat(DodgeRules.spawnProbability(100_000)).isCloseTo(0.20, within(1e-9));
+    void spawnProbabilityCapsAtFifteenPercent() {
+        assertThat(DodgeRules.spawnProbability(100_000)).isCloseTo(0.15, within(1e-9));
+    }
+
+    /** 낙하 속도는 30초(300틱)마다 1씩 올라 3에서 멈춘다 — 후반의 압박은 밀도와 속도 둘 다다. */
+    @Test
+    void fallSpeedRampsEveryThirtySecondsAndCapsAtThree() {
+        assertThat(DodgeRules.fallSpeed(0)).isEqualTo(1);
+        assertThat(DodgeRules.fallSpeed(299)).isEqualTo(1);
+        assertThat(DodgeRules.fallSpeed(300)).isEqualTo(2);
+        assertThat(DodgeRules.fallSpeed(599)).isEqualTo(2);
+        assertThat(DodgeRules.fallSpeed(600)).isEqualTo(3);
+        assertThat(DodgeRules.fallSpeed(100_000)).isEqualTo(3);
     }
 
     @Test

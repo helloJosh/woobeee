@@ -70,6 +70,40 @@ class DodgeGameTest {
         assertThat(frame.obstacles()).containsExactly(new Obstacle(6, 1, 4, 2));
     }
 
+    /** 낙하 속도 램프의 배선 — 300틱부터는 한 틱에 2서브칸씩 내려온다. */
+    @Test
+    void obstaclesFallTwoSubcellsPerTickAfterThreeHundredTicks() {
+        DodgeGame game = DodgeGameTestSupport.quietAtTick(
+                1, 300,
+                Map.of(A, new Cell(0, DodgeRules.ROWS - DodgeRules.PLAYER_SIZE)),
+                List.of(new Obstacle(6, 0, 4, 2)),
+                A);
+
+        DodgeFrame frame = game.advanceOneTick(Map.of());
+
+        assertThat(frame.obstacles()).containsExactly(new Obstacle(6, 2, 4, 2));
+    }
+
+    /**
+     * GAME-AC-17 — 낙하가 2서브칸이 되면 "겹침 없이 서로를 지나치는" 배치가 다시 가능해진다:
+     * 위로 3 올라가는 플레이어와 2 내려오는 블록의 상대 변위(5)가 두 몸높이의 합(3+2)과 같다.
+     * 그 교차 통과를 상호 통과 검사(직전 박스끼리의 교차 겹침)가 잡는지를 고정한다 —
+     * 끝점 검사만 남기면 이 테스트가 깨진다.
+     */
+    @Test
+    void mutualPassThroughAtDoubleFallSpeedIsACollision() {
+        DodgeGame game = DodgeGameTestSupport.quietAtTick(
+                1, 300,
+                Map.of(A, new Cell(15, 30), B, new Cell(0, 45)),
+                List.of(new Obstacle(15, 28, 2, 2)),
+                A, B);
+
+        // A: 30 → 27(위로 3). 블록: 28..29 → 30..31(아래로 2). 끝점에서는 겹치지 않는다.
+        DodgeFrame frame = game.advanceOneTick(Map.of(A, Direction.UP));
+
+        assertThat(frame.eliminatedThisTick()).containsExactly(A);
+    }
+
     @Test
     void obstaclesLeavingTheBottomAreRemoved() {
         DodgeGame game = DodgeGameTestSupport.quiet(
@@ -217,16 +251,13 @@ class DodgeGameTest {
 
     /**
      * F2 — 골든 값 검증. seed=12345 의 xorshift32 시퀀스를 <b>독립 구현으로</b> 굴려 슬롯별
-     * nextDouble() 을 스폰 확률(tick 0..1 은 0.05)과 비교해 미리 얻은 기대값이다.
+     * nextDouble() 을 스폰 확률(초반 100틱은 0.01)과 비교해 미리 얻은 기대값이다.
      *
      * <pre>
-     * tick 0 (1~12번째 nextDouble): 최솟값이 0.114765 (슬롯 11) — 전부 0.05 이상이라 스폰 없음.
-     * tick 1 (13번째부터):
-     *   슬롯 0: 0.300349          — 스폰 없음
-     *   슬롯 1: 0.034989 &lt; 0.05 — 스폰. 폭 굴림 0.668699 → w = 2+floor(0.668699*4) = 4,
-     *                              높이 굴림 0.301702 → h = 2+floor(0.301702*2) = 2, x = 1*3 = 3
-     *   슬롯 2: 0.025221 &lt; 0.05 — 스폰. 폭 굴림 0.754853 → w = 5, 높이 굴림 0.120995 → h = 2, x = 6
-     *   슬롯 3..11: 0.800961, 0.087412, 0.651159, 0.434973, 0.384712, ... 전부 0.05 이상 — 스폰 없음
+     * 확률 인덱스 0..8 (1~108번째 nextDouble): 0.01 미만이 없다 — 스폰 없음.
+     * 확률 인덱스 9 (10번째 호출):
+     *   슬롯 7: 0.000061 &lt; 0.01 — 스폰. 폭 굴림 0.579282 → w = 2+floor(0.579282*4) = 4,
+     *           높이 굴림 0.330409 → h = 2+floor(0.330409*2) = 2, x = 7*3 = 21
      * </pre>
      *
      * <p>이 값은 DodgeGame 을 실행해 나온 출력을 그대로 베낀 것이 아니라, Xorshift32 의
@@ -239,13 +270,12 @@ class DodgeGameTest {
     void spawnsMatchTheIndependentlyDerivedXorshiftSequence() {
         DodgeGame game = new DodgeGame(List.of(A, B), 12345);
 
-        DodgeFrame tick0 = game.advanceOneTick(Map.of());
-        DodgeFrame tick1 = game.advanceOneTick(Map.of());
+        for (int i = 0; i < 9; i++) {
+            assertThat(game.advanceOneTick(Map.of()).obstacles()).isEmpty();
+        }
+        DodgeFrame tenth = game.advanceOneTick(Map.of());
 
-        assertThat(tick0.obstacles()).isEmpty();
-        assertThat(tick1.obstacles()).containsExactly(
-                new Obstacle(3, 0, 4, 2),
-                new Obstacle(6, 0, 5, 2));
+        assertThat(tenth.obstacles()).containsExactly(new Obstacle(21, 0, 4, 2));
     }
 
     /**
@@ -253,23 +283,22 @@ class DodgeGameTest {
      * 위치로 다루거나(렌더 순서), 낙하분과 신규 생성분을 다른 순서로 이어 붙이면 재생 화면이
      * 원본과 달라진다. 그래서 낙하분과 신규 생성분이 함께 있는 틱 하나를 통째로 고정한다.
      *
-     * <p>같은 독립 재현으로: tick 2·3 은 스폰이 없고, tick 4 는 슬롯 11 에서
-     * 0.030743 &lt; 0.05 로 스폰된다 — 폭 굴림 0.166594 → w = 2, 높이 굴림 0.260201 → h = 2,
-     * x = min(33, 36-2) = 33. tick 1 의 두 블록은 세 틱 내려와 y = 3 이다.
+     * <p>같은 독립 재현으로: 다음 스폰은 확률 인덱스 37 — 슬롯 8 에서 0.002049 &lt; 0.01,
+     * 폭 굴림 0.806379 → w = 5, 높이 굴림 0.500042 → h = 3, x = min(24, 36-5) = 24.
+     * 확률 인덱스 9 의 블록은 그 사이 28틱 내려와 y = 28 이다(이 구간의 낙하 속도는 1).
      */
     @Test
     void aMultiObstacleTickPinsFallenBeforeSpawnedAndAscendingSlots() {
         DodgeGame game = new DodgeGame(List.of(A, B), 12345);
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 37; i++) {
             game.advanceOneTick(Map.of());
         }
         DodgeFrame frame = game.advanceOneTick(Map.of());
 
         assertThat(frame.obstacles()).containsExactly(
-                new Obstacle(3, 3, 4, 2),
-                new Obstacle(6, 3, 5, 2),
-                new Obstacle(33, 0, 2, 2));
+                new Obstacle(21, 28, 4, 2),
+                new Obstacle(24, 0, 5, 3));
     }
 
     /** 같은 시드는 같은 결과를 낸다 — 골든 테스트를 보강하는 회귀 방지용 상호 비교다. */

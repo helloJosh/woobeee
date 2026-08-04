@@ -64,10 +64,12 @@ const DODGE_HEADER = {
     tickMs: 100,
     seed: 42,
     prng: "xorshift32",
-    baseSpawn: 0.05,
-    spawnStep: 0.02,
+    baseSpawn: 0.01,
+    spawnStep: 0.01,
     spawnStepTicks: 100,
-    maxSpawn: 0.2,
+    maxSpawn: 0.15,
+    fallSpeedStepTicks: 300,
+    maxFallSpeed: 3,
     minObstacleW: 2,
     maxObstacleW: 5,
     minObstacleH: 2,
@@ -172,7 +174,7 @@ describe("buildDodgeReplayView", () => {
      * 장애물은 이 재생에서 <b>유일하게 움직이는 것</b>이다. 아래 좌표는 dodge-engine.test.ts
      * 의 서버 대조 golden 그대로다:
      *
-     * <pre>obs=t1:(0,0,4,2)|t2:(0,1,4,2)(9,0,5,3)|t3:(0,2,4,2)(9,1,5,3)</pre>
+     * <pre>obs=t1:(0,0,4,2)|t2:(0,1,4,2)|t3:(0,2,4,2)</pre>
      *
      * <p>순서까지 그대로 본다. 목록이 곧 난수열의 소비 순서라, 순서가 흐트러졌다는 것은
      * 그 뒤 모든 틱이 다른 게임이라는 뜻이다.
@@ -181,14 +183,8 @@ describe("buildDodgeReplayView", () => {
         const frames = buildDodgeReplayView(dodgeNdjson([]), null).frames
 
         expect(frames[1].obstacles).toEqual([{ x: 0, y: 0, w: 4, h: 2 }])
-        expect(frames[2].obstacles).toEqual([
-            { x: 0, y: 1, w: 4, h: 2 },
-            { x: 9, y: 0, w: 5, h: 3 },
-        ])
-        expect(frames[3].obstacles).toEqual([
-            { x: 0, y: 2, w: 4, h: 2 },
-            { x: 9, y: 1, w: 5, h: 3 },
-        ])
+        expect(frames[2].obstacles).toEqual([{ x: 0, y: 1, w: 4, h: 2 }])
+        expect(frames[3].obstacles).toEqual([{ x: 0, y: 2, w: 4, h: 2 }])
     })
 
     it("opens on tick 0 — the starting cells, before any obstacle exists", () => {
@@ -203,12 +199,12 @@ describe("buildDodgeReplayView", () => {
         ])
     })
 
-    // golden: seed=42 n=2 | ticks=45. 프레임은 시작 판 하나 + 진행된 틱 마흔다섯이다.
+    // golden: seed=42 n=2 | ticks=78. 프레임은 시작 판 하나 + 진행된 틱 일흔여덟이다.
     it("runs the same number of ticks the server did", () => {
         const view = buildDodgeReplayView(dodgeNdjson([]), null)
 
-        expect(view.frames).toHaveLength(46)
-        expect(view.frames[view.frames.length - 1].tick).toBe(45)
+        expect(view.frames).toHaveLength(79)
+        expect(view.frames[view.frames.length - 1].tick).toBe(78)
     })
 
     /**
@@ -262,7 +258,7 @@ describe("buildDodgeReplayView", () => {
         const view = buildDodgeReplayView(dodgeNdjson([{ tick: 2, departures: ["g:ghost"] }]), null)
 
         expect(view.frames[2].departedThisTick).toEqual([])
-        expect(view.frames).toHaveLength(46)
+        expect(view.frames).toHaveLength(79)
     })
 
     it("replays the recorded inputs — a move changes where the piece stands", () => {
@@ -317,7 +313,7 @@ describe("buildDodgeReplayView", () => {
      * 서버 `DodgeReplayRunner` 와 `rerunReplay` 가 같은 자리에서 같은 이유로 던진다.
      */
     it("throws rather than showing a truncated replay as a short game", () => {
-        // golden: seed=42 n=1 은 62틱짜리다. 5틱에서 자르면 끝나지 않은 채로 상한에 닿는다.
+        // golden: seed=42 n=1 은 165틱짜리다. 5틱에서 자르면 끝나지 않은 채로 상한에 닿는다.
         const oneHanded = dodgeNdjson([], {
             ...DODGE_HEADER,
             players: [{ participantId: "m:11", displayName: "회원" }],
@@ -325,7 +321,7 @@ describe("buildDodgeReplayView", () => {
 
         expect(() => buildDodgeReplayView(oneHanded, null, 5)).toThrow(/did not finish/)
         // 같은 기보를 끝까지 돌리면 멀쩡히 끝난다 — 위 실패가 상한 때문임을 확인한다.
-        expect(buildDodgeReplayView(oneHanded, null).frames).toHaveLength(63)
+        expect(buildDodgeReplayView(oneHanded, null).frames).toHaveLength(166)
     })
 
     it("refuses a header whose rules this client cannot reproduce", () => {
@@ -361,7 +357,7 @@ describe("replay position", () => {
     // 개수인 것은 slice(0, index) 가 곧 그 시점의 판이기 때문이다 — 3수면 최대 3이다.
     it("counts stones for omok and frame indices for dodge", () => {
         expect(maxReplayIndex(omok)).toBe(3)
-        expect(maxReplayIndex(dodge)).toBe(45)
+        expect(maxReplayIndex(dodge)).toBe(78)
     })
 
     it("clamps anything the slider or a stale state can produce", () => {
@@ -378,9 +374,9 @@ describe("replay position", () => {
 
     it("says which unit the numbers are in", () => {
         expect(describeReplayPosition(omok, 2)).toBe("2 / 3수")
-        expect(describeReplayPosition(dodge, 5)).toBe("5 / 45틱")
-        // 범위를 벗어난 값도 표시 전에 접힌다 — "50 / 45틱" 을 보여 주지 않는다.
-        expect(describeReplayPosition(dodge, 50)).toBe("45 / 45틱")
+        expect(describeReplayPosition(dodge, 5)).toBe("5 / 78틱")
+        // 범위를 벗어난 값도 표시 전에 접힌다 — "99 / 78틱" 을 보여 주지 않는다.
+        expect(describeReplayPosition(dodge, 99)).toBe("78 / 78틱")
     })
 
     it("labels the board and the grid for screen readers", () => {

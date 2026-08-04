@@ -14,7 +14,7 @@ import java.util.Map;
  *
  * <p>v3 규칙: 격자는 36×48 서브칸, 플레이어는 {@link DodgeRules#PLAYER_SIZE}×동일 박스(좌표는
  * 왼쪽 위), 이동은 입력 1회에 {@link DodgeRules#MOVE_STEP} 서브칸, 장애물은 가변 크기
- * {@link Obstacle} 이고 틱당 1서브칸씩 떨어진다.
+ * {@link Obstacle} 이고 낙하 속도는 {@link DodgeRules#fallSpeed(int)} 가 틱에 따라 올린다.
  *
  * <p>테스트 전용 상태(시작 위치·장애물·스폰 확률)는 별도의 {@code ...ForTest} 메서드가 아니라
  * 패키지 전용 생성자의 인자로 주입한다. 그래야 프로덕션 경로에서만 쓰이는 두 개의 생성자
@@ -36,26 +36,30 @@ public final class DodgeGame {
 
     /** 실제 게임 생성자. 시작 위치는 {@link DodgeRules#startingCells(int)} 가 정하고, 장애물은 없이 시작한다. */
     public DodgeGame(List<String> participantIds, int seed) {
-        this(participantIds, seed, defaultStartingPositions(participantIds), List.of(), null);
+        this(participantIds, seed, defaultStartingPositions(participantIds), List.of(), null, 0);
     }
 
     /**
-     * 시나리오 생성자. 시작 위치·장애물·스폰 확률을 직접 지정한다.
+     * 시나리오 생성자. 시작 위치·장애물·스폰 확률·시작 틱을 직접 지정한다.
      *
      * <p>테스트가 이동/충돌/순위 로직을 각각 격리해서 검증할 때 쓴다. {@code spawnProbabilityOverride}
-     * 에 0.0 을 넘기면 장애물이 절대 새로 생기지 않는 "조용한" 게임이 된다.
+     * 에 0.0 을 넘기면 장애물이 절대 새로 생기지 않는 "조용한" 게임이 된다. {@code startingTick} 은
+     * 낙하 속도({@link DodgeRules#fallSpeed(int)})가 올라간 구간을 300틱을 돌리지 않고 검증하기
+     * 위한 이음매다 — 프로덕션 생성자는 언제나 0 이다.
      */
     DodgeGame(List<String> participantIds,
               int seed,
               Map<String, Cell> startingPositions,
               List<Obstacle> startingObstacles,
-              Double spawnProbabilityOverride) {
+              Double spawnProbabilityOverride,
+              int startingTick) {
         this.participantIds = List.copyOf(participantIds);
         this.seed = seed;
         this.random = new Xorshift32(seed);
         this.positions = new LinkedHashMap<>(startingPositions);
         this.obstacles = new ArrayList<>(startingObstacles);
         this.spawnProbabilityOverride = spawnProbabilityOverride;
+        this.tick = startingTick;
     }
 
     private static Map<String, Cell> defaultStartingPositions(List<String> participantIds) {
@@ -96,11 +100,14 @@ public final class DodgeGame {
             return frame(List.of());
         }
 
+        Map<String, Cell> previous = new LinkedHashMap<>(positions);
+
         applyInputs(inputs);
 
+        int fall = DodgeRules.fallSpeed(tick);
         List<Obstacle> fallen = new ArrayList<>(obstacles.size());
         for (Obstacle obstacle : obstacles) {
-            int y = obstacle.y() + 1;
+            int y = obstacle.y() + fall;
             if (y < DodgeRules.ROWS) {
                 fallen.add(new Obstacle(obstacle.x(), y, obstacle.w(), obstacle.h()));
             }
@@ -125,7 +132,7 @@ public final class DodgeGame {
 
         obstacles = fallen;
 
-        List<String> eliminated = detectCollisions();
+        List<String> eliminated = detectCollisions(previous, fall);
         eliminated.forEach(positions::remove);
         if (!eliminated.isEmpty()) {
             eliminationOrder.add(List.copyOf(eliminated));
@@ -142,22 +149,35 @@ public final class DodgeGame {
     }
 
     /**
-     * 충돌 판정. 틱이 끝난 시점의 박스 겹침(AABB) 하나로 충분하다.
+     * 충돌 판정. 두 갈래다: (1) 틱이 끝난 시점의 박스 겹침(AABB), (2) 서로 지나친 경우(스왑) —
+     * 참가자의 현재 박스가 장애물의 직전 박스(이번 틱의 낙하량만큼 위)와 겹치고 참가자의 직전
+     * 박스가 장애물의 현재 박스와 겹치면, 둘은 한 틱 안에서 서로를 뚫고 지나간 것이다.
      *
-     * <p>v2 가 따로 두던 스왑(서로 지나침) 검사가 v3 에는 없다 — 없어진 게 아니라 <b>기하학적으로
-     * 필요 없어졌다</b>. 이동량({@link DodgeRules#MOVE_STEP}=3)이 플레이어 박스 한 변
-     * ({@link DodgeRules#PLAYER_SIZE}=3)과 같아서 직전 박스와 현재 박스가 빈틈없이 이어지고
-     * (직전 [c..c+2] 다음이 곧바로 [c+3..c+5]), 장애물은 틱당 1서브칸만 내려온다. 그래서
-     * 상대 변위(최대 4)가 두 몸높이의 합(최소 3+2=5)보다 항상 작아, 겹침 없이 서로를 통과하는
-     * 배치가 존재하지 않는다 — 지나쳤다면 반드시 끝점에서 이미 겹쳐 있다. 이동량이나 최소
-     * 장애물 크기를 바꿀 때는 이 전제부터 다시 확인해야 한다.
+     * <p>스왑 검사가 필요한 것은 낙하가 2서브칸 이상인 구간뿐이다(1서브칸일 때는 상대 변위가
+     * 두 몸높이 합보다 항상 작아 겹침 없는 통과가 불가능하다). 수평 이동은 이동량
+     * ({@link DodgeRules#MOVE_STEP}=3)이 플레이어 한 변과 같아 직전·현재 박스가 빈틈없이
+     * 이어지므로 끝점 검사로 충분하고, 가만히 서 있는 플레이어를 블록이 통째로 건너뛰는 일은
+     * {@link DodgeRules#MAX_FALL_SPEED} &lt; PLAYER_SIZE + MIN_OBSTACLE_HEIGHT 가 막는다 —
+     * 이 부등식들은 {@code DodgeRulesTest} 가 상수 차원에서 고정한다.
      */
-    private List<String> detectCollisions() {
+    private List<String> detectCollisions(Map<String, Cell> previousPositions, int fall) {
         List<String> eliminated = new ArrayList<>();
 
         for (Map.Entry<String, Cell> entry : positions.entrySet()) {
             Cell now = entry.getValue();
-            boolean hit = obstacles.stream().anyMatch(obstacle -> overlapsPlayerBoxAt(obstacle, now));
+            Cell before = previousPositions.get(entry.getKey());
+
+            boolean hit = obstacles.stream().anyMatch(obstacle -> {
+                if (overlapsPlayerBoxAt(obstacle, now)) {
+                    return true;
+                }
+                if (before == null) {
+                    return false;
+                }
+                Obstacle obstacleBefore =
+                        new Obstacle(obstacle.x(), obstacle.y() - fall, obstacle.w(), obstacle.h());
+                return overlapsPlayerBoxAt(obstacleBefore, now) && overlapsPlayerBoxAt(obstacle, before);
+            });
             if (hit) {
                 eliminated.add(entry.getKey());
             }

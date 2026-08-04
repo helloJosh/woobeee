@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
     DODGE_RULES,
     createDodgeGame,
+    fallSpeed,
     REPLAY_MAX_TICKS,
     parseReplayNdjson,
     rerunReplay,
@@ -37,11 +38,19 @@ describe("xorshift32", () => {
 })
 
 describe("spawnProbability", () => {
-    it("starts at 0.05 and steps every 100 ticks up to 0.2", () => {
-        expect(spawnProbability(0)).toBeCloseTo(0.05)
-        expect(spawnProbability(99)).toBeCloseTo(0.05)
-        expect(spawnProbability(100)).toBeCloseTo(0.07)
-        expect(spawnProbability(100000)).toBeCloseTo(0.2)
+    it("starts at 0.01 and steps every 100 ticks up to 0.15", () => {
+        expect(spawnProbability(0)).toBeCloseTo(0.01)
+        expect(spawnProbability(99)).toBeCloseTo(0.01)
+        expect(spawnProbability(100)).toBeCloseTo(0.02)
+        expect(spawnProbability(100000)).toBeCloseTo(0.15)
+    })
+
+    it("ramps the fall speed every 300 ticks up to 3", () => {
+        expect(fallSpeed(0)).toBe(1)
+        expect(fallSpeed(299)).toBe(1)
+        expect(fallSpeed(300)).toBe(2)
+        expect(fallSpeed(600)).toBe(3)
+        expect(fallSpeed(100000)).toBe(3)
     })
 })
 
@@ -283,7 +292,7 @@ describe("replay", () => {
             departuresByTick: {},
         }
 
-        // 이 판은 45틱짜리다(아래 골든). 3틱에서 잘리면 아직 끝나지 않았다.
+        // 이 판은 78틱짜리다(아래 골든). 3틱에서 잘리면 아직 끝나지 않았다.
         expect(() => rerunReplay(replay, 3)).toThrow(/did not finish within 3 ticks/)
         // 상한을 주지 않으면 프로덕션 상한이고, 같은 판이 정상적으로 끝난다.
         expect(rerunReplay(replay).finished).toBe(true)
@@ -359,18 +368,18 @@ describe("stepReplay", () => {
  */
 describe("parity with the server DodgeGame", () => {
     const GOLDEN = [
-        "seed=42 n=1 | ticks=62 | starts=p0=18,45 | ranks={p0=1} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)(9,0,5,3)|t3:(0,2,4,2)(9,1,5,3)",
-        "seed=42 n=2 | ticks=45 | starts=p0=9,45 p1=27,45 | ranks={p0=2, p1=1} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)(9,0,5,3)|t3:(0,2,4,2)(9,1,5,3)",
-        "seed=42 n=5 | ticks=62 | starts=p0=3,45 p1=9,45 p2=18,45 p3=24,45 p4=30,45 | ranks={p0=4, p1=4, p2=2, p3=1, p4=3} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)(9,0,5,3)|t3:(0,2,4,2)(9,1,5,3)",
-        "seed=42 n=8 | ticks=62 | starts=p0=0,45 p1=6,45 p2=9,45 p3=15,45 p4=18,45 p5=24,45 p6=27,45 p7=33,45 | ranks={p0=7, p1=4, p2=7, p3=4, p4=2, p5=1, p6=4, p7=2} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)(9,0,5,3)|t3:(0,2,4,2)(9,1,5,3)",
-        "seed=12345 n=1 | ticks=91 | starts=p0=18,45 | ranks={p0=1} | obs=t1:|t2:(3,0,4,2)(6,0,5,2)|t3:(3,1,4,2)(6,1,5,2)",
-        "seed=12345 n=2 | ticks=46 | starts=p0=9,45 p1=27,45 | ranks={p0=2, p1=1} | obs=t1:|t2:(3,0,4,2)(6,0,5,2)|t3:(3,1,4,2)(6,1,5,2)",
-        "seed=12345 n=5 | ticks=59 | starts=p0=3,45 p1=9,45 p2=18,45 p3=24,45 p4=30,45 | ranks={p0=4, p1=4, p2=1, p3=2, p4=3} | obs=t1:|t2:(3,0,4,2)(6,0,5,2)|t3:(3,1,4,2)(6,1,5,2)",
-        "seed=12345 n=8 | ticks=91 | starts=p0=0,45 p1=6,45 p2=9,45 p3=15,45 p4=18,45 p5=24,45 p6=27,45 p7=33,45 | ranks={p0=1, p1=7, p2=7, p3=3, p4=2, p5=4, p6=5, p7=6} | obs=t1:|t2:(3,0,4,2)(6,0,5,2)|t3:(3,1,4,2)(6,1,5,2)",
-        "seed=987654321 n=1 | ticks=49 | starts=p0=18,45 | ranks={p0=1} | obs=t1:|t2:|t3:",
-        "seed=987654321 n=2 | ticks=52 | starts=p0=9,45 p1=27,45 | ranks={p0=2, p1=1} | obs=t1:|t2:|t3:",
-        "seed=987654321 n=5 | ticks=57 | starts=p0=3,45 p1=9,45 p2=18,45 p3=24,45 p4=30,45 | ranks={p0=5, p1=3, p2=4, p3=1, p4=2} | obs=t1:|t2:|t3:",
-        "seed=987654321 n=8 | ticks=68 | starts=p0=0,45 p1=6,45 p2=9,45 p3=15,45 p4=18,45 p5=24,45 p6=27,45 p7=33,45 | ranks={p0=7, p1=4, p2=4, p3=6, p4=7, p5=1, p6=2, p7=3} | obs=t1:|t2:|t3:",
+        "seed=42 n=1 | ticks=165 | starts=p0=18,45 | ranks={p0=1} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)|t3:(0,2,4,2)",
+        "seed=42 n=2 | ticks=78 | starts=p0=9,45 p1=27,45 | ranks={p0=2, p1=1} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)|t3:(0,2,4,2)",
+        "seed=42 n=5 | ticks=103 | starts=p0=3,45 p1=9,45 p2=18,45 p3=24,45 p4=30,45 | ranks={p0=5, p1=4, p2=1, p3=3, p4=2} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)|t3:(0,2,4,2)",
+        "seed=42 n=8 | ticks=157 | starts=p0=0,45 p1=6,45 p2=9,45 p3=15,45 p4=18,45 p5=24,45 p6=27,45 p7=33,45 | ranks={p0=8, p1=2, p2=6, p3=4, p4=1, p5=5, p6=3, p7=7} | obs=t1:(0,0,4,2)|t2:(0,1,4,2)|t3:(0,2,4,2)",
+        "seed=12345 n=1 | ticks=152 | starts=p0=18,45 | ranks={p0=1} | obs=t1:|t2:|t3:",
+        "seed=12345 n=2 | ticks=81 | starts=p0=9,45 p1=27,45 | ranks={p0=1, p1=2} | obs=t1:|t2:|t3:",
+        "seed=12345 n=5 | ticks=152 | starts=p0=3,45 p1=9,45 p2=18,45 p3=24,45 p4=30,45 | ranks={p0=1, p1=4, p2=2, p3=5, p4=3} | obs=t1:|t2:|t3:",
+        "seed=12345 n=8 | ticks=153 | starts=p0=0,45 p1=6,45 p2=9,45 p3=15,45 p4=18,45 p5=24,45 p6=27,45 p7=33,45 | ranks={p0=1, p1=5, p2=5, p3=3, p4=3, p5=8, p6=7, p7=2} | obs=t1:|t2:|t3:",
+        "seed=987654321 n=1 | ticks=162 | starts=p0=18,45 | ranks={p0=1} | obs=t1:|t2:|t3:",
+        "seed=987654321 n=2 | ticks=127 | starts=p0=9,45 p1=27,45 | ranks={p0=1, p1=2} | obs=t1:|t2:|t3:",
+        "seed=987654321 n=5 | ticks=162 | starts=p0=3,45 p1=9,45 p2=18,45 p3=24,45 p4=30,45 | ranks={p0=4, p1=1, p2=2, p3=3, p4=5} | obs=t1:|t2:|t3:",
+        "seed=987654321 n=8 | ticks=162 | starts=p0=0,45 p1=6,45 p2=9,45 p3=15,45 p4=18,45 p5=24,45 p6=27,45 p7=33,45 | ranks={p0=6, p1=3, p2=1, p3=7, p4=2, p5=5, p6=4, p7=8} | obs=t1:|t2:|t3:",
     ]
 
     function traceOf(seed: number, playerCount: number): string {
@@ -426,10 +435,12 @@ describe("parseReplayNdjson", () => {
         tickMs: 100,
         seed: 7,
         prng: "xorshift32",
-        baseSpawn: 0.05,
-        spawnStep: 0.02,
+        baseSpawn: 0.01,
+        spawnStep: 0.01,
         spawnStepTicks: 100,
-        maxSpawn: 0.2,
+        maxSpawn: 0.15,
+        fallSpeedStepTicks: 300,
+        maxFallSpeed: 3,
         minObstacleW: 2,
         maxObstacleW: 5,
         minObstacleH: 2,
@@ -458,6 +469,9 @@ describe("parseReplayNdjson", () => {
         expect(() => parseReplayNdjson(JSON.stringify({ ...header, cols: 12 }) + "\n")).toThrow(/cols/)
         expect(() => parseReplayNdjson(JSON.stringify({ ...header, maxSpawn: 0.9 }) + "\n")).toThrow(/maxSpawn/)
         expect(() => parseReplayNdjson(JSON.stringify({ ...header, moveStep: 1 }) + "\n")).toThrow(/moveStep/)
+        expect(() => parseReplayNdjson(JSON.stringify({ ...header, maxFallSpeed: 9 }) + "\n")).toThrow(
+            /maxFallSpeed/
+        )
         expect(() => parseReplayNdjson(JSON.stringify({ ...header, maxObstacleW: 9 }) + "\n")).toThrow(
             /maxObstacleW/
         )
@@ -605,6 +619,25 @@ describe("collision", () => {
         game.forcePosition("g:a", { x: 0, y: 45 })
         game.forceObstacles([{ x: 15, y: 26, w: 2, h: 2 }])
 
+        const frame = game.advanceOneTick({ "m:11": "UP" })
+
+        expect(frame.eliminatedThisTick).toEqual(["m:11"])
+    })
+
+    // 낙하 2서브칸 구간의 상호 통과(스왑). 끝점 검사만 남기면 여기서 깨진다 — 서버
+    // DodgeGameTest.mutualPassThroughAtDoubleFallSpeedIsACollision 과 같은 시나리오다.
+    it("treats a mutual pass-through at double fall speed as a hit", () => {
+        const game = createDodgeGame(["m:11", "g:a"], 1)
+        game.disableSpawning()
+        game.forcePosition("m:11", { x: 15, y: 30 })
+        game.forcePosition("g:a", { x: 0, y: 45 })
+        // 낙하 속도가 2가 되는 300틱까지 조용히 돌린다.
+        for (let i = 0; i < 300; i++) {
+            game.advanceOneTick({})
+        }
+        game.forceObstacles([{ x: 15, y: 28, w: 2, h: 2 }])
+
+        // m:11 은 30→27(위로 3), 블록은 28..29→30..31(아래로 2) — 끝점에서는 겹치지 않는다.
         const frame = game.advanceOneTick({ "m:11": "UP" })
 
         expect(frame.eliminatedThisTick).toEqual(["m:11"])

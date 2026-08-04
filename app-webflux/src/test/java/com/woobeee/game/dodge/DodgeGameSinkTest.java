@@ -258,7 +258,8 @@ class DodgeGameSinkTest {
         hub.subscribe("room-1")
                 .filter(message -> "DODGE_TICK".equals(message.type()))
                 .subscribe(message -> lastTick.set(asPayload(message)));
-        scheduler.advanceTimeBy(Duration.ofMillis(300));
+        // seed 12345 의 첫 스폰은 10번째 틱이다(확률 인덱스 9, base 0.01) — 그 뒤까지 돌린다.
+        scheduler.advanceTimeBy(Duration.ofMillis(1100));
 
         int tickNow = sink.gameOf("room-1").tick();
         Object obstaclesOnTheWire = lastTick.get().get("obstacles");

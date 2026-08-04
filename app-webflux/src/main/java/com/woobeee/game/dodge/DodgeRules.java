@@ -26,10 +26,14 @@ public final class DodgeRules {
     public static final int SPAWN_SLOTS = COLUMNS / SUBCELLS_PER_CELL;
     public static final int TICK_MILLIS = 100;
 
-    public static final double BASE_SPAWN = 0.05;
-    public static final double SPAWN_STEP = 0.02;
+    public static final double BASE_SPAWN = 0.01;
+    public static final double SPAWN_STEP = 0.01;
     public static final int SPAWN_STEP_TICKS = 100;
-    public static final double MAX_SPAWN = 0.20;
+    public static final double MAX_SPAWN = 0.15;
+
+    /** 낙하 속도(서브칸/틱). 300틱(30초)마다 1씩 올라 최대 3이 된다 — 후반의 압박은 밀도와 속도 둘 다다. */
+    public static final int FALL_SPEED_STEP_TICKS = 300;
+    public static final int MAX_FALL_SPEED = 3;
 
     public static final int MIN_OBSTACLE_WIDTH = 2;
     public static final int MAX_OBSTACLE_WIDTH = 5;
@@ -43,6 +47,15 @@ public final class DodgeRules {
     public static double spawnProbability(int tick) {
         double raised = BASE_SPAWN + SPAWN_STEP * (tick / SPAWN_STEP_TICKS);
         return Math.min(raised, MAX_SPAWN);
+    }
+
+    /**
+     * 이 틱의 낙하량(서브칸). {@link #MAX_FALL_SPEED} 는
+     * {@code PLAYER_SIZE + MIN_OBSTACLE_HEIGHT} 보다 작아야 한다 — 그보다 크면 가만히 서 있는
+     * 플레이어를 블록이 한 틱에 통째로 건너뛴다(DodgeGame 의 충돌 주석 참조).
+     */
+    public static int fallSpeed(int tick) {
+        return Math.min(1 + tick / FALL_SPEED_STEP_TICKS, MAX_FALL_SPEED);
     }
 
     /**
