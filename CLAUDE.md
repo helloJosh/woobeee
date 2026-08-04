@@ -168,7 +168,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | `RoomSweeper` 가 진행 중 게임을 정리하지 않음 (G2) | TTL 만료 방은 `RoomCommandDispatcher.settle` 을 거치지 않고 바로 치워진다. 오목에서는 `OmokGameSink` 의 방별 상태가 메모리에 남는 정적 누수지만, **장애물피하기에서는 더 나쁘다** — `DodgeGameSink` 의 틱 타이머가 이미 사라진 방을 계속 돌리고, 끝내 존재하지 않는 방의 결과 행을 DB에 쓴다. 즉 조용한 메모리 누수가 아니라 능동적인 오염이다. 두 결과가 다르므로 테스트도 둘이다(둘 다 `@Tag("known-gap")`): 오목의 정적 누수는 `RoomSweeperTest#sweepingAnExpiredRoomLeavesTheOmokSinkStillHoldingItsGameState` 가, 장애물피하기의 능동적 오염은 `RoomSweeperTest#sweepingAnExpiredRoomLeavesTheDodgeTimerRunningUntilItRecordsAPhantomResult` 가 고정한다 — 후자는 방을 치운 뒤 시간을 더 흘려 보내면 이미 사라진 방에 대해 `GameResultService.record` 가 실제로 불리는 것(=`game_results` 행과 S3 기보가 남는 것)을 실패로 잡는다. 맵에 항목이 남았다는 것이 아니라 저장소가 오염된다는 것이 요점이다 |
 | **기보 접근 권한 실DB 테스트** | GAME-AC-22(참가자 본인만 기보 URL)를 강제하는 SQL이 **텍스트로만** 고정돼 있다. `AND p.member_id = :memberId` 를 지우면 테스트가 깨지지만, 컬럼을 바꾸거나 `AND` 를 `OR` 로 바꾸면 통과한다. 셋 중 가장 위험 — **UI가 이 엔드포인트에 붙기 전에** 실 Postgres 대상 테스트로 막아야 한다(참가자·비참가자·없는 id·게스트 4케이스) |
 | 결과 저장 롤백 미검증 | `GameResultService` 가 `insertResult`+`insertParticipants` 를 트랜잭션으로 감싸는 것은 테스트로 고정됐지만, 실제 commit/rollback 은 검증되지 않았다. 통합 테스트로 두 번째 참가자 insert 를 실패시켜 `game_results` 가 0행인지 확인해야 한다 |
-| `game_result_id` FK 없음 (G5) | `game_result_participants.game_result_id` 에 `game_results` 로의 FK 가 없다. 지금은 삭제 경로가 없어 고아 행이 생길 수 없다. 붙이려면 V2 가 이미 적용됐으므로 `V3__game_result_fk.sql` 로 `ON DELETE CASCADE` 를 추가한다. 테스트: `GameResultParticipantsForeignKeyTest#insertingAParticipantForAMissingGameResultIsRejected` (`@Tag("known-gap")`, 실 Postgres 필요) |
+| `game_result_id` FK 없음 (G5) | `game_result_participants.game_result_id` 에 `game_results` 로의 FK 가 없다. 지금은 삭제 경로가 없어 고아 행이 생길 수 없다. 붙이려면 V3(기본 카테고리 시드)까지 적용됐으므로 `V4__game_result_fk.sql` 로 `ON DELETE CASCADE` 를 추가한다. 테스트: `GameResultParticipantsForeignKeyTest#insertingAParticipantForAMissingGameResultIsRejected` (`@Tag("known-gap")`, 실 Postgres 필요) |
 | 열린사 판정이 렌주보다 느슨함 (G4) | `FourRule.makesStraightFour` 가 양끝 중 **하나만** 정확히 5를 만들어도 참을 반환한다(`||`). 정통 렌주의 열린사는 승리점이 둘이다. 수정 전의 모양만 보는 판정보다는 좁으므로 회귀는 아니지만, 엄밀히 맞추려면 `&&` 로 조인다 — 단, 그렇게 하면 `RenjuRuleTest#twoDistinctThreeGroupsOnOneAxisAreDoubleThree` 가 깨진다(서로 다른 두 삼이 각자 반대편 그룹을 향해 장목이 되는 경우의 판정을 다시 설계해야 한다). 테스트: `FourRuleTest#bothFlanksMustCompleteToFiveNotJustOne` (`@Tag("known-gap")`) |
 | 앱 컨텍스트 기동 테스트 없음 | `app-webflux` 에는 `@WebFluxTest` 슬라이스만 있고 전체 컨텍스트를 띄우는 테스트가 없다. 빈 그래프가 실제로 기동하는지 CI가 확인하지 못한다 |
 | 사인의 테스트 전용 접근자 | `DodgeGameSink` 의 `gameOf`/`pendingInputOf`/`timerOf`/`holdsAnyStateFor` 는 테스트만 쓰는 package-private 접근자다. 방별 맵을 관측하려면 지금은 이 방법뿐이지만 넷까지 늘었다. 상태 관측을 하나의 스냅샷 레코드로 합치는 편이 낫다 |
@@ -184,8 +184,8 @@ G3 — 게임이 끝나도 방이 `FINISHED` 로 가지 않음 — 도 있었으
 고정해 뒀다 — 메모가 아니라 실행 가능한 할 일이다. **테스트는 다섯 개다**: G2 만 결과가 게임
 종류에 따라 다르므로 둘로 나뉜다(오목은 정적 누수, 장애물피하기는 이미 사라진 방의 결과 행을
 쓰는 능동적 오염). 다섯 테스트 모두 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test`
-에서는 제외된다(그래서 위 기본 검증 명령은 계속 343개 그린을 유지한다 — core 6 / app-mvc 36 /
-app-webflux 301. 포함해서 돌리면 348개 중 343개 통과, 5개 실패다). 루트 `pom.xml` 의
+에서는 제외된다(그래서 위 기본 검증 명령은 계속 345개 그린을 유지한다 — core 6 / app-mvc 38 /
+app-webflux 301. 포함해서 돌리면 350개 중 345개 통과, 5개 실패다). 루트 `pom.xml` 의
 `known.gap.excludedGroups` 프로퍼티(기본값 `known-gap`)가 surefire의 `excludedGroups` 를
 구동한다.
 
