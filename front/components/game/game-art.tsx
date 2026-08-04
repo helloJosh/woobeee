@@ -10,10 +10,13 @@ import type { ReactNode } from "react"
  * 라이트 모드에서 도트 대비가 무너진다.
  */
 
-type Palette = Record<string, string>
+export type Palette = Record<string, string>
 
-/** 문자 격자를 1×1 rect 로 푼다. `.` 또는 팔레트에 없는 문자는 투명. */
-function PixelRows({ x, y, rows, palette }: { x: number; y: number; rows: string[]; palette: Palette }) {
+/**
+ * 문자 격자를 1×1 rect 로 푼다. `.` 또는 팔레트에 없는 문자는 투명.
+ * 게임 화면(omok-board, dodge-grid)도 같은 도트를 그리므로 export 한다.
+ */
+export function PixelRows({ x, y, rows, palette }: { x: number; y: number; rows: string[]; palette: Palette }) {
     const cells: ReactNode[] = []
     rows.forEach((row, dy) => {
         Array.from(row).forEach((ch, dx) => {
@@ -27,7 +30,7 @@ function PixelRows({ x, y, rows, palette }: { x: number; y: number; rows: string
     return <g>{cells}</g>
 }
 
-const STONE_ROWS = [
+export const STONE_ROWS = [
     ".bbb.",
     "bsbbd",
     "bbbbd",
@@ -35,7 +38,7 @@ const STONE_ROWS = [
     ".ddd.",
 ]
 
-const STONE_PALETTES = {
+export const STONE_PALETTES = {
     black: { b: "#2e2e38", s: "#5c5c74", d: "#15151b" },
     white: { b: "#f1f1f4", s: "#ffffff", d: "#c3c3d2" },
 } as const
@@ -99,7 +102,7 @@ export function OmokPixelArt() {
     )
 }
 
-const DODGE_PLAYER_ROWS = [
+export const DODGE_PLAYER_ROWS = [
     ".bbbbb.",
     "bbebebb",
     "bbbbbbb",
