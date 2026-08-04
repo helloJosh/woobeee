@@ -185,11 +185,17 @@ export default function DodgeGrid({ players, obstacles, label }: DodgeGridProps)
                             ].join(" ")}
                             style={boxStyle(shown.x, shown.y, DODGE_RULES.playerSize, DODGE_RULES.playerSize)}
                         >
+                            {/* preserveAspectRatio="none" 이 중요하다: 히트박스(3×3 서브칸,
+                                이 span 전체)가 곧 서버의 충돌 판정 영역인데, meet 로 그리면
+                                7:6 스프라이트가 박스 높이의 86%로 줄어 바닥에 붙고 머리 위
+                                14%가 "보이지 않는 판정 영역"이 된다 — 블록이 거기만 스쳐도
+                                죽어서 안 닿았는데 죽는 것처럼 보인다. 약간의 세로 늘어남을
+                                감수하고 그림을 판정 영역에 정확히 일치시킨다. */}
                             <svg
                                 aria-hidden
                                 viewBox="0 0 7 6"
                                 shapeRendering="crispEdges"
-                                preserveAspectRatio="xMidYMax meet"
+                                preserveAspectRatio="none"
                                 className="h-full w-full"
                             >
                                 <PixelRows
