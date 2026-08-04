@@ -38,7 +38,7 @@ const DODGE_SNAPSHOT: DodgeSnapshotPayload = {
     gameType: "DODGE",
     tick: 12,
     positions: [{ participantId: "m:11", x: 3, y: 15 }],
-    obstacles: [{ x: 0, y: 0 }],
+    obstacles: [{ x: 0, y: 0, w: 4, h: 2 }],
 }
 
 /**

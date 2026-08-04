@@ -129,16 +129,19 @@ export interface DodgePosition {
     y: number
 }
 
-export interface DodgeCell {
+/** 낙하 블록. v3 부터 서브칸 단위의 가변 크기 박스다 — (x, y) 는 왼쪽 위. */
+export interface DodgeObstacle {
     x: number
     y: number
+    w: number
+    h: number
 }
 
 /** DodgeGameSink.tick — eliminated 는 "이번 틱에 탈락한" participantId 목록이다. */
 export interface DodgeTickPayload {
     tick: number
     positions: DodgePosition[]
-    obstacles: DodgeCell[]
+    obstacles: DodgeObstacle[]
     eliminated: string[]
 }
 
@@ -182,7 +185,7 @@ export interface DodgeSnapshotPayload {
     gameType: Extract<GameType, "DODGE">
     tick: number
     positions: DodgePosition[]
-    obstacles: DodgeCell[]
+    obstacles: DodgeObstacle[]
 }
 
 /**

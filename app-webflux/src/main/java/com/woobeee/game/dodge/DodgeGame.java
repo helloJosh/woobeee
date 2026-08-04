@@ -2,7 +2,6 @@ package com.woobeee.game.dodge;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +11,10 @@ import java.util.Map;
  *
  * <p>{@link #advanceOneTick(Map)} 만이 상태를 움직인다. 이 함수가 순수하기 때문에 기보 재생이
  * 원본과 같은 결과를 낸다는 것을 테스트로 증명할 수 있다.
+ *
+ * <p>v3 규칙: 격자는 36×48 서브칸, 플레이어는 {@link DodgeRules#PLAYER_SIZE}×동일 박스(좌표는
+ * 왼쪽 위), 이동은 입력 1회에 {@link DodgeRules#MOVE_STEP} 서브칸, 장애물은 가변 크기
+ * {@link Obstacle} 이고 틱당 1서브칸씩 떨어진다.
  *
  * <p>테스트 전용 상태(시작 위치·장애물·스폰 확률)는 별도의 {@code ...ForTest} 메서드가 아니라
  * 패키지 전용 생성자의 인자로 주입한다. 그래야 프로덕션 경로에서만 쓰이는 두 개의 생성자
@@ -27,7 +30,7 @@ public final class DodgeGame {
     /** null 이면 {@link DodgeRules#spawnProbability(int)} 를 그대로 쓴다. 0.0 을 넘기면 스폰이 없다. */
     private final Double spawnProbabilityOverride;
 
-    private List<Cell> obstacles;
+    private List<Obstacle> obstacles;
     private int tick;
     private boolean finished;
 
@@ -45,7 +48,7 @@ public final class DodgeGame {
     DodgeGame(List<String> participantIds,
               int seed,
               Map<String, Cell> startingPositions,
-              List<Cell> startingObstacles,
+              List<Obstacle> startingObstacles,
               Double spawnProbabilityOverride) {
         this.participantIds = List.copyOf(participantIds);
         this.seed = seed;
@@ -93,32 +96,36 @@ public final class DodgeGame {
             return frame(List.of());
         }
 
-        Map<String, Cell> previous = new HashMap<>(positions);
-
         applyInputs(inputs);
 
-        List<Cell> fallen = new ArrayList<>(obstacles.size());
-        for (Cell obstacle : obstacles) {
+        List<Obstacle> fallen = new ArrayList<>(obstacles.size());
+        for (Obstacle obstacle : obstacles) {
             int y = obstacle.y() + 1;
             if (y < DodgeRules.ROWS) {
-                fallen.add(new Cell(obstacle.x(), y));
+                fallen.add(new Obstacle(obstacle.x(), y, obstacle.w(), obstacle.h()));
             }
         }
 
         double probability = spawnProbabilityOverride != null
                 ? spawnProbabilityOverride
                 : DodgeRules.spawnProbability(tick);
-        // 컬럼 0부터 오름차순으로 굴린다 — 순서가 난수열의 일부라 브라우저 기보 재생이
-        // 같은 결과를 내려면 순서를 바꾸면 안 된다.
-        for (int x = 0; x < DodgeRules.COLUMNS; x++) {
+        // 슬롯 0부터 오름차순으로 굴린다 — 굴림 순서와 굴림 수가 난수열의 일부라 브라우저
+        // 기보 재생이 같은 결과를 내려면 순서도, 크기 샘플링의 굴림 수(폭 1회 + 높이 1회)도
+        // 바꾸면 안 된다.
+        for (int slot = 0; slot < DodgeRules.SPAWN_SLOTS; slot++) {
             if (random.nextDouble() < probability) {
-                fallen.add(new Cell(x, 0));
+                int w = DodgeRules.MIN_OBSTACLE_WIDTH + (int) Math.floor(
+                        random.nextDouble() * (DodgeRules.MAX_OBSTACLE_WIDTH - DodgeRules.MIN_OBSTACLE_WIDTH + 1));
+                int h = DodgeRules.MIN_OBSTACLE_HEIGHT + (int) Math.floor(
+                        random.nextDouble() * (DodgeRules.MAX_OBSTACLE_HEIGHT - DodgeRules.MIN_OBSTACLE_HEIGHT + 1));
+                int x = Math.min(slot * DodgeRules.SUBCELLS_PER_CELL, DodgeRules.COLUMNS - w);
+                fallen.add(new Obstacle(x, 0, w, h));
             }
         }
 
         obstacles = fallen;
 
-        List<String> eliminated = detectCollisions(previous);
+        List<String> eliminated = detectCollisions();
         eliminated.forEach(positions::remove);
         if (!eliminated.isEmpty()) {
             eliminationOrder.add(List.copyOf(eliminated));
@@ -135,34 +142,37 @@ public final class DodgeGame {
     }
 
     /**
-     * 충돌 판정. 같은 칸에 있으면 당연히 충돌이고, <b>서로 지나친 경우도 충돌</b>이다.
+     * 충돌 판정. 틱이 끝난 시점의 박스 겹침(AABB) 하나로 충분하다.
      *
-     * <p>참가자가 위로 올라가고 장애물이 내려오면 격자 위에서는 겹치지 않지만 실제로는 부딪혔다.
-     * 이 케이스를 빼면 위로 이동해 장애물을 통과하는 버그가 된다.
+     * <p>v2 가 따로 두던 스왑(서로 지나침) 검사가 v3 에는 없다 — 없어진 게 아니라 <b>기하학적으로
+     * 필요 없어졌다</b>. 이동량({@link DodgeRules#MOVE_STEP}=3)이 플레이어 박스 한 변
+     * ({@link DodgeRules#PLAYER_SIZE}=3)과 같아서 직전 박스와 현재 박스가 빈틈없이 이어지고
+     * (직전 [c..c+2] 다음이 곧바로 [c+3..c+5]), 장애물은 틱당 1서브칸만 내려온다. 그래서
+     * 상대 변위(최대 4)가 두 몸높이의 합(최소 3+2=5)보다 항상 작아, 겹침 없이 서로를 통과하는
+     * 배치가 존재하지 않는다 — 지나쳤다면 반드시 끝점에서 이미 겹쳐 있다. 이동량이나 최소
+     * 장애물 크기를 바꿀 때는 이 전제부터 다시 확인해야 한다.
      */
-    private List<String> detectCollisions(Map<String, Cell> previousPositions) {
+    private List<String> detectCollisions() {
         List<String> eliminated = new ArrayList<>();
 
         for (Map.Entry<String, Cell> entry : positions.entrySet()) {
             Cell now = entry.getValue();
-            Cell before = previousPositions.get(entry.getKey());
-
-            boolean hit = obstacles.stream().anyMatch(obstacle -> {
-                if (obstacle.equals(now)) {
-                    return true;
-                }
-                // 스왑: 장애물의 직전 위치(한 칸 위)가 참가자의 현재 자리이고,
-                // 참가자의 직전 위치가 장애물의 현재 자리다.
-                Cell obstacleBefore = new Cell(obstacle.x(), obstacle.y() - 1);
-                return obstacleBefore.equals(now) && obstacle.equals(before);
-            });
-
+            boolean hit = obstacles.stream().anyMatch(obstacle -> overlapsPlayerBoxAt(obstacle, now));
             if (hit) {
                 eliminated.add(entry.getKey());
             }
         }
 
         return eliminated;
+    }
+
+    private boolean overlapsPlayerBoxAt(Obstacle obstacle, Cell topLeft) {
+        return obstacle.overlaps(
+                topLeft.x(),
+                topLeft.y(),
+                topLeft.x() + DodgeRules.PLAYER_SIZE - 1,
+                topLeft.y() + DodgeRules.PLAYER_SIZE - 1
+        );
     }
 
     private void applyInputs(Map<String, Direction> inputs) {
@@ -173,9 +183,10 @@ public final class DodgeGame {
                 continue;
             }
 
-            int x = current.x() + direction.dx();
-            int y = current.y() + direction.dy();
-            if (x < 0 || x >= DodgeRules.COLUMNS || y < 0 || y >= DodgeRules.ROWS) {
+            int x = current.x() + direction.dx() * DodgeRules.MOVE_STEP;
+            int y = current.y() + direction.dy() * DodgeRules.MOVE_STEP;
+            if (x < 0 || x > DodgeRules.COLUMNS - DodgeRules.PLAYER_SIZE
+                    || y < 0 || y > DodgeRules.ROWS - DodgeRules.PLAYER_SIZE) {
                 continue;
             }
 

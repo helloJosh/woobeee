@@ -3,6 +3,7 @@
 import { DODGE_PLAYER_ROWS, PixelRows } from "@/components/game/game-art"
 import { DODGE_RULES } from "@/lib/dodge-engine"
 import { DODGE_PLAYER_COLOR_COUNT, describeStackBadge, type DodgeGridPlayer } from "@/lib/dodge-play"
+import type { DodgeObstacle } from "@/lib/game-socket"
 
 // 격자 위 말의 타입은 lib/dodge-play.ts 에 있다(리듀서가 같은 타입으로 상태를 만든다).
 // 여기서 다시 내보내는 것은 화면 쪽에서 <DodgeGrid /> 만 import 하고도 쓸 수 있게 하려는 것뿐이다.
@@ -87,7 +88,7 @@ const STARS: [number, number][] = [
 
 interface DodgeGridProps {
     players: DodgeGridPlayer[]
-    obstacles: { x: number; y: number }[]
+    obstacles: DodgeObstacle[]
     /**
      * 접근성 이름. 여기서 만들지 않고 받는다 — 첫 프레임 전에는 인원을 세면 안 되는데
      * (describeGridLabel), 그 판단은 화면 상태를 아는 lib 쪽에 있고 테스트로 고정돼 있다.
@@ -95,11 +96,19 @@ interface DodgeGridProps {
     label: string
 }
 
-export default function DodgeGrid({ players, obstacles, label }: DodgeGridProps) {
-    const obstacleAt = new Set(obstacles.map((o) => `${o.x},${o.y}`))
+/** 서브칸 좌표/크기를 퍼센트 스타일로. 36×48 서브격자를 칸 DOM 없이 절대배치로 그린다. */
+function boxStyle(x: number, y: number, w: number, h: number) {
+    return {
+        left: `${(x / DODGE_RULES.cols) * 100}%`,
+        top: `${(y / DODGE_RULES.rows) * 100}%`,
+        width: `${(w / DODGE_RULES.cols) * 100}%`,
+        height: `${(h / DODGE_RULES.rows) * 100}%`,
+    }
+}
 
-    // 한 칸에 여러 명이 설 수 있다 — 서버의 DodgeGame 은 말끼리의 충돌을 보지 않는다.
-    // Map<key, player> 로 만들면 마지막 한 명만 남아 다른 사람이 판에서 사라진 것처럼 보인다.
+export default function DodgeGrid({ players, obstacles, label }: DodgeGridProps) {
+    // 같은 자리(왼쪽 위 서브칸 기준)에 여러 명이 설 수 있다 — 서버의 DodgeGame 은 말끼리의
+    // 충돌을 보지 않는다. 자리별로 묶어 한 명만 그리고 나머지는 배지로 센다.
     const playersAt = new Map<string, DodgeGridPlayer[]>()
     for (const player of players) {
         const key = `${player.x},${player.y}`
@@ -132,7 +141,7 @@ export default function DodgeGrid({ players, obstacles, label }: DodgeGridProps)
                     />
                 ))}
 
-                {/* 바닥. 마지막 행의 말이 그 위에 서 있는 것처럼 보이도록 살짝 겹친다. */}
+                {/* 바닥. 마지막 줄의 말이 그 위에 서 있는 것처럼 보이도록 살짝 겹친다. */}
                 <span aria-hidden className="absolute inset-x-0 bottom-0 h-[2.5%]" style={{ background: GROUND }} />
                 <span
                     aria-hidden
@@ -140,88 +149,72 @@ export default function DodgeGrid({ players, obstacles, label }: DodgeGridProps)
                     style={{ background: GROUND_LINE }}
                 />
 
-                <div
-                    className="relative grid h-full w-full"
-                    style={{
-                        gridTemplateColumns: `repeat(${DODGE_RULES.cols}, minmax(0, 1fr))`,
-                        // 행도 함께 고정한다. auto 로 두면 빈 칸의 높이가 내용에 맞춰져
-                        // 격자가 컨테이너 높이를 채우지 못한다(omok-board 와 같은 이유).
-                        gridTemplateRows: `repeat(${DODGE_RULES.rows}, minmax(0, 1fr))`,
-                    }}
-                >
-                    {Array.from({ length: DODGE_RULES.cols * DODGE_RULES.rows }, (_, index) => {
-                        const x = index % DODGE_RULES.cols
-                        const y = Math.floor(index / DODGE_RULES.cols)
-                        const key = `${x},${y}`
-                        const stack = playersAt.get(key)
-                        // 같은 칸에 내가 있으면 반드시 내 말을 그린다 — 내 말이 남의 말에 가려
-                        // 사라지면 어디에 있는지 모른 채 조작하게 된다.
-                        const shown = stack?.find((player) => player.isSelf) ?? stack?.[0]
-                        // 가려진 말들. 번호를 직접 그린다 — title 은 터치 기기에서 보이지 않는다.
-                        const stackBadge = describeStackBadge(
-                            (stack ?? [])
-                                .filter((player) => player !== shown)
-                                .map((player) => player.playerNumber)
-                        )
-                        const obstacle = obstacleAt.has(key)
-                            ? OBSTACLE_COLORS[x % OBSTACLE_COLORS.length]
-                            : null
-                        const piece = shown
-                            ? DODGE_PLAYER_PIXEL_COLORS[shown.colorIndex % DODGE_PLAYER_PIXEL_COLORS.length]
-                            : null
+                {/* 낙하 블록 — 서버가 준 w×h 그대로. 아래 27%는 어두운 모서리(도트 그림자). */}
+                {obstacles.map((obstacle, index) => {
+                    const palette = OBSTACLE_COLORS[obstacle.x % OBSTACLE_COLORS.length]
+                    return (
+                        <span
+                            key={`o-${index}`}
+                            aria-hidden
+                            className="absolute"
+                            style={{ ...boxStyle(obstacle.x, obstacle.y, obstacle.w, obstacle.h), background: palette.bottom }}
+                        >
+                            <span className="absolute inset-x-0 top-0 h-[73%]" style={{ background: palette.top }} />
+                        </span>
+                    )
+                })}
 
-                        return (
-                            <div key={index} className="relative">
-                                {obstacle ? (
-                                    <span aria-hidden className="absolute inset-[10%]" style={{ background: obstacle.bottom }}>
-                                        <span
-                                            className="absolute inset-x-0 top-0 h-[72%]"
-                                            style={{ background: obstacle.top }}
-                                        />
-                                    </span>
-                                ) : null}
-                                {shown && piece ? (
-                                    <span
-                                        title={stack?.map((player) => player.displayName).join(", ")}
-                                        className={[
-                                            "absolute inset-[4%] flex items-end justify-center",
-                                            shown.isSelf ? "rounded-sm ring-2 ring-white/80" : "",
-                                        ].join(" ")}
-                                    >
-                                        <svg
-                                            aria-hidden
-                                            viewBox="0 0 7 6"
-                                            shapeRendering="crispEdges"
-                                            preserveAspectRatio="xMidYMax meet"
-                                            className="h-full w-full"
-                                        >
-                                            <PixelRows
-                                                x={0}
-                                                y={0}
-                                                rows={DODGE_PLAYER_ROWS}
-                                                palette={{ b: piece.body, e: "#12242e", d: piece.shade }}
-                                            />
-                                        </svg>
-                                        <span
-                                            className="absolute inset-x-0 top-[34%] text-center text-[0.55rem] font-bold leading-none text-white"
-                                            style={{ textShadow: "0 1px 2px rgba(0,0,0,.7)" }}
-                                        >
-                                            {shown.playerNumber > 0 ? shown.playerNumber : "?"}
-                                        </span>
-                                    </span>
-                                ) : null}
-                                {stackBadge ? (
-                                    <span
-                                        title={stack?.map((player) => player.displayName).join(", ")}
-                                        className="absolute -right-0.5 -top-0.5 rounded-sm bg-[#ffd166] px-0.5 text-[0.5rem] font-bold leading-none text-[#1a1c2c]"
-                                    >
-                                        {stackBadge}
-                                    </span>
-                                ) : null}
-                            </div>
-                        )
-                    })}
-                </div>
+                {/* 플레이어 — 3×3 서브칸 박스에 도트 캐릭터. */}
+                {[...playersAt.values()].map((stack) => {
+                    // 같은 자리에 내가 있으면 반드시 내 말을 그린다 — 내 말이 남의 말에 가려
+                    // 사라지면 어디에 있는지 모른 채 조작하게 된다.
+                    const shown = stack.find((player) => player.isSelf) ?? stack[0]
+                    // 가려진 말들. 번호를 직접 그린다 — title 은 터치 기기에서 보이지 않는다.
+                    const stackBadge = describeStackBadge(
+                        stack.filter((player) => player !== shown).map((player) => player.playerNumber)
+                    )
+                    const piece = DODGE_PLAYER_PIXEL_COLORS[shown.colorIndex % DODGE_PLAYER_PIXEL_COLORS.length]
+
+                    return (
+                        <span
+                            key={shown.participantId}
+                            title={stack.map((player) => player.displayName).join(", ")}
+                            className={[
+                                "absolute",
+                                shown.isSelf ? "rounded-sm ring-2 ring-white/80" : "",
+                            ].join(" ")}
+                            style={boxStyle(shown.x, shown.y, DODGE_RULES.playerSize, DODGE_RULES.playerSize)}
+                        >
+                            <svg
+                                aria-hidden
+                                viewBox="0 0 7 6"
+                                shapeRendering="crispEdges"
+                                preserveAspectRatio="xMidYMax meet"
+                                className="h-full w-full"
+                            >
+                                <PixelRows
+                                    x={0}
+                                    y={0}
+                                    rows={DODGE_PLAYER_ROWS}
+                                    palette={{ b: piece.body, e: "#12242e", d: piece.shade }}
+                                />
+                            </svg>
+                            <span
+                                className="absolute inset-x-0 top-[30%] text-center text-[0.55rem] font-bold leading-none text-white"
+                                style={{ textShadow: "0 1px 2px rgba(0,0,0,.7)" }}
+                            >
+                                {shown.playerNumber > 0 ? shown.playerNumber : "?"}
+                            </span>
+                            {stackBadge ? (
+                                <span
+                                    className="absolute -right-1 -top-1 rounded-sm bg-[#ffd166] px-0.5 text-[0.5rem] font-bold leading-none text-[#1a1c2c]"
+                                >
+                                    {stackBadge}
+                                </span>
+                            ) : null}
+                        </span>
+                    )
+                })}
             </div>
         </div>
     )

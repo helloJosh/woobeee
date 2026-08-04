@@ -18,10 +18,10 @@ import java.util.Map;
  * 하는 번거로움만 늘어난다. {@code moves} 나 {@code departures} 는 비어 있으면 아예 필드 자체를
  * 쓰지 않는다 — 헤더 이후 각 줄은 그 틱에 실제로 있었던 것만 담는다.
  *
- * <p><b>헤더의 {@code v} 는 2다.</b> {@code departures} 필드가 추가되면서 파일의 의미가
- * 바뀌었다 — v1 그대로 읽는 리더는 {@code inputsByTick} 만 보고 이탈을 놓쳐, 원본과 다른 승자·
- * 다른 길이를 "정상"으로 재생해 버린다(F1과 같은 실패가 클라이언트에서 조용히 재현된다). 그래서
- * 이 필드가 생긴 시점에 버전을 반드시 올린다 — 읽는 쪽이 몰라도 되는 변경이 아니다.
+ * <p><b>헤더의 {@code v} 는 3이다.</b> v2 는 {@code departures} 필드가 생긴 버전이고, v3 은
+ * 규칙 자체가 바뀐 버전이다 — 36×48 서브격자, 3×3 플레이어, 3서브칸 이동, 가변 크기 장애물.
+ * v2 이하의 기보를 v3 엔진으로 재생하면 예외 없이 다른 게임이 그려지므로, 읽는 쪽은 버전이
+ * 다르면 반드시 거절해야 한다 — 읽는 쪽이 몰라도 되는 변경이 아니다.
  */
 @Component
 public class DodgeReplayWriter {
@@ -35,10 +35,13 @@ public class DodgeReplayWriter {
         StringBuilder builder = new StringBuilder();
 
         Map<String, Object> header = new LinkedHashMap<>();
-        header.put("v", 2);
+        header.put("v", 3);
         header.put("gameType", "DODGE");
         header.put("cols", DodgeRules.COLUMNS);
         header.put("rows", DodgeRules.ROWS);
+        header.put("playerSize", DodgeRules.PLAYER_SIZE);
+        header.put("moveStep", DodgeRules.MOVE_STEP);
+        header.put("spawnSlots", DodgeRules.SPAWN_SLOTS);
         header.put("tickMs", DodgeRules.TICK_MILLIS);
         header.put("seed", replay.seed());
         header.put("prng", "xorshift32");
@@ -46,6 +49,10 @@ public class DodgeReplayWriter {
         header.put("spawnStep", DodgeRules.SPAWN_STEP);
         header.put("spawnStepTicks", DodgeRules.SPAWN_STEP_TICKS);
         header.put("maxSpawn", DodgeRules.MAX_SPAWN);
+        header.put("minObstacleW", DodgeRules.MIN_OBSTACLE_WIDTH);
+        header.put("maxObstacleW", DodgeRules.MAX_OBSTACLE_WIDTH);
+        header.put("minObstacleH", DodgeRules.MIN_OBSTACLE_HEIGHT);
+        header.put("maxObstacleH", DodgeRules.MAX_OBSTACLE_HEIGHT);
         header.put("players", playersOf(replay, displayNames));
         builder.append(write(header)).append('\n');
 

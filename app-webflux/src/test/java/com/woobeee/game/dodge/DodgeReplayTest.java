@@ -144,10 +144,10 @@ class DodgeReplayTest {
 
         ObjectMapper mapper = new ObjectMapper();
         var header = mapper.readTree(lines[0]);
-        assertThat(header.get("v").asInt()).isEqualTo(2);
+        assertThat(header.get("v").asInt()).isEqualTo(3);
         assertThat(header.get("gameType").asText()).isEqualTo("DODGE");
-        assertThat(header.get("cols").asInt()).isEqualTo(12);
-        assertThat(header.get("rows").asInt()).isEqualTo(16);
+        assertThat(header.get("cols").asInt()).isEqualTo(36);
+        assertThat(header.get("rows").asInt()).isEqualTo(48);
         assertThat(header.get("tickMs").asInt()).isEqualTo(100);
         assertThat(header.get("seed").asInt()).isEqualTo(8412739);
         assertThat(header.get("players")).hasSize(2);
@@ -215,7 +215,7 @@ class DodgeReplayTest {
      * to consciously bump this number again instead of leaving a stale contract in place.
      */
     @Test
-    void headerVersionIsTwoNowThatDeparturesAreAField() {
+    void headerVersionIsThreeNowThatTheRulesChanged() {
         String ndjson = new DodgeReplayWriter(new ObjectMapper()).toNdjson(
                 new DodgeReplay(1, List.of(A), Map.of(), Map.of()),
                 Map.of(A, "host")
@@ -223,7 +223,7 @@ class DodgeReplayTest {
 
         var header = new ObjectMapper().readTree(ndjson.strip().split("\n")[0]);
 
-        assertThat(header.get("v").asInt()).isEqualTo(2);
+        assertThat(header.get("v").asInt()).isEqualTo(3);
     }
 
     @Test
@@ -235,10 +235,17 @@ class DodgeReplayTest {
 
         var header = new ObjectMapper().readTree(ndjson.strip().split("\n")[0]);
 
-        assertThat(header.get("baseSpawn").asDouble()).isEqualTo(0.15);
-        assertThat(header.get("spawnStep").asDouble()).isEqualTo(0.05);
+        assertThat(header.get("baseSpawn").asDouble()).isEqualTo(0.05);
+        assertThat(header.get("spawnStep").asDouble()).isEqualTo(0.02);
         assertThat(header.get("spawnStepTicks").asInt()).isEqualTo(100);
-        assertThat(header.get("maxSpawn").asDouble()).isEqualTo(0.60);
+        assertThat(header.get("maxSpawn").asDouble()).isEqualTo(0.20);
         assertThat(header.get("prng").asText()).isEqualTo("xorshift32");
+        assertThat(header.get("playerSize").asInt()).isEqualTo(3);
+        assertThat(header.get("moveStep").asInt()).isEqualTo(3);
+        assertThat(header.get("spawnSlots").asInt()).isEqualTo(12);
+        assertThat(header.get("minObstacleW").asInt()).isEqualTo(2);
+        assertThat(header.get("maxObstacleW").asInt()).isEqualTo(5);
+        assertThat(header.get("minObstacleH").asInt()).isEqualTo(2);
+        assertThat(header.get("maxObstacleH").asInt()).isEqualTo(3);
     }
 }

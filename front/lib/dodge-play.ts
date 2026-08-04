@@ -2,7 +2,7 @@ import { DODGE_RULES, type DirectionName } from "@/lib/dodge-engine"
 import { getFriendlyErrorMessage } from "@/lib/errors/error-utils"
 import {
     isServerMessage,
-    type DodgeCell,
+    type DodgeObstacle,
     type DodgePosition,
     type GameEndPayload,
     type ServerMessage,
@@ -38,7 +38,7 @@ export interface DodgeRoomState {
     tick: number
     /** 살아 있는 참가자의 좌표만 들어 있다 — 탈락자는 서버의 positions 에서 지워진다. */
     positions: DodgePosition[]
-    obstacles: DodgeCell[]
+    obstacles: DodgeObstacle[]
     /**
      * 색·번호 배정 순서. <b>추가만 한다.</b> 명단(participants) 순서를 그대로 쓰면 누가
      * 도중에 나갈 때 그 뒤 사람들의 색이 한 칸씩 밀려, 판이 도는 도중에 내 말 색이 바뀐다.
@@ -266,8 +266,8 @@ export function toGridPlayers(
         // 명단보다 프레임이 먼저 오거나 명단에서 빠진 뒤에도 좌표가 남아 있을 수 있다.
         // 그때는 식별자라도 보여 준다 — 빈 이름표보다 낫다.
         displayName: nameOf.get(position.participantId) ?? position.participantId,
-        x: clamp(position.x, DODGE_RULES.cols - 1),
-        y: clamp(position.y, DODGE_RULES.rows - 1),
+        x: clamp(position.x, DODGE_RULES.cols - DODGE_RULES.playerSize),
+        y: clamp(position.y, DODGE_RULES.rows - DODGE_RULES.playerSize),
         colorIndex: colorIndexOf(state.colorOrder, position.participantId),
         playerNumber: playerNumberOf(state.colorOrder, position.participantId),
         isSelf: position.participantId === selfParticipantId,

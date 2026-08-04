@@ -1,21 +1,41 @@
 /**
  * 서버(app-webflux)의 DodgeGame 을 그대로 옮긴 것이다.
  * 기보 재생은 이 포트가 서버와 한 글자도 다르지 않아야 성립한다 — 바꿀 때는 양쪽을 같이 바꾼다.
+ *
+ * v3 규칙: 옛 "이동 칸" 하나를 3×3 서브칸으로 쪼갰다. 격자는 36×48 서브칸, 플레이어는 3×3
+ * 박스(좌표는 왼쪽 위), 입력 1회에 3서브칸 이동, 장애물은 가변 크기 박스이고 틱당 1서브칸씩
+ * 떨어진다.
  */
 
 export const DODGE_RULES = {
-    cols: 12,
-    rows: 16,
+    cols: 36,
+    rows: 48,
+    playerSize: 3,
+    moveStep: 3,
+    spawnSlots: 12,
+    subcellsPerCell: 3,
     tickMs: 100,
-    baseSpawn: 0.15,
-    spawnStep: 0.05,
+    baseSpawn: 0.05,
+    spawnStep: 0.02,
     spawnStepTicks: 100,
-    maxSpawn: 0.6,
+    maxSpawn: 0.2,
+    minObstacleW: 2,
+    maxObstacleW: 5,
+    minObstacleH: 2,
+    maxObstacleH: 3,
 } as const
 
 export interface Cell {
     x: number
     y: number
+}
+
+/** 낙하 블록. (x, y) 는 왼쪽 위 서브칸이고 w×h 서브칸을 차지한다. */
+export interface Obstacle {
+    x: number
+    y: number
+    w: number
+    h: number
 }
 
 export type DirectionName = "UP" | "DOWN" | "LEFT" | "RIGHT"
@@ -35,7 +55,7 @@ const DELTAS: Record<DirectionName, Cell> = {
  * <p>순서가 뒤바뀌어 있으면(`seed === 0 ? 1 : seed | 0`) "문자 그대로 0 은 아니지만 잘라내면
  * 0 이 되는" 값 — `undefined`, `null`, `"0"`, `2**32` — 이 그대로 state 0 으로 들어간다.
  * xorshift 는 0 에서 영원히 0 을 뱉으므로 `nextDouble()` 이 항상 0 이 되고, 그러면 매 틱 모든
- * 열에서 장애물이 쏟아져 15틱쯤에 전원이 죽는 "그럴듯한 짧은 게임" 이 예외 하나 없이 그려진다.
+ * 슬롯에서 장애물이 쏟아져 몇 틱 만에 전원이 죽는 "그럴듯한 짧은 게임" 이 예외 하나 없이 그려진다.
  */
 export function xorshift32(seed: number) {
     const truncated = seed | 0
@@ -62,24 +82,30 @@ export function spawnProbability(tick: number): number {
 }
 
 export function startingCells(playerCount: number): Cell[] {
-    const y = DODGE_RULES.rows - 1
+    const y = DODGE_RULES.rows - DODGE_RULES.playerSize
     return Array.from({ length: playerCount }, (_, i) => {
-        // 서버의 DodgeRules.startingCells 와 **같은 식**이어야 한다:
-        //   round((i + 0.5) * COLUMNS / playerCount - 0.5), 그리고 [0, cols-1] 로 클램프.
-        // Java 의 Math.round 와 JS 의 Math.round 는 둘 다 .5 를 +∞ 쪽으로 올리므로 그대로 옮겨진다.
-        // floor(i * cols / playerCount) 로 쓰면 8인 게임이 [0,1,3,4,6,7,9,10] 이 되어
-        // 서버의 [0,2,3,5,6,8,9,11] 과 **틱 1부터** 갈린다 — 재생이 통째로 다른 게임이 된다.
-        const x = Math.round(((i + 0.5) * DODGE_RULES.cols) / playerCount - 0.5)
-        return { x: Math.min(Math.max(x, 0), DODGE_RULES.cols - 1), y }
+        // 서버의 DodgeRules.startingCells 와 **같은 식**이어야 한다: 옛 12칸 공식
+        //   round((i + 0.5) * spawnSlots / playerCount - 0.5) 를 [0, spawnSlots-1] 로 클램프한
+        // 슬롯에 ×3. Java 의 Math.round 와 JS 의 Math.round 는 둘 다 .5 를 +∞ 쪽으로 올리므로
+        // 그대로 옮겨진다. floor 기반 공식으로 쓰면 8인 게임의 배치가 서버와 **틱 1부터**
+        // 갈린다 — 재생이 통째로 다른 게임이 된다.
+        const slot = Math.round(((i + 0.5) * DODGE_RULES.spawnSlots) / playerCount - 0.5)
+        const clamped = Math.min(Math.max(slot, 0), DODGE_RULES.spawnSlots - 1)
+        return { x: clamped * DODGE_RULES.subcellsPerCell, y }
     })
 }
 
 export interface DodgeFrame {
     tick: number
     positions: Record<string, Cell>
-    obstacles: Cell[]
+    obstacles: Obstacle[]
     eliminatedThisTick: string[]
     finished: boolean
+}
+
+/** 서버 Obstacle.overlaps 와 같은 식 — 장애물 박스와 [left..right]×[top..bottom] 의 겹침. */
+function overlapsBox(obstacle: Obstacle, left: number, top: number, right: number, bottom: number): boolean {
+    return left <= obstacle.x + obstacle.w - 1 && obstacle.x <= right && top <= obstacle.y + obstacle.h - 1 && obstacle.y <= bottom
 }
 
 export function createDodgeGame(participantIds: string[], seed: number) {
@@ -91,7 +117,7 @@ export function createDodgeGame(participantIds: string[], seed: number) {
         positions.set(participantIds[index], cell)
     })
 
-    let obstacles: Cell[] = []
+    let obstacles: Obstacle[] = []
     let tick = 0
     let finished = false
     let spawning = true
@@ -109,58 +135,68 @@ export function createDodgeGame(participantIds: string[], seed: number) {
             return frame([])
         }
 
-        const previous = new Map(positions)
-
         for (const [participantId, name] of Object.entries(inputs)) {
             const current = positions.get(participantId)
             const delta = name ? DELTAS[name] : undefined
             if (!current || !delta) {
                 continue
             }
-            const x = current.x + delta.x
-            const y = current.y + delta.y
-            if (x < 0 || x >= DODGE_RULES.cols || y < 0 || y >= DODGE_RULES.rows) {
+            const x = current.x + delta.x * DODGE_RULES.moveStep
+            const y = current.y + delta.y * DODGE_RULES.moveStep
+            if (
+                x < 0 ||
+                x > DODGE_RULES.cols - DODGE_RULES.playerSize ||
+                y < 0 ||
+                y > DODGE_RULES.rows - DODGE_RULES.playerSize
+            ) {
                 continue
             }
             positions.set(participantId, { x, y })
         }
 
-        const fallen: Cell[] = []
+        const fallen: Obstacle[] = []
         for (const obstacle of obstacles) {
             const y = obstacle.y + 1
             if (y < DODGE_RULES.rows) {
-                fallen.push({ x: obstacle.x, y })
+                fallen.push({ x: obstacle.x, y, w: obstacle.w, h: obstacle.h })
             }
         }
 
         if (spawning) {
             const probability = spawnProbability(tick)
-            // 열 0 부터 오름차순. 순회 순서가 난수열의 일부다.
-            for (let x = 0; x < DODGE_RULES.cols; x++) {
+            // 슬롯 0 부터 오름차순. 굴림 순서와 굴림 수(히트당 폭 1회 + 높이 1회)가 난수열의
+            // 일부다 — 하나만 달라져도 이후 스폰 전체가 서버와 갈린다.
+            for (let slot = 0; slot < DODGE_RULES.spawnSlots; slot++) {
                 if (random.nextDouble() < probability) {
-                    fallen.push({ x, y: 0 })
+                    const w =
+                        DODGE_RULES.minObstacleW +
+                        Math.floor(random.nextDouble() * (DODGE_RULES.maxObstacleW - DODGE_RULES.minObstacleW + 1))
+                    const h =
+                        DODGE_RULES.minObstacleH +
+                        Math.floor(random.nextDouble() * (DODGE_RULES.maxObstacleH - DODGE_RULES.minObstacleH + 1))
+                    const x = Math.min(slot * DODGE_RULES.subcellsPerCell, DODGE_RULES.cols - w)
+                    fallen.push({ x, y: 0, w, h })
                 }
             }
         }
 
         obstacles = fallen
 
+        // 충돌은 끝점 박스 겹침(AABB) 하나로 충분하다. v2 의 스왑 검사가 없어진 게 아니라
+        // 기하학적으로 필요 없어졌다: 이동량(3)이 플레이어 한 변(3)과 같아 직전·현재 박스가
+        // 빈틈없이 이어지고, 장애물은 틱당 1서브칸만 내려오므로 겹침 없이 서로를 지나치는
+        // 배치가 존재하지 않는다. 서버 DodgeGame.detectCollisions 의 주석과 같은 근거다.
         const eliminated: string[] = []
         for (const [participantId, now] of positions) {
-            const before = previous.get(participantId)
-            const hit = obstacles.some((obstacle) => {
-                if (obstacle.x === now.x && obstacle.y === now.y) {
-                    return true
-                }
-                // 스왑: 서로 지나쳤다면 겹치지 않아도 부딪힌 것이다.
-                return (
-                    before !== undefined &&
-                    obstacle.x === now.x &&
-                    obstacle.y - 1 === now.y &&
-                    obstacle.x === before.x &&
-                    obstacle.y === before.y
+            const hit = obstacles.some((obstacle) =>
+                overlapsBox(
+                    obstacle,
+                    now.x,
+                    now.y,
+                    now.x + DODGE_RULES.playerSize - 1,
+                    now.y + DODGE_RULES.playerSize - 1
                 )
-            })
+            )
             if (hit) {
                 eliminated.push(participantId)
             }
@@ -172,7 +208,7 @@ export function createDodgeGame(participantIds: string[], seed: number) {
         }
 
         tick += 1
-        // 서버(DodgeGame:130)와 같은 조건이다. 아무도 안 남으면 무조건 끝이지만, "한 명 남음"이
+        // 서버(DodgeGame)와 같은 조건이다. 아무도 안 남으면 무조건 끝이지만, "한 명 남음"이
         // 종료인 것은 원래 둘 이상으로 시작한 게임에서만이다 — 1인 게임은 시작부터 한 명이므로
         // 그 한 명이 맞을 때까지 계속된다. `positions.size <= 1` 만 보면 1인 기보가 틱 1에서
         // 끝나 버려 서버와 길이가 달라진다.
@@ -183,7 +219,7 @@ export function createDodgeGame(participantIds: string[], seed: number) {
         return frame(eliminated)
     }
 
-    // 이탈. 입력 스트림 밖에서 상태를 바꾸는 사건이라 v2 기보의 departures 가 이걸 재현한다.
+    // 이탈. 입력 스트림 밖에서 상태를 바꾸는 사건이라 기보의 departures 가 이걸 재현한다.
     // 서버 DodgeGame.eliminate 와 한 줄씩 대응한다: 이미 끝났거나 그 참가자가 이미 없으면
     // 아무 일도 하지 않는 멱등 연산이고, 그렇지 않으면 그 틱의 탈락자 버킷을 하나 쌓는다.
     // 여기서는 `positions.size <= 1` 만 본다 — 서버와 같다. 1인 게임에서 그 한 명이 이탈하면
@@ -240,8 +276,8 @@ export function createDodgeGame(participantIds: string[], seed: number) {
             spawning = false
         },
         forcePosition: (participantId: string, cell: Cell) => positions.set(participantId, cell),
-        forceObstacles: (cells: Cell[]) => {
-            obstacles = [...cells]
+        forceObstacles: (boxes: Obstacle[]) => {
+            obstacles = [...boxes]
         },
     }
 }
@@ -250,7 +286,7 @@ export interface DodgeReplayData {
     seed: number
     participantIds: string[]
     inputsByTick: Record<number, Record<string, DirectionName>>
-    // v2. 이탈은 입력이 아니라 상태를 직접 바꾸는 사건이라, 없으면 떠난 참가자가 재생에서
+    // 이탈은 입력이 아니라 상태를 직접 바꾸는 사건이라, 없으면 떠난 참가자가 재생에서
     // 계속 살아 피하고 있게 되어 승자와 길이가 원본과 달라진다.
     departuresByTick: Record<number, string[]>
 }
@@ -298,7 +334,7 @@ export function rerunReplay(replay: DodgeReplayData, maxTicks: number = REPLAY_M
         }
     }
 
-    // 서버 DodgeReplayRunner:59 와 같은 태도다. 조용히 안 끝난 게임을 돌려주면 finished 를
+    // 서버 DodgeReplayRunner 와 같은 태도다. 조용히 안 끝난 게임을 돌려주면 finished 를
     // 확인하지 않은 호출자가 손상된/무한한 기보를 "짧은 정상 게임"으로 취급한다.
     if (!game.finished) {
         throw new Error(
@@ -318,11 +354,18 @@ export function rerunReplay(replay: DodgeReplayData, maxTicks: number = REPLAY_M
 const HEADER_RULES: ReadonlyArray<[string, number]> = [
     ["cols", DODGE_RULES.cols],
     ["rows", DODGE_RULES.rows],
+    ["playerSize", DODGE_RULES.playerSize],
+    ["moveStep", DODGE_RULES.moveStep],
+    ["spawnSlots", DODGE_RULES.spawnSlots],
     ["tickMs", DODGE_RULES.tickMs],
     ["baseSpawn", DODGE_RULES.baseSpawn],
     ["spawnStep", DODGE_RULES.spawnStep],
     ["spawnStepTicks", DODGE_RULES.spawnStepTicks],
     ["maxSpawn", DODGE_RULES.maxSpawn],
+    ["minObstacleW", DODGE_RULES.minObstacleW],
+    ["maxObstacleW", DODGE_RULES.maxObstacleW],
+    ["minObstacleH", DODGE_RULES.minObstacleH],
+    ["maxObstacleH", DODGE_RULES.maxObstacleH],
 ]
 
 /** 서버가 seed 로 쓰는 자바 `int` 의 범위. 이 밖의 값은 이 기보를 쓴 서버가 만들 수 없다. */
@@ -402,8 +445,11 @@ function requireDistinct(participantIds: string[]): string[] {
 export function parseReplayNdjson(text: string): DodgeReplayData {
     const lines = text.trim().split("\n")
     const header = JSON.parse(lines[0])
-    if (header.v !== 2) {
-        throw new Error(`Unsupported dodge replay version ${header.v}; this reader needs v2`)
+    if (header.v !== 3) {
+        throw new Error(
+            `Unsupported dodge replay version ${header.v}; this reader needs v3` +
+                " — v2 and older replays were recorded under different rules and cannot be replayed"
+        )
     }
     if (header.prng !== "xorshift32") {
         throw new Error(`Unsupported dodge replay prng ${header.prng}; this reader implements xorshift32`)

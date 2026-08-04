@@ -52,7 +52,7 @@ class DodgeReplayWriterTest {
         String ndjson = resource(ReplayFixture.NDJSON_NAME);
         String[] lines = ndjson.strip().split("\n");
 
-        assertThat(lines[0]).contains("\"v\":2").contains("\"손님\"");
+        assertThat(lines[0]).contains("\"v\":3").contains("\"손님\"");
         assertThat(lines).hasSizeGreaterThan(5);
         assertThat(ndjson).contains("\"departures\":[\"g:c\"]");
         assertThat(ndjson).contains("\"moves\":");

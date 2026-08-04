@@ -29,7 +29,7 @@ void trace(int seed, int n) {
         DodgeFrame f = game.advanceOneTick(Map.of());
         if (f.tick() <= 3) {
             StringBuilder sb = new StringBuilder("t" + f.tick() + ":");
-            for (Cell c : f.obstacles()) sb.append("(").append(c.x()).append(",").append(c.y()).append(")");
+            for (Obstacle o : f.obstacles()) sb.append("(").append(o.x()).append(",").append(o.y()).append(",").append(o.w()).append(",").append(o.h()).append(")");
             obstacleTrace.add(sb.toString());
         }
     }

@@ -31,7 +31,7 @@ function renderFrame(frame: DodgeFrame): string {
     const positions = Object.entries(frame.positions)
         .map(([participantId, cell]) => `${participantId}@${cell.x},${cell.y}`)
         .join("|")
-    const obstacles = frame.obstacles.map((cell) => `${cell.x},${cell.y}`).join("|")
+    const obstacles = frame.obstacles.map((o) => `${o.x},${o.y},${o.w},${o.h}`).join("|")
     return (
         `t${frame.tick} pos=${positions} obs=${obstacles}` +
         ` elim=${frame.eliminatedThisTick.join("|")} fin=${frame.finished ? 1 : 0}`
@@ -61,7 +61,7 @@ function traceOf(ndjson: string): string {
 
 describe("dodge replay round trip", () => {
     it("replays the committed writer output into the committed trace", () => {
-        expect(traceOf(fixture("dodge-replay-v2.ndjson"))).toBe(fixture("dodge-replay-v2.trace.txt"))
+        expect(traceOf(fixture("dodge-replay-v3.ndjson"))).toBe(fixture("dodge-replay-v3.trace.txt"))
     })
 
     /**
@@ -70,7 +70,7 @@ describe("dodge replay round trip", () => {
      * 있고, 두 곳 다 있어야 어느 쪽에서 다시 만들어도 걸린다.
      */
     it("keeps exercising a real multi-player game with a departure", () => {
-        const replay = parseReplayNdjson(fixture("dodge-replay-v2.ndjson"))
+        const replay = parseReplayNdjson(fixture("dodge-replay-v3.ndjson"))
 
         expect(replay.participantIds).toEqual(["m:11", "g:a", "g:b", "g:c"])
         expect(replay.seed).toBe(8412739)
@@ -84,7 +84,7 @@ describe("dodge replay round trip", () => {
      * 던져야 한다 — 자취가 달라지는 것이 아니라 아예 읽히지 않아야 한다.
      */
     it("refuses the same fixture with its seed stripped instead of replaying a different game", () => {
-        const lines = fixture("dodge-replay-v2.ndjson").trim().split("\n")
+        const lines = fixture("dodge-replay-v3.ndjson").trim().split("\n")
         const header = JSON.parse(lines[0])
         delete header.seed
         const stripped = [JSON.stringify(header), ...lines.slice(1)].join("\n") + "\n"

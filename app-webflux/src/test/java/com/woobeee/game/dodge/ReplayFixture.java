@@ -16,8 +16,8 @@ import java.util.Map;
  *
  * <p>산출물 두 개는 {@code src/test/resources/replay/} 에 커밋돼 있다.
  * <ul>
- *   <li>{@code dodge-replay-v2.ndjson} — 진짜 {@link DodgeReplayWriter} 가 쓴 파일
- *   <li>{@code dodge-replay-v2.trace.txt} — 그 기보를 재생한 프레임 자취
+ *   <li>{@code dodge-replay-v3.ndjson} — 진짜 {@link DodgeReplayWriter} 가 쓴 파일
+ *   <li>{@code dodge-replay-v3.trace.txt} — 그 기보를 재생한 프레임 자취
  * </ul>
  * {@code DodgeReplayWriterTest} 가 두 파일을 자바 쪽에서 재생산해 대조하고,
  * {@code front/lib/dodge-replay-roundtrip.test.ts} 가 <b>같은 두 파일</b>을 읽어 타입스크립트
@@ -28,8 +28,8 @@ import java.util.Map;
  */
 final class ReplayFixture {
 
-    static final String NDJSON_NAME = "dodge-replay-v2.ndjson";
-    static final String TRACE_NAME = "dodge-replay-v2.trace.txt";
+    static final String NDJSON_NAME = "dodge-replay-v3.ndjson";
+    static final String TRACE_NAME = "dodge-replay-v3.trace.txt";
 
     /** 한글 이름 하나를 섞어 둔다 — 파일이 UTF-8 로 오가는 것까지 픽스처가 고정한다. */
     static final Map<String, String> DISPLAY_NAMES = Map.of(
@@ -128,7 +128,7 @@ final class ReplayFixture {
     private static String renderFrame(DodgeFrame frame) {
         return "t" + frame.tick()
                 + " pos=" + renderPositions(frame.positions())
-                + " obs=" + renderCells(frame.obstacles())
+                + " obs=" + renderObstacles(frame.obstacles())
                 + " elim=" + String.join("|", frame.eliminatedThisTick())
                 + " fin=" + (frame.finished() ? 1 : 0);
     }
@@ -140,10 +140,10 @@ final class ReplayFixture {
         return String.join("|", parts);
     }
 
-    private static String renderCells(List<Cell> cells) {
+    private static String renderObstacles(List<Obstacle> obstacles) {
         List<String> parts = new ArrayList<>();
-        for (Cell cell : cells) {
-            parts.add(cell.x() + "," + cell.y());
+        for (Obstacle obstacle : obstacles) {
+            parts.add(obstacle.x() + "," + obstacle.y() + "," + obstacle.w() + "," + obstacle.h());
         }
         return String.join("|", parts);
     }

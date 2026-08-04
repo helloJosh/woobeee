@@ -211,11 +211,12 @@ class DodgeGameSinkTest {
                     Map<String, Object> host = positions.stream()
                             .filter(p -> "m:11".equals(p.get("participantId")))
                             .findFirst().orElseThrow();
-                    // Host is the first entry of DodgeRules.startingCells(3): x=2, bottom row.
-                    // LEFT decrements x by one -- this is what proves the move actually reached
-                    // the game, not just the pendingInputs buffer.
-                    assertThat(host.get("x")).isEqualTo(1);
-                    assertThat(host.get("y")).isEqualTo(DodgeRules.ROWS - 1);
+                    // Host is the first entry of DodgeRules.startingCells(3): x=6, bottom row
+                    // (top-left of the 3x3 box). LEFT moves it MOVE_STEP subcells to x=3 --
+                    // this is what proves the move actually reached the game, not just the
+                    // pendingInputs buffer.
+                    assertThat(host.get("x")).isEqualTo(3);
+                    assertThat(host.get("y")).isEqualTo(DodgeRules.ROWS - DodgeRules.PLAYER_SIZE);
                 })
                 .expectComplete()
                 .verify(VERIFY_TIMEOUT);
@@ -279,10 +280,11 @@ class DodgeGameSinkTest {
                             (List<Map<String, Object>>) payload.get("positions");
                     assertThat(positions)
                             .containsExactlyInAnyOrderElementsOf(positionsOf(lastTick.get()));
-                    // Host spawns at x=2 (first of DodgeRules.startingCells(3)); the LEFT above
-                    // moved it to x=1 on tick 1 and nothing has moved it since.
+                    // Host spawns at x=6 (first of DodgeRules.startingCells(3)); the LEFT above
+                    // moved it to x=3 on tick 1 and nothing has moved it since.
                     assertThat(positions).contains(
-                            Map.of("participantId", "m:11", "x", 1, "y", DodgeRules.ROWS - 1));
+                            Map.of("participantId", "m:11", "x", 3,
+                                    "y", DodgeRules.ROWS - DodgeRules.PLAYER_SIZE));
                 })
                 .expectComplete()
                 .verify(VERIFY_TIMEOUT);

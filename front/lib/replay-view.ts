@@ -6,6 +6,7 @@ import {
     startingCells,
     stepReplay,
     type Cell,
+    type Obstacle,
 } from "@/lib/dodge-engine"
 import { colorIndexOf, playerNumberOf, type DodgeGridPlayer } from "@/lib/dodge-play"
 import { NETWORK_ERROR_MESSAGE } from "@/lib/game-errors"
@@ -135,7 +136,7 @@ export interface DodgeReplayFrame {
     /** 서버의 틱 번호. 0 은 첫 틱이 돌기 전, 시작 칸에 서 있는 상태다. */
     tick: number
     players: DodgeGridPlayer[]
-    obstacles: Cell[]
+    obstacles: Obstacle[]
     /** 이 틱에 맞아 사라진 사람들. 재생 중 "지금 누가 죽었는지" 를 말해 준다. */
     eliminatedThisTick: string[]
     /**

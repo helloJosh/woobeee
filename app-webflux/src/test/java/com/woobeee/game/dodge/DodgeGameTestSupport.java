@@ -21,12 +21,12 @@ final class DodgeGameTestSupport {
     }
 
     /** 장애물이 절대 생성되지 않는 게임 — 초기 장애물만 지정한다. */
-    static DodgeGame quiet(int seed, List<Cell> obstacles, String... players) {
+    static DodgeGame quiet(int seed, List<Obstacle> obstacles, String... players) {
         return quiet(seed, Map.of(), obstacles, players);
     }
 
     /** 장애물이 절대 생성되지 않는 게임 — 참가자 위치와 장애물을 모두 지정한다. */
-    static DodgeGame quiet(int seed, Map<String, Cell> positionOverrides, List<Cell> obstacles, String... players) {
+    static DodgeGame quiet(int seed, Map<String, Cell> positionOverrides, List<Obstacle> obstacles, String... players) {
         List<Cell> defaults = DodgeRules.startingCells(players.length);
         Map<String, Cell> positions = new LinkedHashMap<>();
         for (int i = 0; i < players.length; i++) {

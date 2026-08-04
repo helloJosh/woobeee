@@ -319,8 +319,9 @@ describe("toGridPlayers / toRoster", () => {
         const players = toGridPlayers(strange, "m:1")
 
         expect(players).toHaveLength(2)
-        expect(players[0]).toMatchObject({ x: 0, y: DODGE_RULES.rows - 1 })
-        expect(players[1]).toMatchObject({ x: DODGE_RULES.cols - 1, y: 0 })
+        // 플레이어는 3×3 박스라 왼쪽 위 좌표의 최댓값은 격자 크기 - playerSize 다.
+        expect(players[0]).toMatchObject({ x: 0, y: DODGE_RULES.rows - DODGE_RULES.playerSize })
+        expect(players[1]).toMatchObject({ x: DODGE_RULES.cols - DODGE_RULES.playerSize, y: 0 })
         expect(players.every((p) => Number.isInteger(p.x) && Number.isInteger(p.y))).toBe(true)
     })
 

@@ -6,7 +6,7 @@ import java.util.Map;
 public record DodgeFrame(
         int tick,
         Map<String, Cell> positions,
-        List<Cell> obstacles,
+        List<Obstacle> obstacles,
         List<String> eliminatedThisTick,
         boolean finished
 ) {

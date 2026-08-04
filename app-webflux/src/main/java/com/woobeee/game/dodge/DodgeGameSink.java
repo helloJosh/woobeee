@@ -462,7 +462,12 @@ public class DodgeGameSink implements GameCommandSink {
 
     private List<Map<String, Object>> obstaclesOf(DodgeFrame frame) {
         return frame.obstacles().stream()
-                .map(cell -> Map.<String, Object>of("x", cell.x(), "y", cell.y()))
+                .map(obstacle -> Map.<String, Object>of(
+                        "x", obstacle.x(),
+                        "y", obstacle.y(),
+                        "w", obstacle.w(),
+                        "h", obstacle.h()
+                ))
                 .toList();
     }
 
