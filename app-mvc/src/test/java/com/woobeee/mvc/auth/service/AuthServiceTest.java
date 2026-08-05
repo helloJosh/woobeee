@@ -193,7 +193,7 @@ class AuthServiceTest {
 
         ArgumentCaptor<Member> memberCaptor = ArgumentCaptor.forClass(Member.class);
         verify(memberRepository).save(memberCaptor.capture());
-        assertThat(memberCaptor.getValue().getRole()).isEqualTo(MemberRole.MEMBER);
+        assertThat(memberCaptor.getValue().getRole()).isEqualTo(MemberRole.ROLE_MEMBER);
     }
 
     /** AUTH-AC-16 */
@@ -210,7 +210,7 @@ class AuthServiceTest {
         );
         Member admin = Member.create("admin-sub", "admin@example.com", "admin-nick", true, true);
         ReflectionTestUtils.setField(admin, "id", 31L);
-        ReflectionTestUtils.setField(admin, "role", MemberRole.ADMIN);
+        ReflectionTestUtils.setField(admin, "role", MemberRole.ROLE_ADMIN);
 
         when(googleAuthorizationStateStore.find("state-123")).thenReturn(Optional.of(context));
         when(googleOauthClient.exchangeAuthorizationCode("auth-code", "code-verifier"))

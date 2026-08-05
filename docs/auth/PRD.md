@@ -17,12 +17,12 @@
 
 - 단일 `Member` 엔티티(`members` 테이블)와 공통 `Address`. 구매자/판매자 구분은 없다.
 - 필드: `id`, `googleSubject`, `email`, `nickname`, `termsAgreed`, `privacyPolicyAgreed`,
-  `profileImageKey`(nullable), `gameMoney`(long, 기본 0), `role`(`MEMBER`/`ADMIN`, 기본 `MEMBER`),
-  `active`, `createdAt`.
+  `profileImageKey`(nullable), `gameMoney`(long, 기본 0), `role`(`ROLE_MEMBER`/`ROLE_ADMIN`,
+  기본 `ROLE_MEMBER`), `active`, `createdAt`.
 - 활성 상태 여부(`isActive`)로 가입 완료/이용 가능 회원을 구분한다.
-- 역할은 `MemberRole`(`MEMBER`/`ADMIN`)로 저장한다. 회원가입은 항상 `MEMBER`로 생성하고,
-  `ADMIN` 지정은 아직 DB 수동 UPDATE 경로뿐이다(`members_role_check` CHECK 제약이 오타를 막는다).
-  Redis 토큰의 `role` 값은 회원의 role에서 파생된다(`ROLE_MEMBER`/`ROLE_ADMIN`) — 아직 분기에
+- 역할은 `MemberRole`(`ROLE_MEMBER`/`ROLE_ADMIN`)로 저장한다. 회원가입은 항상 `ROLE_MEMBER`로
+  생성하고, `ROLE_ADMIN` 지정은 아직 DB 수동 UPDATE 경로뿐이다(`members_role_check` CHECK
+  제약이 오타를 막는다). Redis 토큰의 `role` 값은 회원 role의 enum 이름 그대로다 — 아직 분기에
   쓰이지 않는다. 설계: [`../superpowers/specs/2026-08-05-member-role-design.md`](../superpowers/specs/2026-08-05-member-role-design.md).
 - `gameMoney`는 가입 시 0으로 생성하고 조회만 한다. 증감 경로는 게임 spec에서 정한다.
 - 저장소: `MemberRepository` (Spring Data JPA).
@@ -91,8 +91,8 @@
 | AUTH-AC-12 | 다른 회원 prefix의 fileKey를 등록하면 `403`을 반환한다 | `MemberProfileImageServiceTest` |
 | AUTH-AC-13 | 교체가 성공하면 컬럼을 갱신하고 이전 오브젝트를 삭제한다 | `MemberProfileImageServiceTest` |
 | AUTH-AC-14 | `GET /me`는 presigned GET URL을 반환하고, 프로필 미설정이면 `null`을 반환한다 | `MemberProfileImageControllerTest` |
-| AUTH-AC-15 | 회원가입으로 생성된 회원의 role은 `MEMBER`다 | `AuthServiceTest` |
-| AUTH-AC-16 | 토큰의 role은 회원의 role에서 파생된다 — `ADMIN` 회원이 로그인하면 `ROLE_ADMIN`으로 발급한다 | `AuthServiceTest` |
+| AUTH-AC-15 | 회원가입으로 생성된 회원의 role은 `ROLE_MEMBER`다 | `AuthServiceTest` |
+| AUTH-AC-16 | 토큰의 role은 회원의 role에서 파생된다 — `ROLE_ADMIN` 회원이 로그인하면 `ROLE_ADMIN`으로 발급한다 | `AuthServiceTest` |
 
 ## 설정
 

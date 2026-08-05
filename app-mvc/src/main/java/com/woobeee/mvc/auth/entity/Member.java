@@ -95,7 +95,7 @@ public class Member {
                 .privacyPolicyAgreed(privacyPolicyAgreed)
                 .profileImageKey(null)
                 .gameMoney(0L)
-                .role(MemberRole.MEMBER)
+                .role(MemberRole.ROLE_MEMBER)
                 .active(true)
                 .createdAt(LocalDateTime.now())
                 .build();

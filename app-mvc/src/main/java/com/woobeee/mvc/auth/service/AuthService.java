@@ -112,13 +112,13 @@ public class AuthService {
                 context.privacyPolicyAgreed()
         ));
 
-        return tokenService.issue(member.getId(), member.getRole().authority(), context.device(), ip);
+        return tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip);
     }
 
     private TokenResponse login(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
         return memberRepository.findByGoogleSubject(identity.subject())
                 .filter(Member::isActive)
-                .map(member -> tokenService.issue(member.getId(), member.getRole().authority(), context.device(), ip))
+                .map(member -> tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member is not registered"));
     }
 
