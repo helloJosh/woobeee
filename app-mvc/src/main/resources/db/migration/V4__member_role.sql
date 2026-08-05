@@ -1,0 +1,3 @@
+ALTER TABLE members
+    ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'MEMBER'
+    CONSTRAINT members_role_check CHECK (role IN ('MEMBER', 'ADMIN'));

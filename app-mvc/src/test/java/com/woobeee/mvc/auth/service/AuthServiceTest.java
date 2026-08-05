@@ -7,6 +7,7 @@ import com.woobeee.mvc.auth.api.response.GoogleAuthorizationResponse;
 import com.woobeee.mvc.auth.api.response.TokenResponse;
 import com.woobeee.mvc.auth.config.GoogleOauthProperties;
 import com.woobeee.mvc.auth.entity.Member;
+import com.woobeee.mvc.auth.entity.MemberRole;
 import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.dto.GoogleAuthorizationAction;
 import com.woobeee.mvc.auth.service.dto.GoogleAuthorizationContext;
@@ -160,6 +161,70 @@ class AuthServiceTest {
         assertThat(savedMember.getProfileImageKey()).isNull();
         assertThat(response.accessToken()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");
+    }
+
+    /** AUTH-AC-15 */
+    @Test
+    void completeGoogleAuthorizationSavesNewMemberWithMemberRole() {
+        GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
+        GoogleAuthorizationContext context = new GoogleAuthorizationContext(
+                GoogleAuthorizationAction.SIGNUP,
+                "code-verifier",
+                "ios",
+                "member-nick",
+                true,
+                true
+        );
+        when(googleAuthorizationStateStore.find("state-123")).thenReturn(Optional.of(context));
+        when(googleOauthClient.exchangeAuthorizationCode("auth-code", "code-verifier"))
+                .thenReturn(tokenExchangeResponse());
+        when(googleIdentityVerifier.verify("id-token"))
+                .thenReturn(new GoogleIdentity("google-sub", "member@example.com", "Member Name"));
+        when(memberRepository.existsByGoogleSubject("google-sub")).thenReturn(false);
+        when(memberRepository.save(any(Member.class))).thenAnswer(invocation -> {
+            Member member = invocation.getArgument(0);
+            ReflectionTestUtils.setField(member, "id", 11L);
+            return member;
+        });
+        when(tokenService.issue(11L, "ROLE_MEMBER", "ios", "127.0.0.1"))
+                .thenReturn(new TokenResponse("access", 900, "refresh", 2_592_000, 11L, "ROLE_MEMBER"));
+
+        authService.completeGoogleAuthorization(request, "127.0.0.1");
+
+        ArgumentCaptor<Member> memberCaptor = ArgumentCaptor.forClass(Member.class);
+        verify(memberRepository).save(memberCaptor.capture());
+        assertThat(memberCaptor.getValue().getRole()).isEqualTo(MemberRole.MEMBER);
+    }
+
+    /** AUTH-AC-16 */
+    @Test
+    void completeGoogleAuthorizationIssuesTokenWithRoleDerivedFromMember() {
+        GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
+        GoogleAuthorizationContext context = new GoogleAuthorizationContext(
+                GoogleAuthorizationAction.LOGIN,
+                "code-verifier",
+                "web",
+                null,
+                false,
+                false
+        );
+        Member admin = Member.create("admin-sub", "admin@example.com", "admin-nick", true, true);
+        ReflectionTestUtils.setField(admin, "id", 31L);
+        ReflectionTestUtils.setField(admin, "role", MemberRole.ADMIN);
+
+        when(googleAuthorizationStateStore.find("state-123")).thenReturn(Optional.of(context));
+        when(googleOauthClient.exchangeAuthorizationCode("auth-code", "code-verifier"))
+                .thenReturn(tokenExchangeResponse());
+        when(googleIdentityVerifier.verify("id-token"))
+                .thenReturn(new GoogleIdentity("admin-sub", "admin@example.com", "Admin Name"));
+        when(memberRepository.findByGoogleSubject("admin-sub")).thenReturn(Optional.of(admin));
+        when(tokenService.issue(31L, "ROLE_ADMIN", "web", "127.0.0.1"))
+                .thenReturn(new TokenResponse("access", 900, "refresh", 2_592_000, 31L, "ROLE_ADMIN"));
+
+        TokenResponse response = authService.completeGoogleAuthorization(request, "127.0.0.1");
+
+        verify(tokenService).issue(31L, "ROLE_ADMIN", "web", "127.0.0.1");
+        assertThat(response.role()).isEqualTo("ROLE_ADMIN");
     }
 
     /** AUTH-AC-09 */
