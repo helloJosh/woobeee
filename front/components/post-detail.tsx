@@ -172,10 +172,10 @@
 
 "use client"
 
-import {useMemo} from "react"
+import {useEffect, useMemo, useState} from "react"
 import { formatDistanceToNow } from "date-fns"
 import { ko } from "date-fns/locale"
-import { ArrowLeft, Eye, Heart, MessageCircle, Share2 } from "lucide-react"
+import { ArrowLeft, Eye, Heart, MessageCircle, Pencil, Share2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -185,6 +185,8 @@ import remarkBreaks from "remark-breaks"
 import { useRouter } from "next/navigation"
 
 import { usePostDetail } from "@/hooks/use-post-detail"
+import { postsAPI, tokenManager } from "@/lib/api"
+import { canManagePosts } from "@/lib/blog-admin"
 import { useLike } from "@/hooks/use-like"
 import CommentSection from "@/components/comment-section";
 import {LikeBar} from "@/components/likebar"
@@ -197,6 +199,27 @@ interface PostDetailProps {
 export default function PostDetail({ postId }: PostDetailProps) {
   const router = useRouter()
 
+  // localStorage는 서버 렌더에 없다 — 마운트 후에만 읽어 hydration 불일치를 피한다
+  const [canManage, setCanManage] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    setCanManage(canManagePosts(tokenManager.getRole()))
+  }, [])
+
+  const handleEdit = () => router.push(`/blog/edit/${postId}`)
+
+  const handleDelete = async () => {
+    if (!window.confirm("이 글을 삭제할까요? 되돌릴 수 없습니다.")) return
+    setDeleting(true)
+    try {
+      await postsAPI.deletePost(postId)
+      router.push("/blog")
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "삭제에 실패했습니다.")
+      setDeleting(false)
+    }
+  }
 
   const { post, loading, error } = usePostDetail(postId)
 
@@ -272,10 +295,25 @@ export default function PostDetail({ postId }: PostDetailProps) {
 
   return (
       <div className="max-w-4xl mx-auto space-y-6">
-        <Button variant="ghost" onClick={handleBack} className="flex items-center gap-2">
-          <ArrowLeft className="h-4 w-4" />
-          뒤로가기
-        </Button>
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" onClick={handleBack} className="flex items-center gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            뒤로가기
+          </Button>
+          {canManage && (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handleEdit} className="flex items-center gap-2">
+                <Pencil className="h-4 w-4" />
+                수정
+              </Button>
+              <Button variant="outline" onClick={handleDelete} disabled={deleting}
+                      className="flex items-center gap-2 text-destructive">
+                <Trash2 className="h-4 w-4" />
+                {deleting ? "삭제 중…" : "삭제"}
+              </Button>
+            </div>
+          )}
+        </div>
         <Card>
           <CardHeader>
             <div className="space-y-4">

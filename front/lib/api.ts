@@ -256,7 +256,8 @@ export const apiRequest = async (
         ...options,
         credentials: "include",
         headers: {
-            "Content-Type": "application/json",
+            // multipart(FormData)는 브라우저가 boundary 포함 Content-Type을 직접 정해야 한다
+            ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
             "X-Lang": lang,                  // ▼ 여기서 무조건 X-Lang 넣어줌
             ...(token && { Authorization: `Bearer ${token}` }),
             ...options.headers,
@@ -584,7 +585,57 @@ export const postsAPI = {
 
         const data: ApiResponse<GetPostResponse> = await res.json()
         return data.data
-    }
+    },
+
+    // 수정 화면용 — 언어별 원문을 각각 받아온다 (서버는 Accept-Language로 언어를 고른다)
+    getPostByLocale: async (postId: number, locale: "ko-KR" | "en"): Promise<GetPostResponse> => {
+        const res = await apiRequest(`/api/back/posts/${postId}`, {
+            method: "GET",
+            headers: { "Accept-Language": locale },
+        })
+
+        if (!res.ok) {
+            throw new Error("Failed to fetch post")
+        }
+
+        const data: ApiResponse<GetPostResponse> = await res.json()
+        return data.data
+    },
+
+    createPost: async (form: FormData): Promise<void> => {
+        const response = await apiRequest("/api/back/posts", {
+            method: "POST",
+            body: form,
+        })
+
+        const json: ApiResponse<void> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "글 저장에 실패했습니다.")
+        }
+    },
+
+    updatePost: async (postId: number, form: FormData): Promise<void> => {
+        const response = await apiRequest(`/api/back/posts/${postId}`, {
+            method: "PUT",
+            body: form,
+        })
+
+        const json: ApiResponse<void> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "글 수정에 실패했습니다.")
+        }
+    },
+
+    deletePost: async (postId: number): Promise<void> => {
+        const response = await apiRequest(`/api/back/posts/${postId}`, {
+            method: "DELETE",
+        })
+
+        const json: ApiResponse<void> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "글 삭제에 실패했습니다.")
+        }
+    },
 }
 
 export const productAPI = {
