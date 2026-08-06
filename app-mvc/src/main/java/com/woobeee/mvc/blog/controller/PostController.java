@@ -65,6 +65,20 @@ public class PostController {
         return ApiResponse.createSuccess("Post created");
     }
 
+    @PutMapping(value = "/{postId}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "게시글 수정 API", description = "게시글 제목·본문·카테고리를 수정하고 첨부 파일을 추가합니다.")
+    public ApiResponse<Void> updatePost(
+            @PathVariable(value = "postId") Long postId,
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @Valid @RequestPart("request") PostPostRequest request,
+            @RequestPart(value = "markdownEn", required = false) MultipartFile markdownEn,
+            @RequestPart(value = "markdownKr", required = false) MultipartFile markdownKr,
+            @RequestPart(value = "file", required = false) List<MultipartFile> files
+    ) {
+        postService.updatePost(postId, request, loginId, markdownEn, markdownKr, files);
+        return ApiResponse.success("Post updated");
+    }
+
     @Operation(summary = "게시글 삭제 API", description = "게시글을 삭제합니다.")
     @DeleteMapping("/{postId}")
     public ApiResponse<Void> deletePost(
