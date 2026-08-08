@@ -5,8 +5,7 @@ import com.woobeee.mvc.auth.api.request.TokenIssueRequest;
 import com.woobeee.mvc.auth.api.request.TokenRefreshRequest;
 import com.woobeee.mvc.auth.api.response.TokenResponse;
 import com.woobeee.mvc.auth.exception.AuthRestControllerAdvice;
-import com.woobeee.mvc.auth.repository.BuyerRepository;
-import com.woobeee.mvc.auth.repository.SellerRepository;
+import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.TokenService;
 import com.woobeee.core.token.TokenStore;
 import org.junit.jupiter.api.Test;
@@ -40,16 +39,13 @@ class TokenGenerateControllerTest {
     private TokenStore tokenStore;
 
     @MockitoBean
-    private BuyerRepository buyerRepository;
-
-    @MockitoBean
-    private SellerRepository sellerRepository;
+    private MemberRepository memberRepository;
 
     @Test
     void issueReturnsTokenResponse() throws Exception {
-        TokenIssueRequest request = new TokenIssueRequest(7L, "ROLE_BUYER", "web");
-        TokenResponse tokenResponse = new TokenResponse("issued-access", 900, "issued-refresh", 2_592_000, 7L, "ROLE_BUYER");
-        when(tokenService.issue(7L, "ROLE_BUYER", "web", "192.0.2.10")).thenReturn(tokenResponse);
+        TokenIssueRequest request = new TokenIssueRequest(7L, "ROLE_MEMBER", "web");
+        TokenResponse tokenResponse = new TokenResponse("issued-access", 900, "issued-refresh", 2_592_000, 7L, "ROLE_MEMBER");
+        when(tokenService.issue(7L, "ROLE_MEMBER", "web", "192.0.2.10")).thenReturn(tokenResponse);
 
         mockMvc.perform(post("/api/auth/access-tokens")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -61,15 +57,15 @@ class TokenGenerateControllerTest {
                 .andExpect(jsonPath("$.data.accessToken").value("issued-access"))
                 .andExpect(jsonPath("$.data.refreshToken").value("issued-refresh"))
                 .andExpect(jsonPath("$.data.memberId").value(7))
-                .andExpect(jsonPath("$.data.role").value("ROLE_BUYER"));
+                .andExpect(jsonPath("$.data.role").value("ROLE_MEMBER"));
 
-        verify(tokenService).issue(7L, "ROLE_BUYER", "web", "192.0.2.10");
+        verify(tokenService).issue(7L, "ROLE_MEMBER", "web", "192.0.2.10");
     }
 
     @Test
     void refreshReturnsTokenResponse() throws Exception {
         TokenRefreshRequest request = new TokenRefreshRequest("refresh-token", "ios");
-        TokenResponse tokenResponse = new TokenResponse("new-access", 900, "new-refresh", 2_592_000, 9L, "ROLE_SELLER");
+        TokenResponse tokenResponse = new TokenResponse("new-access", 900, "new-refresh", 2_592_000, 9L, "ROLE_MEMBER");
         when(tokenService.refresh("refresh-token", "ios", "203.0.113.20")).thenReturn(tokenResponse);
 
         mockMvc.perform(post("/api/auth/refresh-tokens")
@@ -82,7 +78,7 @@ class TokenGenerateControllerTest {
                 .andExpect(jsonPath("$.data.accessToken").value("new-access"))
                 .andExpect(jsonPath("$.data.refreshToken").value("new-refresh"))
                 .andExpect(jsonPath("$.data.memberId").value(9))
-                .andExpect(jsonPath("$.data.role").value("ROLE_SELLER"));
+                .andExpect(jsonPath("$.data.role").value("ROLE_MEMBER"));
 
         verify(tokenService).refresh("refresh-token", "ios", "203.0.113.20");
     }

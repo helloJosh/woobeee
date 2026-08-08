@@ -1,16 +1,13 @@
 package com.woobeee.mvc.auth.service;
 
-import com.woobeee.mvc.auth.api.request.BuyerSignupRequest;
 import com.woobeee.mvc.auth.api.request.GoogleAuthorizationCallbackRequest;
 import com.woobeee.mvc.auth.api.request.LoginRequest;
-import com.woobeee.mvc.auth.api.request.SellerSignupRequest;
+import com.woobeee.mvc.auth.api.request.MemberSignupRequest;
 import com.woobeee.mvc.auth.api.response.GoogleAuthorizationResponse;
 import com.woobeee.mvc.auth.api.response.TokenResponse;
 import com.woobeee.mvc.auth.config.GoogleOauthProperties;
-import com.woobeee.mvc.auth.entity.Buyer;
-import com.woobeee.mvc.auth.entity.Seller;
-import com.woobeee.mvc.auth.repository.BuyerRepository;
-import com.woobeee.mvc.auth.repository.SellerRepository;
+import com.woobeee.mvc.auth.entity.Member;
+import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.dto.GoogleAuthorizationAction;
 import com.woobeee.mvc.auth.service.dto.GoogleAuthorizationContext;
 import com.woobeee.mvc.auth.service.dto.GoogleIdentity;
@@ -24,7 +21,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -34,8 +30,7 @@ public class AuthService {
     private static final Base64.Encoder URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final BuyerRepository buyerRepository;
-    private final SellerRepository sellerRepository;
+    private final MemberRepository memberRepository;
     private final GoogleIdentityVerifier googleIdentityVerifier;
     private final GoogleOauthClient googleOauthClient;
     private final GoogleAuthorizationStateStore googleAuthorizationStateStore;
@@ -43,29 +38,14 @@ public class AuthService {
     private final TokenGenerator tokenGenerator;
     private final TokenService tokenService;
 
-    public GoogleAuthorizationResponse signupBuyer(BuyerSignupRequest request) {
+    public GoogleAuthorizationResponse signup(MemberSignupRequest request) {
         return createAuthorizationResponse(new GoogleAuthorizationContext(
-                GoogleAuthorizationAction.BUYER_SIGNUP,
+                GoogleAuthorizationAction.SIGNUP,
                 nextCodeVerifier(),
                 request.device(),
-                null,
                 request.nickname().trim(),
                 request.termsAgreed(),
-                request.privacyPolicyAgreed(),
-                null
-        ));
-    }
-
-    public GoogleAuthorizationResponse signupSeller(SellerSignupRequest request) {
-        return createAuthorizationResponse(new GoogleAuthorizationContext(
-                GoogleAuthorizationAction.SELLER_SIGNUP,
-                nextCodeVerifier(),
-                request.device(),
-                null,
-                request.nickname().trim(),
-                request.termsAgreed(),
-                request.privacyPolicyAgreed(),
-                normalizeOptionalText(request.businessRegistrationCertificateUrl())
+                request.privacyPolicyAgreed()
         ));
     }
 
@@ -74,11 +54,9 @@ public class AuthService {
                 GoogleAuthorizationAction.LOGIN,
                 nextCodeVerifier(),
                 request.device(),
-                request.memberType(),
                 null,
                 false,
-                false,
-                null
+                false
         ));
     }
 
@@ -92,19 +70,9 @@ public class AuthService {
         GoogleIdentity identity = googleIdentityVerifier.verify(idToken);
 
         return switch (context.action()) {
-            case BUYER_SIGNUP -> signupBuyer(identity, context, ip);
-            case SELLER_SIGNUP -> signupSeller(identity, context, ip);
+            case SIGNUP -> signup(identity, context, ip);
             case LOGIN -> login(identity, context, ip);
         };
-    }
-
-    private TokenResponse createSession(
-            Long memberId,
-            String role,
-            String device,
-            String ip
-    ) {
-        return tokenService.issue(memberId, role, device, ip);
     }
 
     private GoogleAuthorizationResponse createAuthorizationResponse(GoogleAuthorizationContext context) {
@@ -131,12 +99,12 @@ public class AuthService {
         );
     }
 
-    private TokenResponse signupBuyer(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
-        if (buyerRepository.existsByGoogleSubject(identity.subject())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Buyer already exists");
+    private TokenResponse signup(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
+        if (memberRepository.existsByGoogleSubject(identity.subject())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Member already exists");
         }
 
-        Buyer buyer = buyerRepository.save(Buyer.create(
+        Member member = memberRepository.save(Member.create(
                 identity.subject(),
                 identity.email(),
                 context.nickname(),
@@ -144,46 +112,14 @@ public class AuthService {
                 context.privacyPolicyAgreed()
         ));
 
-        TokenResponse session = createSession(buyer.getId(), "ROLE_BUYER", context.device(), ip);
-        return session;
-    }
-
-    private TokenResponse signupSeller(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
-        if (sellerRepository.existsByGoogleSubject(identity.subject())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Seller already exists");
-        }
-
-        Seller seller = sellerRepository.save(Seller.create(
-                identity.subject(),
-                identity.email(),
-                context.nickname(),
-                context.termsAgreed(),
-                context.privacyPolicyAgreed(),
-                context.businessRegistrationCertificateUrl()
-        ));
-
-        return createSession(seller.getId(), "ROLE_SELLER", context.device(), ip);
+        return tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip);
     }
 
     private TokenResponse login(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
-        if (context.memberType() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Member type is required");
-        }
-
-        return switch (context.memberType()) {
-            case BUYER -> buyerRepository.findByGoogleSubject(identity.subject())
-                    .filter(Buyer::isActive)
-                    .map(buyer -> {
-                        TokenResponse session =
-                                createSession(buyer.getId(), context.memberType().roleName(), context.device(), ip);
-                        return session;
-                    })
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Buyer is not registered"));
-            case SELLER -> sellerRepository.findByGoogleSubject(identity.subject())
-                    .filter(Seller::isActive)
-                    .map(seller -> createSession(seller.getId(), context.memberType().roleName(), context.device(), ip))
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seller is not registered"));
-        };
+        return memberRepository.findByGoogleSubject(identity.subject())
+                .filter(Member::isActive)
+                .map(member -> tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member is not registered"));
     }
 
     private String nextCodeVerifier() {
@@ -200,12 +136,5 @@ public class AuthService {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 algorithm is not available", exception);
         }
-    }
-
-    private String normalizeOptionalText(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        return value.trim();
     }
 }

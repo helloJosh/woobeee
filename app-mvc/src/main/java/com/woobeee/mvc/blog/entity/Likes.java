@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
         uniqueConstraints = {
                 @UniqueConstraint(
                         name = "uk_likes_member_post",
-                        columnNames = {"member_id", "member_role", "post_id"}
+                        columnNames = {"member_id", "post_id"}
                 )
         }
 )
@@ -35,9 +35,6 @@ public class Likes {
     @Column(name = "member_id")
     private Long memberId;
 
-    @Column(name = "member_role")
-    private String memberRole;
-
     @Column(name = "post_id")
     private Long postId;
 
@@ -45,9 +42,8 @@ public class Likes {
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    public Likes(Long memberId, String memberRole, Long postId) {
+    public Likes(Long memberId, Long postId) {
         this.memberId = memberId;
-        this.memberRole = memberRole;
         this.postId = postId;
     }
 }

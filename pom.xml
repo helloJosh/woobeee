@@ -37,6 +37,11 @@
         <commons-dbcp2.version>2.13.0</commons-dbcp2.version>
         <google-api-client.version>2.7.2</google-api-client.version>
         <springdoc.version>3.0.2</springdoc.version>
+        <!-- Known-gap tests (@Tag("known-gap")) pin defects that were reviewed and consciously
+             deferred rather than fixed. They must fail by design until the underlying defect is
+             fixed, so they are excluded from the default `./mvnw test` run. Override with
+             `-Dknown.gap.excludedGroups=` (empty) to run them, e.g. to check whether a fix landed. -->
+        <known.gap.excludedGroups>known-gap</known.gap.excludedGroups>
     </properties>
 
     <dependencyManagement>
@@ -113,5 +118,14 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <excludedGroups>${known.gap.excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 </project>

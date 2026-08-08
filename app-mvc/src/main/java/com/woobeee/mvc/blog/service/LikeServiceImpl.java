@@ -27,15 +27,11 @@ public class LikeServiceImpl implements LikeService{
 
         AuthMemberResolver.MemberIdentity memberIdentity = authMemberResolver.requireByLoginId(loginId);
 
-        if (likeRepository.existsByMemberIdAndMemberRoleAndPostId(
-                memberIdentity.memberId(),
-                memberIdentity.role(),
-                postId
-        )) {
+        if (likeRepository.existsByMemberIdAndPostId(memberIdentity.memberId(), postId)) {
             return;
         }
 
-        Likes like = new Likes(memberIdentity.memberId(), memberIdentity.role(), postId);
+        Likes like = new Likes(memberIdentity.memberId(), postId);
         likeRepository.save(like);
     }
 
@@ -48,7 +44,7 @@ public class LikeServiceImpl implements LikeService{
         AuthMemberResolver.MemberIdentity memberIdentity = authMemberResolver.requireByLoginId(loginId);
 
         Likes like = likeRepository
-                .findByMemberIdAndMemberRoleAndPostId(memberIdentity.memberId(), memberIdentity.role(), postId)
+                .findByMemberIdAndPostId(memberIdentity.memberId(), postId)
                 .orElseThrow();
 
         likeRepository.delete(like);

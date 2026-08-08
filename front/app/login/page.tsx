@@ -1,31 +1,43 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft } from "lucide-react"
 import GoogleAuthButton from "@/components/auth/google-auth-button"
+import { NEXT_PARAM, buildAuthHref, sanitizeNextPath } from "@/lib/auth-redirect"
 import { useAuth } from "@/hooks/use-auth"
-import { useState } from "react"
 
+/**
+ * useSearchParams 를 쓰는 클라이언트 컴포넌트는 Suspense 경계 안에 있어야 한다 — 없으면
+ * 정적 프리렌더 단계에서 next build 가 이 페이지에서 멈춘다.
+ */
 export default function LoginPage() {
+    return (
+        <Suspense fallback={<LoginFallback />}>
+            <LoginScreen />
+        </Suspense>
+    )
+}
+
+function LoginScreen() {
     const { user, loading, isAuthenticated } = useAuth()
     const router = useRouter()
-    const [memberType, setMemberType] = useState<"BUYER" | "SELLER">("BUYER")
+    // 초대 링크를 열었다가 여기로 온 방문자는 `?next=/game/omok/<id>?invite=<code>` 를 달고
+    // 온다. 그 방으로 돌려보내는 것이 이 화면의 절반이다. 값은 사용자가 고칠 수 있으므로
+    // 읽는 즉시 sanitize 한다 — 그렇지 않으면 오픈 리다이렉트다.
+    const searchParams = useSearchParams()
+    const next = sanitizeNextPath(searchParams.get(NEXT_PARAM))
 
     useEffect(() => {
         if ((user || isAuthenticated) && !loading) {
-            router.push("/")
+            router.push(next)
         }
-    }, [user, isAuthenticated, loading, router])
+    }, [user, isAuthenticated, loading, router, next])
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-        )
+        return <LoginFallback />
     }
 
     if (user || isAuthenticated) {
@@ -56,27 +68,11 @@ export default function LoginPage() {
 
                 {/* Google 로그인 */}
 
-                <div className="grid grid-cols-2 gap-2">
-                    <Button
-                        type="button"
-                        variant={memberType === "BUYER" ? "default" : "outline"}
-                        onClick={() => setMemberType("BUYER")}
-                    >
-                        구매자
-                    </Button>
-                    <Button
-                        type="button"
-                        variant={memberType === "SELLER" ? "default" : "outline"}
-                        onClick={() => setMemberType("SELLER")}
-                    >
-                        판매자
-                    </Button>
-                </div>
-
-                <GoogleAuthButton mode="login" memberType={memberType} className="w-full" />
+                <GoogleAuthButton mode="login" className="w-full" next={next} />
                 <div className="text-center text-sm text-muted-foreground">
                     계정이 없으신가요?{" "}
-                    <Link href="/signup" className="text-primary hover:underline">
+                    {/* 계정이 없어 회원가입으로 새는 방문자도 목적지를 잃지 않게 함께 넘긴다. */}
+                    <Link href={buildAuthHref("/signup", next)} className="text-primary hover:underline">
                         회원가입
                     </Link>
                 </div>
@@ -93,6 +89,14 @@ export default function LoginPage() {
                 {/*    에 동의하는 것으로 간주됩니다.*/}
                 {/*</div>*/}
             </div>
+        </div>
+    )
+}
+
+function LoginFallback() {
+    return (
+        <div className="min-h-screen flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
     )
 }

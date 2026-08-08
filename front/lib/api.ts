@@ -3,10 +3,16 @@
 import {
     ApiResponse,
     CartResponse,
+    CreateRoomResult,
+    GamePrincipalView,
+    GameResultSummary,
+    GameType,
     GetCommentResponse,
     GetPostResponse,
     GetPostsResponse,
     GoogleAuthorizationResponse,
+    GuestTokenResult,
+    MemberProfile,
     PresignedUploadResponse,
     PostCommentRequest,
     ProductCreateRequest,
@@ -15,6 +21,7 @@ import {
     ProductSummary,
     ProductsParams,
     PostsParams,
+    RoomSummary,
     TokenResponse
 } from "./types"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
@@ -93,6 +100,25 @@ export const tokenManager = {
         return null
     },
 
+    /**
+     * 액세스 토큰만 버린다. 리프레시 토큰과 신원(memberId·role)은 남긴다.
+     *
+     * <p>{@link removeToken} 과 나눠 둔 이유: "이 액세스 토큰은 죽었다" 와 "이 세션은 끝났다"
+     * 는 전혀 다른 사건인데, 하나뿐이던 시절에는 앞엣것을 만날 때마다 뒤엣것을 실행했다.
+     * 만료된 액세스 토큰은 <b>리프레시 토큰이 고칠 수 있는</b> 상태다 — 함께 지워 버리면
+     * 고칠 수단까지 없애고 사용자를 blog·auth 에서도 조용히 로그아웃시킨다.
+     *
+     * <p>이것만 지우면 다음 인증 요청이 401 을 받고 {@code refreshAccessToken} 이 리프레시
+     * 토큰으로 새 액세스 토큰을 받아 온다 — 사용자는 아무것도 눈치채지 못한다. 리프레시까지
+     * 죽어 있었다면 그때 {@code handleUnauthorized} 가 정식으로 세션을 끝낸다.
+     */
+    removeAccessToken: () => {
+        if (typeof window !== "undefined") {
+            localStorage.removeItem("accessToken")
+        }
+    },
+
+    /** 세션 전체를 끝낸다. 로그아웃과 갱신까지 실패한 401 이 쓴다. */
     removeToken: () => {
         if (typeof window !== "undefined") {
             localStorage.removeItem("accessToken")
@@ -194,8 +220,7 @@ const refreshAccessToken = async (): Promise<boolean> => {
 const shouldTryRefresh = (endpoint: string) => {
     return ![
         "/api/auth/login",
-        "/api/auth/signup/buyers",
-        "/api/auth/signup/sellers",
+        "/api/auth/signup",
         "/api/auth/callback-google",
         "/api/auth/logout",
         REFRESH_ENDPOINT,
@@ -207,7 +232,21 @@ const shouldTryRefresh = (endpoint: string) => {
 export const apiRequest = async (
     endpoint: string,
     options: RequestInit = {},
-    retryOnUnauthorized = true
+    retryOnUnauthorized = true,
+    // 옵션 객체로 받는다 — 불리언 두 개가 나란히 놓이면(`true, true`) 호출부에서 어느 쪽이
+    // 무엇인지 알 수 없고, 플래그가 하나 더 늘 때마다 나빠진다.
+    // 기본값은 기존 호출부(blog/auth/cart/product) 동작을 그대로 유지한다.
+    // game API처럼 화면에 인라인 에러를 직접 그리는 호출부만 suppressAlert 를 켠다.
+    //
+    // suppressUnauthorizedHandler: 401(그리고 갱신 실패) 때 전역 세션 만료 처리를 건너뛴다.
+    // 그 처리는 토큰을 전부 지우고 alert 를 띄운 뒤 페이지를 새로고침한다 — 사용자가 직접
+    // 누른 요청에는 맞지만, **화면 뒤에서 도는 확인용 호출**에는 재앙이다. 게임 중
+    // gameAPI.me() 같은 배경 호출 하나가 멀쩡히 돌아가는 판을 통째로 날려 버린다.
+    // 켜면 그냥 던진다 — 호출부가 조용히 대체 경로로 가면 된다.
+    {
+        suppressAlert = false,
+        suppressUnauthorizedHandler = false,
+    }: { suppressAlert?: boolean; suppressUnauthorizedHandler?: boolean } = {}
 ) => {
     const url = `${API_BASE_URL}${endpoint}`
     const token = tokenManager.getToken()
@@ -217,7 +256,8 @@ export const apiRequest = async (
         ...options,
         credentials: "include",
         headers: {
-            "Content-Type": "application/json",
+            // multipart(FormData)는 브라우저가 boundary 포함 Content-Type을 직접 정해야 한다
+            ...(options.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
             "X-Lang": lang,                  // ▼ 여기서 무조건 X-Lang 넣어줌
             ...(token && { Authorization: `Bearer ${token}` }),
             ...options.headers,
@@ -234,8 +274,17 @@ export const apiRequest = async (
                 if (retryOnUnauthorized && canRefresh) {
                     const refreshed = await refreshAccessToken()
                     if (refreshed) {
-                        return apiRequest(endpoint, options, false)
+                        return apiRequest(endpoint, options, false, {
+                            suppressAlert,
+                            suppressUnauthorizedHandler,
+                        })
                     }
+                }
+
+                // 토큰을 지우지도, alert 를 띄우지도, 새로고침하지도 않는다. 배경 호출
+                // 하나가 세션과 화면을 함께 끝내면 안 된다.
+                if (suppressUnauthorizedHandler) {
+                    throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
                 }
 
                 if (canRefresh) {
@@ -256,7 +305,9 @@ export const apiRequest = async (
                 description = getFriendlyErrorMessage(code)
 
                 console.log(description)
-                alert(description)
+                if (!suppressAlert) {
+                    alert(description)
+                }
             } catch {
             }
 
@@ -271,11 +322,10 @@ export const apiRequest = async (
 
 // 인증 API
 export const authAPI = {
-    startGoogleLogin: async (memberType: "BUYER" | "SELLER"): Promise<GoogleAuthorizationResponse> => {
+    startGoogleLogin: async (): Promise<GoogleAuthorizationResponse> => {
         const response = await apiRequest("/api/auth/login", {
             method: "POST",
             body: JSON.stringify({
-                memberType,
                 device: getDevice(),
             }),
         })
@@ -287,35 +337,13 @@ export const authAPI = {
         return json.data
     },
 
-    startBuyerSignup: async (nickname: string): Promise<GoogleAuthorizationResponse> => {
-        const response = await apiRequest("/api/auth/signup/buyers", {
+    startSignup: async (nickname: string): Promise<GoogleAuthorizationResponse> => {
+        const response = await apiRequest("/api/auth/signup", {
             method: "POST",
             body: JSON.stringify({
                 nickname,
                 termsAgreed: true,
                 privacyPolicyAgreed: true,
-                device: getDevice(),
-            }),
-        })
-        const json: ApiResponse<GoogleAuthorizationResponse> = await response.json()
-        if (!isApiSuccessful(json)) {
-            throw new Error(json.header.message || "Google 회원가입 시작에 실패했습니다.")
-        }
-
-        return json.data
-    },
-
-    startSellerSignup: async (
-        nickname: string,
-        businessRegistrationCertificateUrl?: string
-    ): Promise<GoogleAuthorizationResponse> => {
-        const response = await apiRequest("/api/auth/signup/sellers", {
-            method: "POST",
-            body: JSON.stringify({
-                nickname,
-                termsAgreed: true,
-                privacyPolicyAgreed: true,
-                businessRegistrationCertificateUrl: businessRegistrationCertificateUrl?.trim() || null,
                 device: getDevice(),
             }),
         })
@@ -364,7 +392,139 @@ export const authAPI = {
             },
         })
         tokenManager.removeToken()
-    }
+    },
+
+    me: async (): Promise<MemberProfile> => {
+        const response = await apiRequest("/api/auth/me")
+        const json: ApiResponse<MemberProfile> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "프로필을 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+}
+
+/**
+ * 게임 API 호출이 공통으로 쓰는 apiRequest 옵션.
+ *
+ * <p>`suppressAlert`: 게임 화면은 `alert()` 대신 화면에 인라인 에러를 직접 그린다. 켜 두지
+ * 않으면 같은 실패가 네이티브 대화상자와 배너로 두 번 안내된다.
+ *
+ * <p>`suppressUnauthorizedHandler`: 갱신까지 실패한 401 에 대해 전역 세션 만료 처리를
+ * 건너뛴다. 그 처리는 토큰을 전부 지우고 `alert` 를 띄운 뒤 페이지를 새로고침하는데,
+ * 게임 화면은 <b>전부</b> 인라인 배너 계약 위에 지어져 있어서 그 새로고침이 무엇을 하든
+ * 화면의 약속을 어긴다.
+ *
+ * <p>특히 나쁜 것이 `game_memberNotFound` 다 — 이 코드는 401 이므로(GameErrorCode:33,
+ * RoomController:54 에서 던진다) 회원 행이 사라진 사람은 "갱신 성공 → 재시도 401 → 세션
+ * 파기 → 새로고침 → 처음부터" 를 무한히 돈다. 401 을 만든 원인이 액세스 토큰이 아닌데
+ * 액세스 토큰을 지우는 것이라 아무리 반복해도 나아지지 않는다.
+ *
+ * <p>기본값도, 게임 밖 호출자(auth·blog)도 바꾸지 않는다. 그쪽은 사용자가 직접 누른
+ * 요청이고 세션 만료 처리가 맞는 대응이다.
+ */
+const GAME_REQUEST_OPTIONS = { suppressAlert: true, suppressUnauthorizedHandler: true } as const
+
+// 게임 API
+export const gameAPI = {
+    createRoom: async (gameType: GameType): Promise<CreateRoomResult> => {
+        const response = await apiRequest(
+            "/api/game/rooms",
+            {
+                method: "POST",
+                body: JSON.stringify({ gameType }),
+            },
+            true,
+            GAME_REQUEST_OPTIONS
+        )
+        const json: ApiResponse<CreateRoomResult> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "방을 만들지 못했습니다.")
+        }
+        return json.data
+    },
+
+    getRoomSummary: async (roomId: string, inviteCode: string): Promise<RoomSummary> => {
+        const response = await apiRequest(
+            `/api/game/rooms/${encodeURIComponent(roomId)}?invite=${encodeURIComponent(inviteCode)}`,
+            {},
+            true,
+            GAME_REQUEST_OPTIONS
+        )
+        const json: ApiResponse<RoomSummary> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "방 정보를 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+
+    issueGuestToken: async (
+        roomId: string,
+        inviteCode: string,
+        nickname: string
+    ): Promise<GuestTokenResult> => {
+        const response = await apiRequest(
+            `/api/game/rooms/${encodeURIComponent(roomId)}/guest-tokens`,
+            {
+                method: "POST",
+                body: JSON.stringify({ inviteCode, nickname }),
+            },
+            true,
+            GAME_REQUEST_OPTIONS
+        )
+        const json: ApiResponse<GuestTokenResult> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "닉네임으로 참가하지 못했습니다.")
+        }
+        return json.data
+    },
+
+    /**
+     * 토큰이 말하는 나. 회원 전용이다 — 게임 서버의 `GamePrincipals.require` 는 인증이
+     * 없으면 던지므로, 로그인하지 않은 방문자(게스트)에게는 부르면 안 된다.
+     *
+     * <p>여기서 401 처리를 끄는 것이 특히 중요하다. 플레이 화면이 배경에서 신원을 확인하려고
+     * 부르는 것이라, 전역 세션 만료 처리가 돌면 액세스 토큰이 만료된 채 게스트 토큰으로
+     * 멀쩡히 두고 있던 판이 alert 한 번과 새로고침으로 끝난다. 실패는 조용히 던지고,
+     * useVerifiedMemberId 가 저장된 값으로 되돌아간다. (지금은 게임 호출 전부가 그렇다 —
+     * {@link GAME_REQUEST_OPTIONS} 참고.)
+     */
+    me: async (): Promise<GamePrincipalView> => {
+        const response = await apiRequest("/api/game/me", {}, true, GAME_REQUEST_OPTIONS)
+        const json: ApiResponse<GamePrincipalView> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "내 정보를 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+
+    myResults: async (limit = 20, offset = 0): Promise<GameResultSummary[]> => {
+        const response = await apiRequest(
+            `/api/game/me/results?limit=${limit}&offset=${offset}`,
+            {},
+            true,
+            GAME_REQUEST_OPTIONS
+        )
+        const json: ApiResponse<GameResultSummary[]> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "전적을 불러오지 못했습니다.")
+        }
+        return json.data
+    },
+
+    replayUrl: async (gameResultId: number): Promise<string> => {
+        const response = await apiRequest(
+            `/api/game/results/${gameResultId}/replay`,
+            {},
+            true,
+            GAME_REQUEST_OPTIONS
+        )
+        const json: ApiResponse<{ replayUrl: string }> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "기보를 불러오지 못했습니다.")
+        }
+        return json.data.replayUrl
+    },
 }
 
 export const categoryAPI = {
@@ -425,7 +585,57 @@ export const postsAPI = {
 
         const data: ApiResponse<GetPostResponse> = await res.json()
         return data.data
-    }
+    },
+
+    // 수정 화면용 — 언어별 원문을 각각 받아온다 (서버는 Accept-Language로 언어를 고른다)
+    getPostByLocale: async (postId: number, locale: "ko-KR" | "en"): Promise<GetPostResponse> => {
+        const res = await apiRequest(`/api/back/posts/${postId}`, {
+            method: "GET",
+            headers: { "Accept-Language": locale },
+        })
+
+        if (!res.ok) {
+            throw new Error("Failed to fetch post")
+        }
+
+        const data: ApiResponse<GetPostResponse> = await res.json()
+        return data.data
+    },
+
+    createPost: async (form: FormData): Promise<void> => {
+        const response = await apiRequest("/api/back/posts", {
+            method: "POST",
+            body: form,
+        })
+
+        const json: ApiResponse<void> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "글 저장에 실패했습니다.")
+        }
+    },
+
+    updatePost: async (postId: number, form: FormData): Promise<void> => {
+        const response = await apiRequest(`/api/back/posts/${postId}`, {
+            method: "PUT",
+            body: form,
+        })
+
+        const json: ApiResponse<void> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "글 수정에 실패했습니다.")
+        }
+    },
+
+    deletePost: async (postId: number): Promise<void> => {
+        const response = await apiRequest(`/api/back/posts/${postId}`, {
+            method: "DELETE",
+        })
+
+        const json: ApiResponse<void> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "글 삭제에 실패했습니다.")
+        }
+    },
 }
 
 export const productAPI = {

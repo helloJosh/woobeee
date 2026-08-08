@@ -1,9 +1,12 @@
 import type React from "react"
 import type { Metadata } from "next"
+import { Suspense } from "react"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/hooks/use-auth"
+import { HeaderControlsProvider } from "@/hooks/use-header-controls"
+import Header from "@/components/header"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -44,7 +47,14 @@ export default function RootLayout({
       <html lang="ko">
       <body className={inter.className}>
       <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <HeaderControlsProvider>
+            <Suspense fallback={null}>
+              <Header />
+            </Suspense>
+            {children}
+          </HeaderControlsProvider>
+        </AuthProvider>
       </ThemeProvider>
       </body>
       </html>

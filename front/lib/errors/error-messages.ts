@@ -16,6 +16,33 @@ export const errorMessageMap = {
         "Product not found": "상품을 찾을 수 없습니다.",
         "Cart has been deleted": "이미 삭제된 장바구니입니다.",
 
+        // 게임 (app-webflux) — 코드 목록은 GameErrorCode.java 와 1:1 이다.
+        "game_roomNotFound": "존재하지 않는 방입니다. 링크를 다시 확인해 주세요.",
+        "game_invalidInviteCode": "초대 코드가 올바르지 않습니다. 링크를 다시 확인해 주세요.",
+        "game_roomFull": "방이 가득 찼습니다. 다른 방에 참가해 주세요.",
+        "game_gameAlreadyStarted": "이미 게임이 시작된 방입니다.",
+        "game_invalidNickname": "닉네임은 공백을 뺀 1~20자로 입력해 주세요.",
+        "game_nicknameTaken": "이미 방에서 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요.",
+        // 아래 둘은 지금은 화면에 뜨지 않는다 — apiRequest(lib/api.ts)가 401 을 본문 파싱
+        // 전에 가로채 고정 문구를 던지기 때문이다. 401 처리가 바뀌면 바로 살아나므로 남겨 둔다.
+        "game_unauthorized": "로그인이 필요합니다.",
+        "game_memberNotFound": "회원 정보를 찾을 수 없습니다. 다시 로그인해 주세요.",
+        // WebSocket ERROR 프레임으로 온다(HTTP 아님) — GameWebSocketHandler 가 참가 인증에
+        // 실패한 세션을 닫기 직전에 보낸다.
+        "game_invalidGameToken": "게임 입장 정보가 만료되었습니다. 처음부터 다시 참가해 주세요.",
+        "game_notAMember": "이 방의 참가자가 아닙니다.",
+        "game_notHost": "방장만 게임을 시작할 수 있습니다.",
+        "game_notEnoughPlayers": "게임을 시작하려면 두 명 이상이 필요합니다.",
+        "game_omokRequiresTwo": "오목은 정확히 두 명이어야 시작할 수 있습니다.",
+        "game_notAllReady": "모든 참가자가 준비를 마쳐야 시작할 수 있습니다.",
+        "game_rematchNotFinished": "게임이 끝난 뒤에만 다시 시작할 수 있습니다.",
+        "game_notAParticipant": "본인이 참가한 게임의 기보만 볼 수 있습니다.",
+        "game_replayUnavailable": "이 게임의 기보가 없습니다.",
+        "game_badRequest": "요청 내용을 다시 확인해 주세요.",
+        "game_forbidden": "권한이 없습니다.",
+        "game_notFound": "요청한 정보를 찾을 수 없습니다.",
+        "game_conflict": "지금은 요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+        "game_unexpected": "서버에서 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
     },
     en: {
         "comment_needAuthentication": "You must be logged in to post or delete a comment.",
@@ -32,5 +59,32 @@ export const errorMessageMap = {
         "Cart not found": "Cart not found.",
         "Product not found": "Product not found.",
         "Cart has been deleted": "This cart has already been deleted.",
+
+        // Game (app-webflux) — mirrors GameErrorCode.java one-for-one.
+        "game_roomNotFound": "This room does not exist. Please check the link.",
+        "game_invalidInviteCode": "The invite code is not valid. Please check the link.",
+        "game_roomFull": "This room is full. Please join another room.",
+        "game_gameAlreadyStarted": "This game has already started.",
+        "game_invalidNickname": "Nickname must be 1-20 characters, excluding whitespace.",
+        "game_nicknameTaken": "That nickname is already used in this room. Please pick another.",
+        // Both below are currently unreachable: apiRequest (lib/api.ts) intercepts 401 before
+        // parsing the body. Kept because they go live the moment that 401 handling changes.
+        "game_unauthorized": "Please log in.",
+        "game_memberNotFound": "Member not found. Please sign in again.",
+        // Arrives on a WebSocket ERROR frame, not over HTTP.
+        "game_invalidGameToken": "Your entry has expired. Please join the room again.",
+        "game_notAMember": "You are not a participant of this room.",
+        "game_notHost": "Only the host can start the game.",
+        "game_notEnoughPlayers": "At least two players are required to start.",
+        "game_omokRequiresTwo": "Omok requires exactly two players.",
+        "game_notAllReady": "Every player must be ready before starting.",
+        "game_rematchNotFinished": "A rematch is only possible after the game has finished.",
+        "game_notAParticipant": "You can only view replays of games you played.",
+        "game_replayUnavailable": "No replay is available for this game.",
+        "game_badRequest": "Please check your request and try again.",
+        "game_forbidden": "You do not have permission to do that.",
+        "game_notFound": "The requested resource was not found.",
+        "game_conflict": "That request cannot be handled right now. Please try again shortly.",
+        "game_unexpected": "Something went wrong on the server. Please try again shortly.",
     },
 } as const

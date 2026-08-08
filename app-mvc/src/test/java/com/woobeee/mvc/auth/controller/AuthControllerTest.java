@@ -1,15 +1,13 @@
 package com.woobeee.mvc.auth.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.woobeee.mvc.auth.api.request.BuyerSignupRequest;
 import com.woobeee.mvc.auth.api.request.GoogleAuthorizationCallbackRequest;
 import com.woobeee.mvc.auth.api.request.LoginRequest;
+import com.woobeee.mvc.auth.api.request.MemberSignupRequest;
 import com.woobeee.mvc.auth.api.response.GoogleAuthorizationResponse;
 import com.woobeee.mvc.auth.api.response.TokenResponse;
-import com.woobeee.mvc.auth.entity.MemberType;
 import com.woobeee.mvc.auth.exception.AuthRestControllerAdvice;
-import com.woobeee.mvc.auth.repository.BuyerRepository;
-import com.woobeee.mvc.auth.repository.SellerRepository;
+import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.AuthService;
 import com.woobeee.core.token.TokenStore;
 import org.junit.jupiter.api.Test;
@@ -43,37 +41,34 @@ class AuthControllerTest {
     private TokenStore tokenStore;
 
     @MockitoBean
-    private BuyerRepository buyerRepository;
-
-    @MockitoBean
-    private SellerRepository sellerRepository;
+    private MemberRepository memberRepository;
 
     @Test
-    void signupBuyerReturnsAuthorizationResponse() throws Exception {
-        BuyerSignupRequest request = new BuyerSignupRequest("buyer-nick", true, true, "ios");
+    void signupReturnsAuthorizationResponse() throws Exception {
+        MemberSignupRequest request = new MemberSignupRequest("member-nick", true, true, "ios");
         GoogleAuthorizationResponse response = new GoogleAuthorizationResponse(
                 "https://accounts.google.com/o/oauth2/v2/auth?state=state-123",
                 "state-123",
                 600
         );
-        when(authService.signupBuyer(eq(request))).thenReturn(response);
+        when(authService.signup(eq(request))).thenReturn(response);
 
-        mockMvc.perform(post("/api/auth/signup/buyers")
+        mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.header.isSuccessful").value(true))
-                .andExpect(jsonPath("$.header.message").value("Buyer signup authorization created"))
+                .andExpect(jsonPath("$.header.message").value("Member signup authorization created"))
                 .andExpect(jsonPath("$.data.authorizationUrl")
                         .value("https://accounts.google.com/o/oauth2/v2/auth?state=state-123"))
                 .andExpect(jsonPath("$.data.state").value("state-123"));
 
-        verify(authService).signupBuyer(request);
+        verify(authService).signup(request);
     }
 
     @Test
     void loginReturnsAuthorizationResponse() throws Exception {
-        LoginRequest request = new LoginRequest(MemberType.BUYER, "android");
+        LoginRequest request = new LoginRequest("android");
         GoogleAuthorizationResponse response = new GoogleAuthorizationResponse(
                 "https://accounts.google.com/o/oauth2/v2/auth?state=login-state",
                 "login-state",
@@ -95,7 +90,7 @@ class AuthControllerTest {
     @Test
     void completeGoogleAuthorizationReturnsTokenResponse() throws Exception {
         GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
-        TokenResponse tokenResponse = new TokenResponse("access-77", 900, "refresh-77", 2_592_000, 77L, "ROLE_BUYER");
+        TokenResponse tokenResponse = new TokenResponse("access-77", 900, "refresh-77", 2_592_000, 77L, "ROLE_MEMBER");
         when(authService.completeGoogleAuthorization(eq(request), eq("10.0.0.5"))).thenReturn(tokenResponse);
 
         mockMvc.perform(post("/api/auth/callback-google")
@@ -108,16 +103,16 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.data.accessToken").value("access-77"))
                 .andExpect(jsonPath("$.data.refreshToken").value("refresh-77"))
                 .andExpect(jsonPath("$.data.memberId").value(77))
-                .andExpect(jsonPath("$.data.role").value("ROLE_BUYER"));
+                .andExpect(jsonPath("$.data.role").value("ROLE_MEMBER"));
 
         verify(authService).completeGoogleAuthorization(request, "10.0.0.5");
     }
 
     @Test
-    void signupBuyerRejectsInvalidRequestBody() throws Exception {
-        BuyerSignupRequest request = new BuyerSignupRequest(" ", true, true, "ios");
+    void signupRejectsInvalidRequestBody() throws Exception {
+        MemberSignupRequest request = new MemberSignupRequest(" ", true, true, "ios");
 
-        mockMvc.perform(post("/api/auth/signup/buyers")
+        mockMvc.perform(post("/api/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())

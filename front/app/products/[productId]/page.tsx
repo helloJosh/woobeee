@@ -53,7 +53,7 @@ const galleryImages = (product: ProductSummary): string[] => {
 export default function ProductDetailPage({ params }: { params: { productId: string } }) {
   const productId = Number(params.productId)
   const router = useRouter()
-  const { isAuthenticated, isSeller, memberId } = useAuth()
+  const { isAuthenticated, memberId } = useAuth()
 
   const [product, setProduct] = useState<ProductSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)

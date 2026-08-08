@@ -36,7 +36,7 @@ export interface TokenResponse {
   refreshToken: string
   refreshTokenExpiresInSeconds: number
   memberId?: number
-  role?: "ROLE_BUYER" | "ROLE_SELLER" | string
+  role?: string
 }
 
 export interface GoogleAuthorizationResponse {
@@ -188,6 +188,66 @@ export interface ProductCreateResponse {
   status: "IMAGE_PENDING" | "ACTIVE" | "IMAGE_FAILED"
   mainImageKey: string
   detailImageKeys: string[]
+}
+
+export type GameType = "OMOK" | "DODGE"
+
+export type RoomStatus = "WAITING" | "IN_PROGRESS" | "FINISHED"
+
+export interface RoomSummary {
+  gameType: GameType
+  status: RoomStatus
+  capacity: number
+  participantCount: number
+}
+
+export interface CreateRoomResult {
+  roomId: string
+  inviteCode: string
+  gameType: GameType
+}
+
+export interface GuestTokenResult {
+  token: string
+  participantId: string
+  displayName: string
+}
+
+export interface GameResultSummary {
+  gameResultId: number
+  gameType: GameType
+  endedAt: string
+  finishRank: number
+  winnerDisplayName: string
+  replayAvailable: boolean
+}
+
+export interface ParticipantView {
+  participantId: string
+  displayName: string
+  kind: "MEMBER" | "GUEST"
+  ready: boolean
+  connection: "CONNECTED" | "DISCONNECTED"
+}
+
+/**
+ * `GET /api/game/me` 의 응답(app-webflux 의 `GamePrincipal`).
+ *
+ * memberId 는 게임 서버가 액세스 토큰에서 뽑은 값이다 — 소켓 JOIN 을 통과시키는 검증기와
+ * 같은 것이라, localStorage 에 적어 둔 authMemberId 와 달리 어긋날 수 없다.
+ */
+export interface GamePrincipalView {
+  memberId: number | null
+  role: string | null
+  device: string | null
+}
+
+export interface MemberProfile {
+  memberId: number
+  email: string
+  nickname: string
+  gameMoney: number
+  profileImageUrl: string | null
 }
 
 export type CartStatus = "ACTIVE" | "EXPIRED" | "DELETED"

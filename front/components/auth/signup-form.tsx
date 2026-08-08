@@ -2,23 +2,23 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import GoogleAuthButton from "@/components/auth/google-auth-button"
+import { NEXT_PARAM, buildAuthHref, sanitizeNextPath } from "@/lib/auth-redirect"
 import { useAuth } from "@/hooks/use-auth"
 
-interface SignupFormProps {
-    memberType: "BUYER" | "SELLER"
-}
-
-export default function SignupForm({ memberType }: SignupFormProps) {
+/** 이 컴포넌트는 useSearchParams 를 쓴다 — 호출부가 Suspense 경계로 감싸야 한다. */
+export default function SignupForm() {
     const { user, loading, isAuthenticated } = useAuth()
     const router = useRouter()
     const [nickname, setNickname] = useState("")
-    const [businessRegistrationCertificateUrl, setBusinessRegistrationCertificateUrl] = useState("")
-    const isSeller = memberType === "SELLER"
+    // 초대 링크 -> 게이트 -> 로그인 -> "계정이 없으신가요?" 로 흘러온 방문자의 목적지.
+    // 로그인 화면과 같은 규칙으로 읽고 거른다.
+    const searchParams = useSearchParams()
+    const next = sanitizeNextPath(searchParams.get(NEXT_PARAM))
 
     const goBack = () => {
         if (window.history.length > 1) {
@@ -26,14 +26,14 @@ export default function SignupForm({ memberType }: SignupFormProps) {
             return
         }
 
-        router.push("/signup")
+        router.push("/")
     }
 
     useEffect(() => {
         if ((user || isAuthenticated) && !loading) {
-            router.push("/")
+            router.push(next)
         }
-    }, [user, isAuthenticated, loading, router])
+    }, [user, isAuthenticated, loading, router, next])
 
     if (loading) {
         return (
@@ -56,9 +56,7 @@ export default function SignupForm({ memberType }: SignupFormProps) {
                 </Button>
 
                 <div className="space-y-2">
-                    <h1 className="text-2xl font-semibold">
-                        {isSeller ? "판매자 회원가입" : "구매자 회원가입"}
-                    </h1>
+                    <h1 className="text-2xl font-semibold">회원가입</h1>
                     <p className="text-sm text-muted-foreground">
                         Google 인증으로 계정을 생성합니다.
                     </p>
@@ -71,26 +69,11 @@ export default function SignupForm({ memberType }: SignupFormProps) {
                     maxLength={60}
                 />
 
-                {isSeller ? (
-                    <Input
-                        value={businessRegistrationCertificateUrl}
-                        onChange={(event) => setBusinessRegistrationCertificateUrl(event.target.value)}
-                        placeholder="사업자등록증 URL"
-                        maxLength={1000}
-                    />
-                ) : null}
-
-                <GoogleAuthButton
-                    mode="signin"
-                    memberType={memberType}
-                    nickname={nickname}
-                    businessRegistrationCertificateUrl={businessRegistrationCertificateUrl}
-                    className="w-full"
-                />
+                <GoogleAuthButton mode="signin" nickname={nickname} className="w-full" next={next} />
 
                 <div className="text-center text-sm text-muted-foreground">
                     이미 계정이 있으신가요?{" "}
-                    <Link href="/login" className="text-primary hover:underline">
+                    <Link href={buildAuthHref("/login", next)} className="text-primary hover:underline">
                         로그인
                     </Link>
                 </div>

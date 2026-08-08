@@ -99,6 +99,19 @@ services:
       retries: 5
       start_period: 20s
 
+  # 버킷은 비공개다. 예전에는 여기서 `mc anonymous set public` 을 걸었는데, 그것은 이 버킷
+  # 전체에 익명 읽기 **와 쓰기** 를 여는 것이었다. 기보는 `games/{gameType}/{gameResultId}.ndjson`
+  # 이라는 완전히 추측 가능한 키에 순번 id 로 쌓이므로(ReplayUploader.objectKey), 공개 정책
+  # 아래에서는 GameResultQueryRepository 의 "참가자 본인만" 규칙(GAME-AC-22)이 그냥 우회되고
+  # 남의 기보를 덮어쓸 수도 있었다.
+  #
+  # 두 표면 모두 presigned URL 로만 버킷에 닿는다 — 프로필 이미지는
+  # MemberProfileImageService(presignPutObject / presignGetObject), 기보는
+  # ReplayUploader(S3AsyncClient.putObject + presignGetObject). 익명 정책에 기대는 경로는
+  # 코드에 없다(프론트도 presigned URL 을 그대로 fetch 한다: components/game/replay-viewer.tsx).
+  #
+  # `set none` 을 명시적으로 부르는 이유: 예전 compose 로 이미 버킷을 만든 개발자의 MinIO
+  # 볼륨에는 공개 정책이 그대로 남아 있다. 줄을 지우기만 하면 그 환경은 계속 공개다.
   createbuckets:
     image: minio/mc:latest
     depends_on:
@@ -111,5 +124,5 @@ services:
         sleep 3;
       done;
       mc mb myminio/woobeee || true;
-      mc anonymous set public myminio/woobeee || true
+      mc anonymous set none myminio/woobeee || true
       "

@@ -2,8 +2,7 @@ package com.woobeee.mvc;
 
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.woobeee.core.token.TokenStore;
-import com.woobeee.mvc.auth.repository.BuyerRepository;
-import com.woobeee.mvc.auth.repository.SellerRepository;
+import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.AuthService;
 import com.woobeee.mvc.auth.service.TokenService;
 import com.woobeee.mvc.blog.repository.CategoryRepository;
@@ -33,10 +32,7 @@ class WoobeeeMvcApplicationTests {
     private TokenStore tokenStore;
 
     @MockitoBean
-    private BuyerRepository buyerRepository;
-
-    @MockitoBean
-    private SellerRepository sellerRepository;
+    private MemberRepository memberRepository;
 
     @MockitoBean
     private CategoryRepository categoryRepository;

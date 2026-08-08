@@ -41,16 +41,26 @@ public class Posts {
 //    private Categories category;
     private Long categoryId;
     private Long memberId;
-    private String memberRole;
 
-    public Posts(String titleKo, String titleEn, String textKo, String textEn, Long categoryId, Long memberId, String memberRole) {
+    public Posts(String titleKo, String titleEn, String textKo, String textEn, Long categoryId, Long memberId) {
         this.titleKo = titleKo;
         this.titleEn = titleEn;
         this.textKo = textKo;
         this.textEn = textEn;
         this.categoryId = categoryId;
         this.memberId = memberId;
-        this.memberRole = memberRole;
         this.views = 0L;
+    }
+
+    public void updateContent(String titleKo, String titleEn, String textKo, String textEn, Long categoryId) {
+        this.titleKo = titleKo;
+        this.titleEn = titleEn;
+        if (textKo != null) {
+            this.textKo = textKo;
+        }
+        if (textEn != null) {
+            this.textEn = textEn;
+        }
+        this.categoryId = categoryId;
     }
 }
