@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -43,6 +45,10 @@ public class Member {
     @Column(nullable = false)
     private long gameMoney;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private MemberRole role;
+
     @Column(nullable = false)
     private boolean active;
 
@@ -58,6 +64,7 @@ public class Member {
             boolean privacyPolicyAgreed,
             String profileImageKey,
             long gameMoney,
+            MemberRole role,
             boolean active,
             LocalDateTime createdAt
     ) {
@@ -68,6 +75,7 @@ public class Member {
         this.privacyPolicyAgreed = privacyPolicyAgreed;
         this.profileImageKey = profileImageKey;
         this.gameMoney = gameMoney;
+        this.role = role;
         this.active = active;
         this.createdAt = createdAt;
     }
@@ -87,6 +95,7 @@ public class Member {
                 .privacyPolicyAgreed(privacyPolicyAgreed)
                 .profileImageKey(null)
                 .gameMoney(0L)
+                .role(MemberRole.ROLE_MEMBER)
                 .active(true)
                 .createdAt(LocalDateTime.now())
                 .build();

@@ -27,8 +27,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @RequiredArgsConstructor
 public class AuthService {
-    public static final String ROLE_MEMBER = "ROLE_MEMBER";
-
     private static final Base64.Encoder URL_ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -114,13 +112,13 @@ public class AuthService {
                 context.privacyPolicyAgreed()
         ));
 
-        return tokenService.issue(member.getId(), ROLE_MEMBER, context.device(), ip);
+        return tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip);
     }
 
     private TokenResponse login(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
         return memberRepository.findByGoogleSubject(identity.subject())
                 .filter(Member::isActive)
-                .map(member -> tokenService.issue(member.getId(), ROLE_MEMBER, context.device(), ip))
+                .map(member -> tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member is not registered"));
     }
 

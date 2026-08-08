@@ -77,6 +77,7 @@ React-free 모듈에 두고, 컴포넌트는 그 결과를 그리기만 한다.*
 | `lib/replay-view.ts` | 기보 파싱(오목 v1 / 장애물 v2), 재생 프레임 구성, 전적 목록 페이징 |
 | `lib/auth-redirect.ts` | 로그인 후 복귀 경로 — `next` 살균, 링크 조립, OAuth 왕복 보관 |
 | `lib/game-errors.ts` | 게임 API 오류 문구, 유니온 소진 검사(`assertNever`) — `lib/game-hub.ts` 가 기존 호출부(`app/game/page.tsx`)를 위해 그대로 재수출한다 |
+| `lib/blog-admin.ts` | 블로그 글 관리 — ADMIN 판정(`canManagePosts`), 초안 검증, multipart 조립, 카테고리 트리 평탄화 |
 
 (`game-socket.ts` 만 `"use client"` 를 달고 있다. Next 의 번들링 지시어일 뿐 React 에 의존하지는
 않으며, 다른 모듈과 똑같이 테스트된다.)

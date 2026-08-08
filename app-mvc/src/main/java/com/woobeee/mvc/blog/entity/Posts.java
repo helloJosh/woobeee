@@ -51,4 +51,16 @@ public class Posts {
         this.memberId = memberId;
         this.views = 0L;
     }
+
+    public void updateContent(String titleKo, String titleEn, String textKo, String textEn, Long categoryId) {
+        this.titleKo = titleKo;
+        this.titleEn = titleEn;
+        if (textKo != null) {
+            this.textKo = textKo;
+        }
+        if (textEn != null) {
+            this.textEn = textEn;
+        }
+        this.categoryId = categoryId;
+    }
 }

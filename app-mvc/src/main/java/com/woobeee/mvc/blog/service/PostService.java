@@ -18,6 +18,15 @@ public interface PostService {
             List<MultipartFile> files
     );
 
+    void updatePost(
+            Long postId,
+            PostPostRequest request,
+            String loginId,
+            MultipartFile markdownEn,
+            MultipartFile markdownKr,
+            List<MultipartFile> files
+    );
+
     void deletePost(Long postId, String loginId);
     GetPostsResponse getAllPost(String q, String locale, Long categoryId, Pageable pageable);
     GetPostResponse getPost(Long postId, String locale, String loginId, HttpServletRequest request);

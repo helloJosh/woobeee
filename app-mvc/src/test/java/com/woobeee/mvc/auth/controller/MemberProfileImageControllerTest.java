@@ -2,6 +2,10 @@ package com.woobeee.mvc.auth.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.woobeee.core.token.TokenStore;
+import com.woobeee.core.token.dto.AuthTokenType;
+import com.woobeee.core.token.dto.TokenMetadata;
+import com.woobeee.core.token.dto.TokenSnapshot;
+import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.auth.api.request.MemberProfileImagePresignedUrlRequest;
 import com.woobeee.mvc.auth.api.request.MemberProfileImageRegisterRequest;
 import com.woobeee.mvc.auth.api.response.MemberProfileImageResponse;
@@ -17,8 +21,11 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -34,6 +41,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(AuthRestControllerAdvice.class)
 class MemberProfileImageControllerTest {
     private static final String LOGIN_ID = "member@example.com";
+    private static final String ACCESS_TOKEN = "access-token";
 
     @Autowired
     private MockMvc mockMvc;
@@ -49,9 +57,20 @@ class MemberProfileImageControllerTest {
     @MockitoBean
     private MemberRepository memberRepository;
 
+    /** loginId 헤더는 필터가 토큰에서 파생해 주입한다 — 테스트도 토큰 경로로 신원을 만든다. */
+    private void authenticate() {
+        when(tokenStore.find(ACCESS_TOKEN, AuthTokenType.ACCESS))
+                .thenReturn(Optional.of(new TokenSnapshot(
+                        new TokenMetadata(42L, "ROLE_MEMBER", "web", "127.0.0.1"), 900L)));
+        Member member = Member.create("google-sub", LOGIN_ID, "nick", true, true);
+        ReflectionTestUtils.setField(member, "id", 42L);
+        when(memberRepository.findById(42L)).thenReturn(Optional.of(member));
+    }
+
     /** AUTH-AC-14 */
     @Test
     void getMyProfileReturnsPresignedGetUrl() throws Exception {
+        authenticate();
         when(memberProfileImageService.getMyProfile(LOGIN_ID)).thenReturn(new MemberProfileResponse(
                 42L,
                 LOGIN_ID,
@@ -60,7 +79,7 @@ class MemberProfileImageControllerTest {
                 "https://s3.example.com/woobeee/profiles/42/uuid/avatar.png?sig=1"
         ));
 
-        mockMvc.perform(get("/api/auth/me").header("loginId", LOGIN_ID))
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.header.isSuccessful").value(true))
                 .andExpect(jsonPath("$.data.memberId").value(42))
@@ -74,10 +93,11 @@ class MemberProfileImageControllerTest {
     /** AUTH-AC-14 */
     @Test
     void getMyProfileReturnsNullProfileImageUrlWhenUnset() throws Exception {
+        authenticate();
         when(memberProfileImageService.getMyProfile(LOGIN_ID))
                 .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, null));
 
-        mockMvc.perform(get("/api/auth/me").header("loginId", LOGIN_ID))
+        mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.profileImageUrl").doesNotExist());
     }
@@ -93,6 +113,7 @@ class MemberProfileImageControllerTest {
 
     @Test
     void createPresignedUploadUrlReturnsUploadTarget() throws Exception {
+        authenticate();
         MemberProfileImagePresignedUrlRequest request =
                 new MemberProfileImagePresignedUrlRequest("avatar.png", "image/png");
         when(memberProfileImageService.createPresignedUploadUrl(eq(LOGIN_ID), eq(request)))
@@ -103,7 +124,7 @@ class MemberProfileImageControllerTest {
                 ));
 
         mockMvc.perform(post("/api/auth/me/profile-image/presigned-url")
-                        .header("loginId", LOGIN_ID)
+                        .header("Authorization", "Bearer " + ACCESS_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -114,13 +135,14 @@ class MemberProfileImageControllerTest {
 
     @Test
     void registerReturnsProfileImageUrl() throws Exception {
+        authenticate();
         MemberProfileImageRegisterRequest request =
                 new MemberProfileImageRegisterRequest("profiles/42/uuid/avatar.png");
         when(memberProfileImageService.register(eq(LOGIN_ID), eq(request)))
                 .thenReturn(new MemberProfileImageResponse("https://s3.example.com/get"));
 
         mockMvc.perform(put("/api/auth/me/profile-image")
-                        .header("loginId", LOGIN_ID)
+                        .header("Authorization", "Bearer " + ACCESS_TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -129,7 +151,8 @@ class MemberProfileImageControllerTest {
 
     @Test
     void deleteReturnsNoContent() throws Exception {
-        mockMvc.perform(delete("/api/auth/me/profile-image").header("loginId", LOGIN_ID))
+        authenticate();
+        mockMvc.perform(delete("/api/auth/me/profile-image").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isNoContent());
 
         verify(memberProfileImageService).delete(LOGIN_ID);

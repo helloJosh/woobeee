@@ -72,79 +72,106 @@ public class PostServiceImpl implements PostService {
     ) {
         AuthMemberResolver.MemberIdentity memberIdentity = authMemberResolver.requireByLoginId(loginId);
 
-        String markdownEnString = (markdownEn != null && !markdownEn.isEmpty())
-                ? new String(markdownEn.getBytes(), StandardCharsets.UTF_8)
-                : "";
-
-        String markdownKrString = (markdownKr != null && !markdownKr.isEmpty())
-                ? new String(markdownKr.getBytes(), StandardCharsets.UTF_8)
-                : "";
+        String markdownEnString = readMarkdown(markdownEn);
+        String markdownKrString = readMarkdown(markdownKr);
 
         Posts post = new Posts(
                 request.titleKo(),
                 request.titleEn(),
-                markdownKrString,
-                markdownEnString,
+                markdownKrString == null ? "" : markdownKrString,
+                markdownEnString == null ? "" : markdownEnString,
                 request.categoryId(),
                 memberIdentity.memberId()
         );
 
         post = postRepository.save(post);
 
-        if (files != null && !files.isEmpty()) {
-            AtomicInteger lastPrintedPercent = new AtomicInteger(-1);
+        uploadAttachments(post.getId(), files);
+        postRepository.save(post);
+    }
 
-            for (MultipartFile file : files) {
-                if (file == null || file.isEmpty()) continue;
+    @SneakyThrows
+    @Override
+    public void updatePost(
+            Long postId,
+            PostPostRequest request,
+            String loginId,
+            MultipartFile markdownEn,
+            MultipartFile markdownKr,
+            List<MultipartFile> files
+    ) {
+        AuthMemberResolver.MemberIdentity memberIdentity = authMemberResolver.requireByLoginId(loginId);
 
-                String original = file.getOriginalFilename();
-                if (original == null) continue;
-                String fileName = Paths.get(original).getFileName().toString().trim(); // 경로 제거
+        Posts post = postRepository.findById(postId)
+                .orElseThrow(() -> new CustomNotFoundException(ErrorCode.post_notFound));
 
-                String key = post.getId() + "/" + fileName;
-
-                try (
-                        InputStream is = file.getInputStream();
-                        ProgressInputStream pis = new ProgressInputStream(
-                                is,
-                                file.getSize(),
-                                percent -> {
-                                    int p = (int) percent.doubleValue();
-                                    if (p != lastPrintedPercent.getAndSet(p)) {
-                                        log.info("Upload progress: {}%", p);
-                                    }
-                                }
-                        )
-                ) {
-                    s3Client.putObject(
-                            PutObjectRequest.builder()
-                                    .bucket(storageProperties.getBucket())
-                                    .key(key)
-                                    .contentType(file.getContentType())
-                                    .build(),
-                            RequestBody.fromInputStream(pis, file.getSize())
-                    );
-                } catch (IOException e) {
-                    throw new CustomInternalServerException(ErrorCode.post_imageUploadError);
-                }
-
-                // ${파일명} -> https://<endpoint>/<bucket>/<postId>/<파일명>
-//                String publicUrl = storageProperties.getEndpoint() + "/" + storageProperties.getBucket() + "/" + key;
-//
-//                if (!markdownEnString.isBlank())
-//                    markdownEnString = markdownEnString.replace("${" + fileName + "}", publicUrl);
-//
-//                if (!markdownKrString.isBlank())
-//                    markdownKrString = markdownKrString.replace("${" + fileName + "}", publicUrl);
-            }
+        if (!post.getMemberId().equals(memberIdentity.memberId())) {
+            throw new CustomAuthenticationException(ErrorCode.comment_needAuthentication);
         }
 
-//        if (!markdownEnString.isBlank())
-//            post.setTextEn(markdownEnString);
-//        if (!markdownKrString.isBlank())
-//            post.setTextKo(markdownKrString);
+        post.updateContent(
+                request.titleKo(),
+                request.titleEn(),
+                readMarkdown(markdownKr),
+                readMarkdown(markdownEn),
+                request.categoryId()
+        );
+
+        uploadAttachments(post.getId(), files);
         postRepository.save(post);
-        //eventListener.handleDatasetSavedEvent(new MessageEvent("trigger batch"));
+    }
+
+    @SneakyThrows
+    private String readMarkdown(MultipartFile markdown) {
+        return (markdown != null && !markdown.isEmpty())
+                ? new String(markdown.getBytes(), StandardCharsets.UTF_8)
+                : null;
+    }
+
+    /**
+     * 마크다운의 ${파일명} 플레이스홀더는 조회 시 {postId}/{파일명} 공개 URL 로 치환된다.
+     */
+    private void uploadAttachments(Long postId, List<MultipartFile> files) {
+        if (files == null || files.isEmpty()) {
+            return;
+        }
+
+        AtomicInteger lastPrintedPercent = new AtomicInteger(-1);
+
+        for (MultipartFile file : files) {
+            if (file == null || file.isEmpty()) continue;
+
+            String original = file.getOriginalFilename();
+            if (original == null) continue;
+            String fileName = Paths.get(original).getFileName().toString().trim(); // 경로 제거
+
+            String key = postId + "/" + fileName;
+
+            try (
+                    InputStream is = file.getInputStream();
+                    ProgressInputStream pis = new ProgressInputStream(
+                            is,
+                            file.getSize(),
+                            percent -> {
+                                int p = (int) percent.doubleValue();
+                                if (p != lastPrintedPercent.getAndSet(p)) {
+                                    log.info("Upload progress: {}%", p);
+                                }
+                            }
+                    )
+            ) {
+                s3Client.putObject(
+                        PutObjectRequest.builder()
+                                .bucket(storageProperties.getBucket())
+                                .key(key)
+                                .contentType(file.getContentType())
+                                .build(),
+                        RequestBody.fromInputStream(pis, file.getSize())
+                );
+            } catch (IOException e) {
+                throw new CustomInternalServerException(ErrorCode.post_imageUploadError);
+            }
+        }
     }
 
     @Override

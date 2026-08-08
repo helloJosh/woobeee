@@ -34,6 +34,11 @@
 
 ## 동작 규칙 (코드 기준)
 
+- **기본 카테고리 시드**: `V3__default_categories.sql` 이 최상위 카테고리 여섯 개(백엔드 /
+  프론트엔드 / 인프라 / 알고리즘 / 회고 / 기타, 각각 name_en 포함)를 심는다 — 새 DB 라도
+  블로그가 빈 카테고리로 시작하지 않는다. 같은 이름이 이미 있으면 건너뛴다(WHERE NOT EXISTS).
+  검증: `DefaultCategoriesSeedTest`(실 Postgres 필요).
+
 - **목록/검색**: 카테고리 id 집합·검색어 `q`·`locale`·페이징으로 조회한다. 정렬은 `createdAt desc, id desc`. locale이 `en`이면 영어 제목/본문, 아니면 한국어 제목/본문을 대상으로 부분일치 검색한다(`PostQueryRepositoryImpl.searchPosts`). 상세: [`adr/ADR-001-postpaging.md`](adr/ADR-001-postpaging.md).
 - **카테고리 집계**: 카테고리별 게시글 수를 로우 쿼리 `GROUP BY`로 한 번에 집계한다(`countGroupByCategoryId`).
 - **상세 조회**: locale과 로그인 정보를 반영한다.
@@ -58,6 +63,11 @@
 | BLOG-AC-04 | 카테고리별 게시글 수를 `GROUP BY`로 집계해 반환한다 | 미작성 — 추가 필요 |
 | BLOG-AC-05 | 댓글은 댓글/대댓글(parent) 구조로 조회·생성된다 | 미작성 — 추가 필요 |
 | BLOG-AC-06 | 좋아요는 로그인 사용자 기준으로 등록/취소(토글)된다 | 미작성 — 추가 필요 |
+| BLOG-AC-07 | 클라이언트가 보낸 `loginId` 헤더는 무시된다 — 신원은 오직 유효한 access token 에서만 파생된다 | `AccessTokenLoginIdHeaderFilterTest` |
+| BLOG-AC-08 | `ROLE_MEMBER` 토큰 또는 무토큰으로 게시글/카테고리 쓰기(POST/PUT/DELETE)를 호출하면 `403` + `ApiResponse` 실패 봉투를 반환한다 | `AccessTokenLoginIdHeaderFilterTest` |
+| BLOG-AC-09 | `ROLE_ADMIN` 토큰은 게시글/카테고리 쓰기를 통과한다. 읽기(GET)는 누구나 가능하다 | `AccessTokenLoginIdHeaderFilterTest` |
+| BLOG-AC-10 | 댓글/좋아요 쓰기는 로그인 회원(`ROLE_MEMBER`)이면 가능하다(ADMIN 불필요) | `AccessTokenLoginIdHeaderFilterTest` |
+| BLOG-AC-11 | `PUT /api/back/posts/{postId}` 는 작성자 본인일 때 제목·본문·카테고리를 갱신하고, 마크다운 파트가 없으면 본문을 보존한다 | `PostServiceImplTest` |
 
 ## 지원 기능
 

@@ -5,6 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Sidebar from "@/components/sidebar"
 import PostList from "@/components/post-list"
 import { ThemeProvider } from "@/components/theme-provider"
+import { Button } from "@/components/ui/button"
+import { PenSquare } from "lucide-react"
+import { tokenManager } from "@/lib/api"
+import { canManagePosts } from "@/lib/blog-admin"
 import { useCategories } from "@/hooks/use-categories"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useRegisterHeaderControls } from "@/hooks/use-header-controls"
@@ -22,8 +26,14 @@ export default function BlogPage() {
   const [searchQuery, setSearchQuery] = useState<string | null>(searchParams.get("search"))
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(320)
+  // localStorage는 서버 렌더에 없다 — 마운트 후에만 읽어 hydration 불일치를 피한다
+  const [canWrite, setCanWrite] = useState(false)
 
   const isMobile = useIsMobile()
+
+  useEffect(() => {
+    setCanWrite(canManagePosts(tokenManager.getRole()))
+  }, [])
 
   useEffect(() => {
     const category = searchParams.get("category")
@@ -98,6 +108,14 @@ export default function BlogPage() {
 
           <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? "ml-80" : "ml-0"}`}>
             <div className="p-6">
+              {canWrite && (
+                <div className="flex justify-end mb-4">
+                  <Button onClick={() => router.push("/blog/write")} className="flex items-center gap-2">
+                    <PenSquare className="h-4 w-4" />
+                    글쓰기
+                  </Button>
+                </div>
+              )}
               <PostList
                 selectedCategoryId={selectedCategory ?? undefined}
                 selectedCategoryName={selectedCategoryName ?? undefined}
