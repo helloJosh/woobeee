@@ -78,3 +78,4 @@ front/pnpm-debug.log*
 */logs/
 front/tsconfig.tsbuildinfo
 front/pnpm-lock.yaml
+*/.docker-volumes/
