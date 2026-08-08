@@ -79,3 +79,6 @@ front/pnpm-debug.log*
 front/tsconfig.tsbuildinfo
 front/pnpm-lock.yaml
 */.docker-volumes/
+
+# 개발 스크립트가 남기는 실행 PID
+*.pid

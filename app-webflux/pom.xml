@@ -68,6 +68,8 @@
     </dependencies>
 
     <build>
+        <!-- 산출물 이름에서 버전을 뺀다: app-webflux.jar. 아티팩트 좌표(0.0.1-SNAPSHOT)는 그대로다. -->
+        <finalName>${project.artifactId}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

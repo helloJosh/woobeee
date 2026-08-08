@@ -47,3 +47,19 @@ Flyway가 단일 소스다: `app-mvc/src/main/resources/db/migration/`. JPA는 `
 
 `docs/` — 설계 근거는 `docs/superpowers/specs/`, 아키텍처는 `docs/ARCHITECTURE.md`,
 작업 규칙은 `CLAUDE.md`.
+## 서버 실행
+
+`scripts/dev-up.sh` 가 app-mvc(:8000) · app-webflux(:8001) · front(:3000) 셋을 백그라운드로
+띄우고 실제로 떴는지 포트로 확인한다. 로그는 각각 `app-mvc.log` · `app-webflux.log` ·
+`front/dev.log`. 내릴 때는 `scripts/dev-down.sh`.
+
+```bash
+export GOOGLE_CLIENT_SECRET='실제-시크릿'
+export GOOGLE_REDIRECT_URI='https://www.woobeee.com/auth/google/callback'
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)
+
+./scripts/dev-down.sh && ./scripts/dev-up.sh
+```
+
+jar 를 다시 빌드할 때는 **반드시 먼저 내린다**. 실행 중인 jar 를 덮어쓰면 JVM 이 클래스를
+지연 로딩하다 `ClassNotFoundException` 으로 죽는다.
