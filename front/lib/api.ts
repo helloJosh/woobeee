@@ -320,6 +320,60 @@ export const apiRequest = async (
     }
 }
 
+export type UploadProgressHandler = (loadedBytes: number, totalBytes: number) => void
+
+// fetch는 업로드 진행률을 주지 않는다 — 대용량 multipart(게시글 첨부)만 XHR로 보낸다.
+// apiRequest와 동일하게 401이면 refresh 후 한 번 재시도한다.
+const uploadRequest = async (
+    endpoint: string,
+    method: "POST" | "PUT",
+    form: FormData,
+    onProgress?: UploadProgressHandler,
+    retryOnUnauthorized = true,
+): Promise<ApiResponse<void>> => {
+    const send = () =>
+        new Promise<{ status: number; json: ApiResponse<void> | null }>((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open(method, `${API_BASE_URL}${endpoint}`)
+            xhr.withCredentials = true
+            const token = tokenManager.getToken()
+            if (token) {
+                xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+            }
+            xhr.setRequestHeader("X-Lang", getLanguage())
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    onProgress?.(event.loaded, event.total)
+                }
+            }
+            xhr.onload = () => {
+                let json: ApiResponse<void> | null = null
+                try {
+                    json = JSON.parse(xhr.responseText)
+                } catch {
+                }
+                resolve({ status: xhr.status, json })
+            }
+            xhr.onerror = () => reject(new Error("네트워크 오류로 업로드에 실패했습니다."))
+            xhr.send(form)
+        })
+
+    const result = await send()
+
+    if (result.status === 401 && retryOnUnauthorized) {
+        const refreshed = await refreshAccessToken()
+        if (refreshed) {
+            return uploadRequest(endpoint, method, form, onProgress, false)
+        }
+        throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
+    }
+
+    if (result.json === null) {
+        throw new Error(`업로드에 실패했습니다. (HTTP ${result.status})`)
+    }
+    return result.json
+}
+
 // 인증 API
 export const authAPI = {
     startGoogleLogin: async (): Promise<GoogleAuthorizationResponse> => {
@@ -602,27 +656,17 @@ export const postsAPI = {
         return data.data
     },
 
-    createPost: async (form: FormData): Promise<void> => {
-        const response = await apiRequest("/api/back/posts", {
-            method: "POST",
-            body: form,
-        })
-
-        const json: ApiResponse<void> = await response.json()
+    createPost: async (form: FormData, onProgress?: UploadProgressHandler): Promise<void> => {
+        const json = await uploadRequest("/api/back/posts", "POST", form, onProgress)
         if (!isApiSuccessful(json)) {
-            throw new Error(json.header.message || "글 저장에 실패했습니다.")
+            throw new Error(json.header?.message || "글 저장에 실패했습니다.")
         }
     },
 
-    updatePost: async (postId: number, form: FormData): Promise<void> => {
-        const response = await apiRequest(`/api/back/posts/${postId}`, {
-            method: "PUT",
-            body: form,
-        })
-
-        const json: ApiResponse<void> = await response.json()
+    updatePost: async (postId: number, form: FormData, onProgress?: UploadProgressHandler): Promise<void> => {
+        const json = await uploadRequest(`/api/back/posts/${postId}`, "PUT", form, onProgress)
         if (!isApiSuccessful(json)) {
-            throw new Error(json.header.message || "글 수정에 실패했습니다.")
+            throw new Error(json.header?.message || "글 수정에 실패했습니다.")
         }
     },
 

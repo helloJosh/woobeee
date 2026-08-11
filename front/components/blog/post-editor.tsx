@@ -10,6 +10,7 @@ import "@blocknote/mantine/style.css"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
     Select,
@@ -26,6 +27,7 @@ import {
     flattenCategories,
     resolvePendingImages,
     uniqueFileName,
+    uploadProgressLabel,
     validatePostDraft,
     type PendingImage,
 } from "@/lib/blog-admin"
@@ -50,6 +52,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
     const [loading, setLoading] = useState(Boolean(postId))
     const [saving, setSaving] = useState(false)
     const [errors, setErrors] = useState<string[]>([])
+    const [progress, setProgress] = useState<{ loaded: number; total: number } | null>(null)
 
     // 드롭/붙여넣기된 이미지는 즉시 올리지 않고 여기 보관한다 — 글 생성 전에는 postId가
     // 없어 올릴 곳이 없다. 미리보기는 blob URL, 실제 전송은 저장 시 multipart로 간다.
@@ -151,18 +154,21 @@ export default function PostEditor({ postId }: PostEditorProps) {
         }
 
         setSaving(true)
+        setProgress(null)
+        const onProgress = (loaded: number, total: number) => setProgress({ loaded, total })
         try {
             const form = buildPostFormData(draft)
             if (postId) {
-                await postsAPI.updatePost(postId, form)
+                await postsAPI.updatePost(postId, form, onProgress)
                 router.push(`/blog/${postId}`)
             } else {
-                await postsAPI.createPost(form)
+                await postsAPI.createPost(form, onProgress)
                 router.push("/blog")
             }
         } catch (error) {
             setErrors([error instanceof Error ? error.message : "저장에 실패했습니다."])
             setSaving(false)
+            setProgress(null)
         }
     }
 
@@ -190,6 +196,17 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         <li key={error}>{error}</li>
                     ))}
                 </ul>
+            )}
+
+            {saving && progress && (
+                <div className="space-y-1">
+                    <Progress
+                        value={progress.total > 0 ? Math.min(100, (progress.loaded / progress.total) * 100) : 0}
+                    />
+                    <p className="text-sm text-muted-foreground">
+                        {uploadProgressLabel(progress.loaded, progress.total)}
+                    </p>
+                </div>
             )}
 
             <div className="flex gap-3">

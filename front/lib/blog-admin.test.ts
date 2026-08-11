@@ -6,6 +6,7 @@ import {
     flattenCategories,
     resolvePendingImages,
     uniqueFileName,
+    uploadProgressLabel,
     validatePostDraft,
     type PendingImage,
     type PostDraft,
@@ -159,6 +160,24 @@ describe("uniqueFileName", () => {
 
     it("확장자가 없어도 동작한다", () => {
         expect(uniqueFileName("noext", new Set(["noext"]))).toBe("noext-1")
+    })
+})
+
+describe("uploadProgressLabel", () => {
+    it("보낸 양 / 전체 양 (퍼센트) 형태로 만든다", () => {
+        expect(uploadProgressLabel(500_000, 1_000_000)).toBe("0.5MB / 1.0MB (50%)")
+    })
+
+    it("퍼센트는 반올림한다", () => {
+        expect(uploadProgressLabel(333_333, 1_000_000)).toBe("0.3MB / 1.0MB (33%)")
+    })
+
+    it("업로드가 끝나면 서버 처리 중임을 알린다 — 100%에서 멈춘 게 아니다", () => {
+        expect(uploadProgressLabel(1_000_000, 1_000_000)).toBe("서버에서 처리 중…")
+    })
+
+    it("전체 크기를 모르면 일반 문구로 둔다", () => {
+        expect(uploadProgressLabel(500_000, 0)).toBe("업로드 중…")
     })
 })
 

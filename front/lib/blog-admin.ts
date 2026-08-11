@@ -108,6 +108,20 @@ export const uniqueFileName = (originalName: string, taken: Set<string>): string
     }
 }
 
+export const uploadProgressLabel = (loadedBytes: number, totalBytes: number): string => {
+    if (totalBytes <= 0) {
+        return "업로드 중…"
+    }
+    if (loadedBytes >= totalBytes) {
+        // 업로드는 끝났고 서버가 S3 전송·DB 저장을 하는 구간 — 멈춘 게 아니다
+        return "서버에서 처리 중…"
+    }
+
+    const toMegabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)}MB`
+    const percent = Math.round((loadedBytes / totalBytes) * 100)
+    return `${toMegabytes(loadedBytes)} / ${toMegabytes(totalBytes)} (${percent}%)`
+}
+
 export const resolvePendingImages = (
     markdownKo: string,
     markdownEn: string,
