@@ -29,6 +29,12 @@ storage:
 spring:
   application:
     name: woobeee-app-mvc
+  servlet:
+    multipart:
+      # 게시글 첨부 업로드 — 기본값(파일당 1MB)은 사진 한 장도 못 받는다.
+      # 쓰기는 ROLE_ADMIN 전용이라 남용 면이 좁아 넉넉하게 잡았다.
+      max-file-size: 500MB
+      max-request-size: 1GB
   data:
     redis:
       host: ${REDIS_HOST:localhost}

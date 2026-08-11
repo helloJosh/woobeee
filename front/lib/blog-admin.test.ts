@@ -4,7 +4,10 @@ import {
     buildPostFormData,
     canManagePosts,
     flattenCategories,
+    resolvePendingImages,
+    uniqueFileName,
     validatePostDraft,
+    type PendingImage,
     type PostDraft,
 } from "./blog-admin"
 
@@ -123,5 +126,69 @@ describe("buildPostFormData", () => {
 
         expect(form.get("markdownEn")).toBeNull()
         expect(form.get("markdownKr")).not.toBeNull()
+    })
+
+    it("첨부 이미지를 file 파트로 싣는다 — 서버 계약의 키는 {postId}/{파일명}", async () => {
+        const attachments: PendingImage[] = [
+            { localUrl: "blob:a", fileName: "cat.png", file: new Blob(["img-a"], { type: "image/png" }) },
+            { localUrl: "blob:b", fileName: "dog.png", file: new Blob(["img-b"], { type: "image/png" }) },
+        ]
+
+        const form = buildPostFormData(draft({ attachments }))
+
+        const files = form.getAll("file") as File[]
+        expect(files.map((file) => file.name)).toEqual(["cat.png", "dog.png"])
+        expect(await files[0].text()).toBe("img-a")
+        expect(files[0].type).toBe("image/png")
+    })
+
+    it("첨부가 없으면 file 파트도 없다", () => {
+        expect(buildPostFormData(draft()).getAll("file")).toEqual([])
+    })
+})
+
+describe("uniqueFileName", () => {
+    it("경로와 공백을 정리한다 — 공백이 남으면 마크다운 링크가 깨진다", () => {
+        expect(uniqueFileName("dir/my photo.png", new Set())).toBe("my-photo.png")
+    })
+
+    it("이미 쓰인 이름이면 접미사로 유일하게 만든다", () => {
+        const taken = new Set(["cat.png", "cat-1.png"])
+        expect(uniqueFileName("cat.png", taken)).toBe("cat-2.png")
+    })
+
+    it("확장자가 없어도 동작한다", () => {
+        expect(uniqueFileName("noext", new Set(["noext"]))).toBe("noext-1")
+    })
+})
+
+describe("resolvePendingImages", () => {
+    const pending: PendingImage[] = [
+        { localUrl: "blob:http://x/aaa", fileName: "cat.png", file: new Blob(["a"]) },
+        { localUrl: "blob:http://x/bbb", fileName: "dog.png", file: new Blob(["b"]) },
+    ]
+
+    it("본문의 blob URL을 ${파일명} 플레이스홀더로 치환한다", () => {
+        const result = resolvePendingImages(
+            "![고양이](blob:http://x/aaa)",
+            "![cat](blob:http://x/aaa)",
+            pending,
+        )
+
+        expect(result.markdownKo).toBe("![고양이](${cat.png})")
+        expect(result.markdownEn).toBe("![cat](${cat.png})")
+    })
+
+    it("본문에서 실제로 쓰인 이미지만 첨부로 남긴다 — 드롭했다 지운 이미지는 안 보낸다", () => {
+        const result = resolvePendingImages("![고양이](blob:http://x/aaa)", "", pending)
+
+        expect(result.attachments.map((image) => image.fileName)).toEqual(["cat.png"])
+    })
+
+    it("보류 이미지가 없으면 본문을 그대로 둔다", () => {
+        const result = resolvePendingImages("# 그대로", "", [])
+
+        expect(result.markdownKo).toBe("# 그대로")
+        expect(result.attachments).toEqual([])
     })
 })
