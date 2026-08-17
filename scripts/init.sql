@@ -34,14 +34,22 @@ ON CONFLICT (id) DO UPDATE SET
     updated_at = EXCLUDED.updated_at,
     parent_id  = EXCLUDED.parent_id;
 
--- Redis 만 id 를 박지 않는다. 위 넷은 posts.category_id 가 값을 들고 있어 id 를 고정해야
--- 하지만, Redis 를 참조하는 글은 없다. V6__backend_categories.sql 과 같은 방식으로 이름+부모
--- 중복만 막는다 -- 그래야 이 스크립트를 V6 적용 뒤에 다시 돌려도 Redis 가 두 개가 되지 않는다.
+-- Redis 와 Java 만 id 를 박지 않는다. 위 넷은 posts.category_id 가 값을 들고 있어 id 를
+-- 고정해야 하지만, 이 둘을 참조하는 글은 없다. V6__backend_categories.sql /
+-- V7__java_category.sql 과 같은 방식으로 이름+부모 중복만 막는다 -- 그래야 이 스크립트를
+-- 마이그레이션 적용 뒤에 다시 돌려도 두 개가 되지 않는다.
 INSERT INTO categories (name_ko, name_en, created_at, updated_at, parent_id)
 SELECT 'Redis', 'Redis',
        TIMESTAMP '2026-08-17 00:00:00', TIMESTAMP '2026-08-17 00:00:00', 1
 WHERE NOT EXISTS (
     SELECT 1 FROM categories WHERE name_ko = 'Redis' AND parent_id = 1
+);
+
+INSERT INTO categories (name_ko, name_en, created_at, updated_at, parent_id)
+SELECT 'Java', 'Java',
+       TIMESTAMP '2026-08-18 00:00:00', TIMESTAMP '2026-08-18 00:00:00', 1
+WHERE NOT EXISTS (
+    SELECT 1 FROM categories WHERE name_ko = 'Java' AND parent_id = 1
 );
 
 -- 블로그 글. 구 프로젝트(woobeee-blog)의 postgres DB `public.post` 5행을 그대로 옮긴 것이다.

@@ -19,9 +19,9 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
  * 적용하지 않은 로컬 DB 에서도 자급자족으로 돈다(Flyway 는 적용된 버전을 건너뛴다).
  *
  * <p>V3 는 자리표시(백엔드/프론트엔드/인프라/…)를 심었고 V5 가 그것을 구 프로젝트에서 옮겨온
- * 실제 분류로 교체했으며, V6 가 BACKEND 하위를 Spring/Database/Kafka/Redis 로 맞춘다. 이
- * 테스트가 보는 것은 <b>V6 까지 적용된 상태</b>다 — 중간까지만 적용된 DB 는 미완성이므로
- * 여기서 실패하는 것이 맞다.
+ * 실제 분류로 교체했으며, V6 가 BACKEND 하위를 Spring/Database/Kafka/Redis 로 맞추고 V7 이
+ * Java 를 더한다. 이 테스트가 보는 것은 <b>V7 까지 적용된 상태</b>다 — 중간까지만 적용된 DB 는
+ * 미완성이므로 여기서 실패하는 것이 맞다.
  */
 @SpringJUnitConfig
 // JPA/리포지토리 자동구성은 끈다 — 이 테스트는 JDBC 와 Flyway 만 필요하고, JPA 를 켜면
@@ -41,13 +41,13 @@ class DefaultCategoriesSeedTest {
     private JdbcTemplate jdbcTemplate;
 
     /**
-     * 시드의 단일 출처는 V5__woobeee_categories.sql + V6__backend_categories.sql — 이 목록을
-     * 바꾸면 마이그레이션도 함께 바꾼다.
+     * 시드의 단일 출처는 V5__woobeee_categories.sql + V6__backend_categories.sql +
+     * V7__java_category.sql — 이 목록을 바꾸면 마이그레이션도 함께 바꾼다.
      */
     private static final List<String> TOP_LEVEL_NAMES = List.of("BACKEND", "FRONTEND");
 
     private static final List<String> ALL_NAMES =
-            List.of("BACKEND", "FRONTEND", "Spring", "Database", "Kafka", "Redis", "NextJS");
+            List.of("BACKEND", "FRONTEND", "Spring", "Database", "Kafka", "Redis", "Java", "NextJS");
 
     @Test
     void topLevelCategoriesAreSeededWithoutAParent() {
@@ -77,6 +77,7 @@ class DefaultCategoriesSeedTest {
                 "Database < BACKEND",
                 "Kafka < BACKEND",
                 "Redis < BACKEND",
+                "Java < BACKEND",
                 "NextJS < FRONTEND");
     }
 
