@@ -23,16 +23,26 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- 하위 카테고리
 INSERT INTO categories (id, name_ko, name_en, created_at, updated_at, parent_id) VALUES
-    (2, 'Spring Batch', 'Spring Batch', TIMESTAMP '2025-09-01 23:04:23.053480', TIMESTAMP '2025-09-01 23:04:23.053494', 1),
-    (5, 'Database',     'Database',     TIMESTAMP '2025-09-03 23:04:23.058000', TIMESTAMP '2025-09-03 23:04:23.058000', 1),
-    (6, 'Kafka',        'Kafka',        TIMESTAMP '2026-02-08 17:25:13.000000', TIMESTAMP '2026-02-08 17:25:35.000000', 1),
-    (4, 'NextJS',       'NextJS',       TIMESTAMP '2025-09-01 23:04:23.064046', TIMESTAMP '2025-09-01 23:04:23.064058', 3)
+    (2, 'Spring',   'Spring',   TIMESTAMP '2025-09-01 23:04:23.053480', TIMESTAMP '2026-08-17 00:00:00.000000', 1),
+    (5, 'Database', 'Database', TIMESTAMP '2025-09-03 23:04:23.058000', TIMESTAMP '2025-09-03 23:04:23.058000', 1),
+    (6, 'Kafka',    'Kafka',    TIMESTAMP '2026-02-08 17:25:13.000000', TIMESTAMP '2026-02-08 17:25:35.000000', 1),
+    (4, 'NextJS',   'NextJS',   TIMESTAMP '2025-09-01 23:04:23.064046', TIMESTAMP '2025-09-01 23:04:23.064058', 3)
 ON CONFLICT (id) DO UPDATE SET
     name_ko    = EXCLUDED.name_ko,
     name_en    = EXCLUDED.name_en,
     created_at = EXCLUDED.created_at,
     updated_at = EXCLUDED.updated_at,
     parent_id  = EXCLUDED.parent_id;
+
+-- Redis 만 id 를 박지 않는다. 위 넷은 posts.category_id 가 값을 들고 있어 id 를 고정해야
+-- 하지만, Redis 를 참조하는 글은 없다. V6__backend_categories.sql 과 같은 방식으로 이름+부모
+-- 중복만 막는다 -- 그래야 이 스크립트를 V6 적용 뒤에 다시 돌려도 Redis 가 두 개가 되지 않는다.
+INSERT INTO categories (name_ko, name_en, created_at, updated_at, parent_id)
+SELECT 'Redis', 'Redis',
+       TIMESTAMP '2026-08-17 00:00:00', TIMESTAMP '2026-08-17 00:00:00', 1
+WHERE NOT EXISTS (
+    SELECT 1 FROM categories WHERE name_ko = 'Redis' AND parent_id = 1
+);
 
 -- 블로그 글. 구 프로젝트(woobeee-blog)의 postgres DB `public.post` 5행을 그대로 옮긴 것이다.
 --
