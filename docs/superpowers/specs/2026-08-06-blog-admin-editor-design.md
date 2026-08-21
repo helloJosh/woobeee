@@ -103,6 +103,15 @@
   미리보기의 드롭 이미지가 깨졌다. `lib/markdown-url.ts` 의 `markdownUrlTransform` 이
   `blob:` 만 추가 허용하고 나머지는 기본 동작(javascript:/data: 차단)에 위임한다 —
   `lib/markdown-url.test.ts` 로 고정.
+- **연속 빈 줄 보존**: 마크다운은 연속 빈 줄을 문단 구분 하나로 접는다 — Enter 여러 번으로
+  만든 세로 여백이 사라진다. `lib/markdown-blank-lines.ts` 의 `preserveBlankLines` 가 여분
+  빈 줄 하나당 `&nbsp;` 문단을 끼워 살리고(코드 펜스 안은 원문 보존), `MarkdownView` 가 렌더
+  직전에 적용한다. **저장 원문은 그대로**고 미리보기 = 게시 화면 동등성도 유지된다.
+- **만료 시 이어 쓰기**: refresh 까지 실패한 저장(`AUTH_EXPIRED_MESSAGE`, `lib/api.ts` 단일
+  정의)이면 에디터가 초안을 유지한 채 "새 탭에서 다시 로그인" 버튼을 그린다 — 새 탭 로그인이
+  localStorage 토큰을 갱신하므로 돌아와 저장만 다시 누르면 된다. 서버 쪽은 만료 토큰을
+  401 로 구분(BLOG-AC-12)하고 ADMIN access TTL 을 1일로 늘려(AUTH-AC-17) 애초에 겪을 일을
+  줄였다.
 
 ## 3. API 권한 문서 (`docs/api/README.md`)
 

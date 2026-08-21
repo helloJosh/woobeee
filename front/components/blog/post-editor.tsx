@@ -16,7 +16,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { useCategories } from "@/hooks/use-categories"
-import { postsAPI, tokenManager } from "@/lib/api"
+import { AUTH_EXPIRED_MESSAGE, postsAPI, tokenManager } from "@/lib/api"
 import {
     buildPostFormData,
     canManagePosts,
@@ -258,11 +258,26 @@ export default function PostEditor({ postId }: PostEditorProps) {
             </div>
 
             {errors.length > 0 && (
-                <ul className="text-sm text-destructive space-y-1">
-                    {errors.map((error) => (
-                        <li key={error}>{error}</li>
-                    ))}
-                </ul>
+                <div className="space-y-2">
+                    <ul className="text-sm text-destructive space-y-1">
+                        {errors.map((error) => (
+                            <li key={error}>
+                                {error === AUTH_EXPIRED_MESSAGE
+                                    ? "인증이 만료되었습니다. 새 탭에서 다시 로그인한 뒤 이 화면으로 돌아와 저장을 다시 눌러 주세요 — 작성 중인 내용은 그대로 남아 있습니다."
+                                    : error}
+                            </li>
+                        ))}
+                    </ul>
+                    {errors.includes(AUTH_EXPIRED_MESSAGE) && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => window.open("/login", "_blank")}
+                        >
+                            새 탭에서 다시 로그인
+                        </Button>
+                    )}
+                </div>
             )}
 
             {saving && progress && (

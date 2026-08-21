@@ -32,6 +32,10 @@ import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? ""
 const REFRESH_ENDPOINT = "/api/auth/refresh-tokens"
 
+// refresh 까지 실패한 인증 만료. 호출부(예: 글 편집기)가 이 값으로 구분해
+// 재로그인 유도 UI 를 그린다 — 문자열 비교가 계약이므로 여기서만 정의한다.
+export const AUTH_EXPIRED_MESSAGE = "인증이 만료되었습니다. 다시 로그인해 주세요."
+
 
 export class HttpError extends Error {
     status: number
@@ -284,7 +288,7 @@ export const apiRequest = async (
                 // 토큰을 지우지도, alert 를 띄우지도, 새로고침하지도 않는다. 배경 호출
                 // 하나가 세션과 화면을 함께 끝내면 안 된다.
                 if (suppressUnauthorizedHandler) {
-                    throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
+                    throw new Error(AUTH_EXPIRED_MESSAGE)
                 }
 
                 if (canRefresh) {
@@ -292,7 +296,7 @@ export const apiRequest = async (
                 } else {
                     tokenManager.removeToken()
                 }
-                throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
+                throw new Error(AUTH_EXPIRED_MESSAGE)
             }
             let code = "unknown"
             let description = "요청에 실패했습니다."
@@ -365,7 +369,7 @@ const uploadRequest = async (
         if (refreshed) {
             return uploadRequest(endpoint, method, form, onProgress, false)
         }
-        throw new Error("인증이 만료되었습니다. 다시 로그인해 주세요.")
+        throw new Error(AUTH_EXPIRED_MESSAGE)
     }
 
     if (result.json === null) {
