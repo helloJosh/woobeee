@@ -241,7 +241,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
 
     return (
         <div
-            className="max-w-6xl mx-auto p-6 space-y-6"
+            className="w-full p-6 space-y-6"
             onDragOver={swallowStrayFileDrop}
             onDrop={swallowStrayFileDrop}
         >
