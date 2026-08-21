@@ -99,6 +99,10 @@
   아닌 파일이나 textarea 밖 드롭이 브라우저 내비게이션을 타지 않게 한다.
 - **테스트**: `imageMarkdownSnippet` / `insertSnippet` / `collectDroppedImages` 를
   `lib/blog-admin.test.ts` 로 고정(TDD).
+- **blob URL 허용**: react-markdown 기본 sanitizer 가 `blob:` 을 빈 문자열로 지워
+  미리보기의 드롭 이미지가 깨졌다. `lib/markdown-url.ts` 의 `markdownUrlTransform` 이
+  `blob:` 만 추가 허용하고 나머지는 기본 동작(javascript:/data: 차단)에 위임한다 —
+  `lib/markdown-url.test.ts` 로 고정.
 
 ## 3. API 권한 문서 (`docs/api/README.md`)
 

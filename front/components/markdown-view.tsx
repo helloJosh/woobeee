@@ -3,6 +3,8 @@ import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
 import rehypeHighlight from "rehype-highlight"
 
+import { markdownUrlTransform } from "@/lib/markdown-url"
+
 /**
  * 게시 화면(post-detail)과 편집기 미리보기가 같은 모습을 갖도록
  * 마크다운 렌더러와 본문 스타일을 한 곳에 둔다.
@@ -47,6 +49,8 @@ export default function MarkdownView({ content }: { content: string }) {
                 // 추측을 켜면 짧은 조각이 엉뚱한 언어로 칠해진다.
                 // ignoreMissing:true -- 모르는 언어여도 던지지 않고 평문으로 넘긴다.
                 rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
+                // 기본 sanitizer 가 blob: 을 지워 미리보기의 드롭 이미지가 깨진다 — blob: 만 추가 허용
+                urlTransform={markdownUrlTransform}
             >
                 {content}
             </ReactMarkdown>
