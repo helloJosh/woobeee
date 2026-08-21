@@ -122,6 +122,47 @@ export const uploadProgressLabel = (loadedBytes: number, totalBytes: number): st
     return `${toMegabytes(loadedBytes)} / ${toMegabytes(totalBytes)} (${percent}%)`
 }
 
+export const imageMarkdownSnippet = (fileName: string, url: string): string =>
+    `![${fileName}](${url})`
+
+/** [start, end) 선택 영역을 조각으로 대체하고 커서를 조각 뒤에 둔다. */
+export const insertSnippet = (
+    text: string,
+    start: number,
+    end: number,
+    snippet: string,
+): { text: string; cursor: number } => ({
+    text: text.slice(0, start) + snippet + text.slice(end),
+    cursor: start + snippet.length,
+})
+
+/**
+ * 드롭/붙여넣기된 파일 중 이미지만 골라 보류 이미지로 등록할 목록과, 본문에 넣을
+ * 마크다운 조각(문단 구분으로 연결)을 만든다. createUrl 은 URL.createObjectURL 주입점.
+ */
+export const collectDroppedImages = (
+    files: File[],
+    taken: Set<string>,
+    createUrl: (file: File) => string,
+): { images: PendingImage[]; snippet: string } => {
+    const names = new Set(taken)
+    const images: PendingImage[] = []
+    for (const file of files) {
+        if (!file.type.startsWith("image/")) {
+            continue
+        }
+        const fileName = uniqueFileName(file.name || "image.png", names)
+        names.add(fileName)
+        images.push({ localUrl: createUrl(file), fileName, file })
+    }
+    return {
+        images,
+        snippet: images
+            .map((image) => imageMarkdownSnippet(image.fileName, image.localUrl))
+            .join("\n\n"),
+    }
+}
+
 export const resolvePendingImages = (
     markdownKo: string,
     markdownEn: string,

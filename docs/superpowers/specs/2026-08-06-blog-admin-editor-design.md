@@ -74,11 +74,31 @@
     남용 면이 좁다는 판단, 사용자 결정).
   - 기존 글의 공개 URL 이미지는 왕복 시 URL 로 보존된다. `${파일명}` 플레이스홀더는 서버가
     조회 시 치환해 주므로 수정 왕복 후에는 공개 URL 로 고정된다(허용).
-  - **드롭 표면 (2026-08-21)**: BlockNote 의 파일 드롭 핸들러는 ProseMirror 영역에만 붙는데
+  - ~~**드롭 표면 (2026-08-21)**: BlockNote 의 파일 드롭 핸들러는 ProseMirror 영역에만 붙는데
     빈 문서에서는 그 영역이 한 줄 높이라 박스 대부분이 사각지대였다(크롬이 이미지 문서로
     이동). `.post-editor-surface` CSS 로 `.bn-editor` 를 박스 높이(28rem)까지 늘려 박스 전체를
     드롭 표면으로 만들고, 페이지 루트에서 빗나간 파일 드롭을 `preventDefault` 로 삼켜
-    내비게이션을 막는다(삼킨 드롭은 삽입하지 않음 — 박스 안에 다시 드롭하면 된다).
+    내비게이션을 막는다.~~ → BlockNote 제거로 무의미해짐(아래 개정).
+
+### 개정 (2026-08-21): BlockNote → 마크다운 분할 편집기 교체
+
+사용자 결정으로 노션풍 BlockNote 를 IDE 풍 **마크다운 소스 + 실시간 미리보기 분할 뷰**로
+교체했다. `@blocknote/core`/`react`/`mantine` 의존성 셋을 제거.
+
+- **화면**: 언어 탭(ko/en)마다 좌 textarea(모노스페이스 원문) / 우 미리보기. lg 미만은
+  상하 스택. 미리보기는 조회 화면(post-detail)에서 추출한 공용 `MarkdownView`
+  (`react-markdown` + gfm/breaks/highlight + 동일 prose 스타일)를 그대로 쓰므로
+  **미리보기 = 게시 후 모습**이 보장된다. 스크롤 동기화는 범위 밖.
+- **이미지**: textarea 드롭/붙여넣기 시 `collectDroppedImages`(lib, 순수 함수)가 이미지만
+  골라 `uniqueFileName` + blob URL 로 보류 등록하고, `insertSnippet` 이 커서 위치에
+  `![파일명](blob:…)` 조각을 넣는다. 저장 흐름(`resolvePendingImages` → `${파일명}` 치환 →
+  multipart `file` 파트)은 **변경 없음**, 서버 계약도 그대로.
+- **기존 글 수정**: 서버 마크다운 원문을 textarea 에 그대로 넣는다.
+  `tryParseMarkdownToBlocks` 왕복(lossy)이 사라져 수정 시 서식 손실이 없어졌다.
+- **드롭 가드**: 페이지 루트의 빗나간 파일 드롭 `preventDefault` 가드는 유지 — 이미지가
+  아닌 파일이나 textarea 밖 드롭이 브라우저 내비게이션을 타지 않게 한다.
+- **테스트**: `imageMarkdownSnippet` / `insertSnippet` / `collectDroppedImages` 를
+  `lib/blog-admin.test.ts` 로 고정(TDD).
 
 ## 3. API 권한 문서 (`docs/api/README.md`)
 

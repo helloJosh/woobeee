@@ -68,14 +68,6 @@
   }
 }
 
-/* 글 편집기: 빈 문서일 때 ProseMirror 영역이 한 줄 높이뿐이라 박스 대부분이
-   드롭 사각지대다 — 영역을 박스 높이만큼 늘려 BlockNote의 파일 드롭 핸들러가
-   박스 전체를 받게 한다. 28rem = 래퍼 min-h-[480px] - py-4(2rem). */
-.post-editor-surface .bn-container,
-.post-editor-surface .bn-editor {
-  min-height: 28rem;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
  * 본문 코드 펜스 하이라이팅 (rehype-highlight → highlight.js 클래스)
  *

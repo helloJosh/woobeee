@@ -2,12 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useTheme } from "next-themes"
-import { useCreateBlockNote } from "@blocknote/react"
-import { BlockNoteView } from "@blocknote/mantine"
-import "@blocknote/core/fonts/inter.css"
-import "@blocknote/mantine/style.css"
 
+import MarkdownView from "@/components/markdown-view"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
@@ -24,9 +20,10 @@ import { postsAPI, tokenManager } from "@/lib/api"
 import {
     buildPostFormData,
     canManagePosts,
+    collectDroppedImages,
     flattenCategories,
+    insertSnippet,
     resolvePendingImages,
-    uniqueFileName,
     uploadProgressLabel,
     validatePostDraft,
     type PendingImage,
@@ -36,19 +33,85 @@ interface PostEditorProps {
     postId?: number
 }
 
+interface MarkdownEditorPaneProps {
+    value: string
+    onValueChange: (value: string) => void
+    registerImages: (files: File[]) => { images: PendingImage[]; snippet: string }
+    placeholder: string
+}
+
 /**
- * ADMIN 전용 노션풍 글 편집기. UI 게이팅일 뿐 진짜 방어는 서버 403이다.
- * 저장 계약은 기존 그대로 마크다운(multipart) — BlockNote 블록은 저장 직전에 변환한다.
+ * IDE풍 분할 편집: 왼쪽 마크다운 원문, 오른쪽 게시 화면과 동일한 렌더(MarkdownView).
+ * 이미지 파일을 textarea에 드롭/붙여넣으면 커서 위치에 마크다운 조각을 넣는다.
+ */
+function MarkdownEditorPane({
+    value,
+    onValueChange,
+    registerImages,
+    placeholder,
+}: MarkdownEditorPaneProps) {
+    const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+    const insertImages = (files: File[]): boolean => {
+        const { images, snippet } = registerImages(files)
+        if (images.length === 0) {
+            return false
+        }
+        const textarea = textareaRef.current
+        const start = textarea?.selectionStart ?? value.length
+        const end = textarea?.selectionEnd ?? value.length
+        const result = insertSnippet(value, start, end, snippet)
+        onValueChange(result.text)
+        // 제어 컴포넌트라 상태 반영 후에야 커서를 되돌릴 수 있다
+        requestAnimationFrame(() => {
+            textarea?.focus()
+            textarea?.setSelectionRange(result.cursor, result.cursor)
+        })
+        return true
+    }
+
+    return (
+        <div className="grid gap-4 lg:grid-cols-2">
+            <textarea
+                ref={textareaRef}
+                value={value}
+                onChange={(event) => onValueChange(event.target.value)}
+                onDrop={(event) => {
+                    // 이미지가 아닌 파일 드롭은 페이지 루트 가드가 삼킨다
+                    if (insertImages([...event.dataTransfer.files])) {
+                        event.preventDefault()
+                    }
+                }}
+                onPaste={(event) => {
+                    if (insertImages([...event.clipboardData.files])) {
+                        event.preventDefault()
+                    }
+                }}
+                placeholder={placeholder}
+                spellCheck={false}
+                className="min-h-[480px] w-full resize-y rounded-lg border bg-background p-4 font-mono text-sm leading-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className="min-h-[480px] overflow-auto rounded-lg border p-4">
+                <MarkdownView content={value} />
+            </div>
+        </div>
+    )
+}
+
+/**
+ * ADMIN 전용 글 편집기. UI 게이팅일 뿐 진짜 방어는 서버 403이다.
+ * 저장 계약은 기존 그대로 마크다운(multipart) — 원문을 직접 편집하므로 변환이 없다.
  */
 export default function PostEditor({ postId }: PostEditorProps) {
     const router = useRouter()
-    const { resolvedTheme } = useTheme()
     const { categories } = useCategories()
 
     const [authorized, setAuthorized] = useState<boolean | null>(null)
     const [titleKo, setTitleKo] = useState("")
     const [titleEn, setTitleEn] = useState("")
     const [categoryId, setCategoryId] = useState<number | null>(null)
+    const [markdownKo, setMarkdownKo] = useState("")
+    const [markdownEn, setMarkdownEn] = useState("")
     const [loading, setLoading] = useState(Boolean(postId))
     const [saving, setSaving] = useState(false)
     const [errors, setErrors] = useState<string[]>([])
@@ -58,22 +121,19 @@ export default function PostEditor({ postId }: PostEditorProps) {
     // 없어 올릴 곳이 없다. 미리보기는 blob URL, 실제 전송은 저장 시 multipart로 간다.
     const pendingImagesRef = useRef<Map<string, PendingImage>>(new Map())
 
-    const uploadFile = useCallback(async (file: File) => {
+    const registerImages = useCallback((files: File[]) => {
         const taken = new Set(
             [...pendingImagesRef.current.values()].map((image) => image.fileName),
         )
-        const fileName = uniqueFileName(file.name || "image.png", taken)
-        const localUrl = URL.createObjectURL(file)
-        pendingImagesRef.current.set(localUrl, { localUrl, fileName, file })
-        return localUrl
+        const result = collectDroppedImages(files, taken, (file) => URL.createObjectURL(file))
+        for (const image of result.images) {
+            pendingImagesRef.current.set(image.localUrl, image)
+        }
+        return result
     }, [])
 
-    const editorKo = useCreateBlockNote({ uploadFile })
-    const editorEn = useCreateBlockNote({ uploadFile })
-
-    // 에디터(ProseMirror) 밖에 떨어진 파일 드롭은 브라우저가 이미지 문서로 이동해
-    // 버린다. 페이지 루트에서 삼켜 내비게이션만 막는다 — 에디터 안 드롭은 BlockNote가
-    // 처리하고, 여기의 추가 preventDefault는 그 경로에 영향이 없다.
+    // 에디터(textarea) 밖에 떨어진 파일 드롭은 브라우저가 이미지 문서로 이동해 버린다.
+    // 페이지 루트에서 삼켜 내비게이션만 막는다 — textarea 안 드롭은 위에서 처리한다.
     const swallowStrayFileDrop = useCallback((event: React.DragEvent) => {
         if (event.dataTransfer.types.includes("Files")) {
             event.preventDefault()
@@ -116,11 +176,8 @@ export default function PostEditor({ postId }: PostEditorProps) {
                 setTitleKo(ko.title ?? "")
                 setTitleEn(en.title ?? "")
                 setCategoryId(ko.categoryId ?? null)
-
-                const koBlocks = await editorKo.tryParseMarkdownToBlocks(ko.content ?? "")
-                editorKo.replaceBlocks(editorKo.document, koBlocks)
-                const enBlocks = await editorEn.tryParseMarkdownToBlocks(en.content ?? "")
-                editorEn.replaceBlocks(editorEn.document, enBlocks)
+                setMarkdownKo(ko.content ?? "")
+                setMarkdownEn(en.content ?? "")
             } catch {
                 if (!cancelled) {
                     setErrors(["글을 불러오지 못했습니다."])
@@ -135,12 +192,9 @@ export default function PostEditor({ postId }: PostEditorProps) {
         return () => {
             cancelled = true
         }
-    }, [postId, authorized, editorKo, editorEn])
+    }, [postId, authorized])
 
     const handleSave = async () => {
-        const markdownKo = await editorKo.blocksToMarkdownLossy(editorKo.document)
-        const markdownEn = await editorEn.blocksToMarkdownLossy(editorEn.document)
-
         const resolved = resolvePendingImages(
             markdownKo.trim(),
             markdownEn.trim(),
@@ -187,7 +241,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
 
     return (
         <div
-            className="max-w-4xl mx-auto p-6 space-y-6"
+            className="max-w-6xl mx-auto p-6 space-y-6"
             onDragOver={swallowStrayFileDrop}
             onDrop={swallowStrayFileDrop}
         >
@@ -253,12 +307,12 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         onChange={(event) => setTitleKo(event.target.value)}
                         className="text-lg font-semibold"
                     />
-                    <div className="post-editor-surface rounded-lg border min-h-[480px] py-4">
-                        <BlockNoteView
-                            editor={editorKo}
-                            theme={resolvedTheme === "dark" ? "dark" : "light"}
-                        />
-                    </div>
+                    <MarkdownEditorPane
+                        value={markdownKo}
+                        onValueChange={setMarkdownKo}
+                        registerImages={registerImages}
+                        placeholder="마크다운으로 작성하세요. 이미지는 드래그앤드롭 또는 붙여넣기."
+                    />
                 </TabsContent>
 
                 <TabsContent value="en" className="space-y-4">
@@ -268,12 +322,12 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         onChange={(event) => setTitleEn(event.target.value)}
                         className="text-lg font-semibold"
                     />
-                    <div className="post-editor-surface rounded-lg border min-h-[480px] py-4">
-                        <BlockNoteView
-                            editor={editorEn}
-                            theme={resolvedTheme === "dark" ? "dark" : "light"}
-                        />
-                    </div>
+                    <MarkdownEditorPane
+                        value={markdownEn}
+                        onValueChange={setMarkdownEn}
+                        registerImages={registerImages}
+                        placeholder="Write in Markdown. Drop or paste images."
+                    />
                 </TabsContent>
             </Tabs>
         </div>

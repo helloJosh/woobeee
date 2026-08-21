@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest"
 import {
     buildPostFormData,
     canManagePosts,
+    collectDroppedImages,
     flattenCategories,
+    imageMarkdownSnippet,
+    insertSnippet,
     resolvePendingImages,
     uniqueFileName,
     uploadProgressLabel,
@@ -178,6 +181,51 @@ describe("uploadProgressLabel", () => {
 
     it("전체 크기를 모르면 일반 문구로 둔다", () => {
         expect(uploadProgressLabel(500_000, 0)).toBe("업로드 중…")
+    })
+})
+
+describe("imageMarkdownSnippet", () => {
+    it("파일명을 대체 텍스트로 하는 이미지 마크다운을 만든다", () => {
+        expect(imageMarkdownSnippet("cat.png", "blob:http://x/aaa")).toBe(
+            "![cat.png](blob:http://x/aaa)",
+        )
+    })
+})
+
+describe("insertSnippet", () => {
+    it("커서 위치에 조각을 넣고 커서를 조각 뒤로 옮긴다", () => {
+        expect(insertSnippet("한글 본문", 2, 2, "[X]")).toEqual({
+            text: "한글[X] 본문",
+            cursor: 5,
+        })
+    })
+
+    it("선택 영역은 조각으로 대체한다", () => {
+        expect(insertSnippet("abcdef", 1, 4, "-")).toEqual({ text: "a-ef", cursor: 2 })
+    })
+})
+
+describe("collectDroppedImages", () => {
+    const file = (name: string, type: string) => new File(["x"], name, { type })
+
+    it("이미지 파일만 골라 고유 이름·로컬 URL로 등록하고 문단 조각을 만든다", () => {
+        let seq = 0
+        const result = collectDroppedImages(
+            [file("cat.png", "image/png"), file("notes.txt", "text/plain"), file("cat.png", "image/png")],
+            new Set(["cat.png"]),
+            () => `blob:u${++seq}`,
+        )
+
+        expect(result.images.map((image) => image.fileName)).toEqual(["cat-1.png", "cat-2.png"])
+        expect(result.images.map((image) => image.localUrl)).toEqual(["blob:u1", "blob:u2"])
+        expect(result.snippet).toBe("![cat-1.png](blob:u1)\n\n![cat-2.png](blob:u2)")
+    })
+
+    it("이미지가 없으면 빈 결과다", () => {
+        const result = collectDroppedImages([file("a.txt", "text/plain")], new Set(), () => "blob:x")
+
+        expect(result.images).toEqual([])
+        expect(result.snippet).toBe("")
     })
 })
 
