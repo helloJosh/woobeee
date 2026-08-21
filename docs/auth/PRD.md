@@ -93,6 +93,7 @@
 | AUTH-AC-14 | `GET /me`는 presigned GET URL을 반환하고, 프로필 미설정이면 `null`을 반환한다 | `MemberProfileImageControllerTest` |
 | AUTH-AC-15 | 회원가입으로 생성된 회원의 role은 `ROLE_MEMBER`다 | `AuthServiceTest` |
 | AUTH-AC-16 | 토큰의 role은 회원의 role에서 파생된다 — `ROLE_ADMIN` 회원이 로그인하면 `ROLE_ADMIN`으로 발급한다 | `AuthServiceTest` |
+| AUTH-AC-17 | `ROLE_ADMIN` 의 access token 은 1일 TTL 로, 그 외 role 은 기본 15분으로 발급한다. `TokenResponse` 의 만료 초도 실제 TTL 을 반영한다 (긴 글 작성 중 만료 방지 — 사용자 결정) | `TokenServiceTest` |
 
 ## 설정
 

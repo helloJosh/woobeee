@@ -36,6 +36,10 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
     // ApiResponse 실패 봉투와 같은 모양. 필터는 MessageConverter 밖에서 응답하므로 직접 직렬화한다.
     private static final String FORBIDDEN_BODY =
             "{\"header\":{\"isSuccessful\":false,\"message\":\"Admin role is required\",\"resultCode\":403}}";
+    // 무토큰/만료 토큰은 권한 부족(403)이 아니라 인증 필요(401)다 — 401이어야 프론트가
+    // refresh 후 재시도한다. 403으로 합치면 만료된 ADMIN 이 "Admin role is required" 를 본다.
+    private static final String UNAUTHORIZED_BODY =
+            "{\"header\":{\"isSuccessful\":false,\"message\":\"Valid access token is required\",\"resultCode\":401}}";
 
     private final TokenStore tokenStore;
     private final MemberRepository memberRepository;
@@ -53,12 +57,15 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
                 .flatMap(token -> tokenStore.find(token, AuthTokenType.ACCESS))
                 .map(snapshot -> snapshot.metadata());
 
-        if (requiresAdmin(request.getMethod(), request.getRequestURI())
-                && metadata.map(TokenMetadata::role)
-                        .filter(MemberRole.ROLE_ADMIN.name()::equals)
-                        .isEmpty()) {
-            writeForbidden(response);
-            return;
+        if (requiresAdmin(request.getMethod(), request.getRequestURI())) {
+            if (metadata.isEmpty()) {
+                writeEnvelope(response, HttpStatus.UNAUTHORIZED, UNAUTHORIZED_BODY);
+                return;
+            }
+            if (!MemberRole.ROLE_ADMIN.name().equals(metadata.get().role())) {
+                writeEnvelope(response, HttpStatus.FORBIDDEN, FORBIDDEN_BODY);
+                return;
+            }
         }
 
         metadata.map(this::resolveLoginId)
@@ -75,11 +82,12 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
         return adminPath && writeMethod;
     }
 
-    private void writeForbidden(HttpServletResponse response) throws IOException {
-        response.setStatus(HttpStatus.FORBIDDEN.value());
+    private void writeEnvelope(HttpServletResponse response, HttpStatus status, String body)
+            throws IOException {
+        response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
-        response.getWriter().write(FORBIDDEN_BODY);
+        response.getWriter().write(body);
     }
 
     private String resolveAccessToken(HttpServletRequest request) {

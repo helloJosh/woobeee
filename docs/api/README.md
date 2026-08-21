@@ -20,7 +20,7 @@
 | --- | --- |
 | 공개 | 토큰 불필요 |
 | 로그인 | 유효한 access token 필요 (`ROLE_MEMBER` 이상) |
-| ADMIN | `ROLE_ADMIN` 토큰 필요 — 아니면 `403` + `ApiResponse` 실패 봉투 |
+| ADMIN | `ROLE_ADMIN` 토큰 필요 — 무토큰/만료 토큰은 `401`, 유효하나 role 부족은 `403` (둘 다 `ApiResponse` 실패 봉투). 401 이어야 프론트가 refresh 후 재시도한다 |
 | 본인 | 로그인 + 리소스 소유자 본인만 |
 
 ## app-mvc (:8000)
@@ -59,7 +59,8 @@
 
 ADMIN 게이트는 `AccessTokenLoginIdHeaderFilter` 가 경로·메서드 매트릭스
 (`POST/PUT/DELETE` × `/api/back/posts**`·`/api/back/categories**`)로 강제한다.
-근거 테스트: `AccessTokenLoginIdHeaderFilterTest` (BLOG-AC-07~10), `PostServiceImplTest` (BLOG-AC-11).
+근거 테스트: `AccessTokenLoginIdHeaderFilterTest` (BLOG-AC-07~10, 12), `PostServiceImplTest` (BLOG-AC-11).
+access token TTL 은 role 로 갈린다 — `ROLE_ADMIN` 1일, 그 외 15분 (AUTH-AC-17, `TokenServiceTest`).
 
 ## app-webflux (:8001)
 

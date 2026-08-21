@@ -110,17 +110,35 @@ class AccessTokenLoginIdHeaderFilterTest {
                 .isEqualTo("admin@example.com");
     }
 
-    /** BLOG-AC-08 */
+    /** BLOG-AC-12 */
     @Test
-    void anonymousRequestIsForbiddenFromPostWrites() throws Exception {
+    void anonymousRequestIsUnauthorizedFromPostWrites() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/back/posts");
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
 
         newFilter().doFilter(request, response, chain);
 
-        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(response.getStatus()).isEqualTo(401);
         assertThat(chain.getRequest()).isNull();
+        assertThat(response.getContentAsString()).contains("\"isSuccessful\":false");
+    }
+
+    /** BLOG-AC-12 — 만료 토큰이 403으로 가면 ADMIN 이 "Admin role is required" 를 보고,
+     * 프론트의 401-refresh 재시도도 막힌다 */
+    @Test
+    void expiredTokenIsUnauthorizedNotForbiddenFromPostWrites() throws Exception {
+        when(tokenStore.find("expired-token", AuthTokenType.ACCESS)).thenReturn(Optional.empty());
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/back/posts");
+        request.addHeader("Authorization", "Bearer expired-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        newFilter().doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chain.getRequest()).isNull();
+        assertThat(response.getContentAsString()).doesNotContain("Admin role");
     }
 
     /** BLOG-AC-10 */

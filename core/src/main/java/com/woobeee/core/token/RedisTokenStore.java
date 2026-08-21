@@ -1,5 +1,6 @@
 package com.woobeee.core.token;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
@@ -17,7 +18,7 @@ public class RedisTokenStore implements TokenStore {
     private final StringRedisTemplate redisTemplate;
 
     @Override
-    public void save(String token, AuthTokenType tokenType, TokenMetadata metadata) {
+    public void save(String token, AuthTokenType tokenType, TokenMetadata metadata, Duration ttl) {
         String key = tokenType.redisKey(token);
         String reverseKey = tokenType.reverseKey(metadata.memberId(), metadata.device());
 
@@ -29,8 +30,8 @@ public class RedisTokenStore implements TokenStore {
                 "device", metadata.device(),
                 "ip", metadata.ip())
         );
-        redisTemplate.expire(key, tokenType.ttl());
-        redisTemplate.opsForValue().set(reverseKey, token, tokenType.ttl());
+        redisTemplate.expire(key, ttl);
+        redisTemplate.opsForValue().set(reverseKey, token, ttl);
     }
 
     @Override

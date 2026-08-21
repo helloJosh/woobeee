@@ -64,10 +64,11 @@
 | BLOG-AC-05 | 댓글은 댓글/대댓글(parent) 구조로 조회·생성된다 | 미작성 — 추가 필요 |
 | BLOG-AC-06 | 좋아요는 로그인 사용자 기준으로 등록/취소(토글)된다 | 미작성 — 추가 필요 |
 | BLOG-AC-07 | 클라이언트가 보낸 `loginId` 헤더는 무시된다 — 신원은 오직 유효한 access token 에서만 파생된다 | `AccessTokenLoginIdHeaderFilterTest` |
-| BLOG-AC-08 | `ROLE_MEMBER` 토큰 또는 무토큰으로 게시글/카테고리 쓰기(POST/PUT/DELETE)를 호출하면 `403` + `ApiResponse` 실패 봉투를 반환한다 | `AccessTokenLoginIdHeaderFilterTest` |
+| BLOG-AC-08 | **유효한** `ROLE_MEMBER` 토큰으로 게시글/카테고리 쓰기(POST/PUT/DELETE)를 호출하면 `403` + `ApiResponse` 실패 봉투를 반환한다 | `AccessTokenLoginIdHeaderFilterTest` |
 | BLOG-AC-09 | `ROLE_ADMIN` 토큰은 게시글/카테고리 쓰기를 통과한다. 읽기(GET)는 누구나 가능하다 | `AccessTokenLoginIdHeaderFilterTest` |
 | BLOG-AC-10 | 댓글/좋아요 쓰기는 로그인 회원(`ROLE_MEMBER`)이면 가능하다(ADMIN 불필요) | `AccessTokenLoginIdHeaderFilterTest` |
 | BLOG-AC-11 | `PUT /api/back/posts/{postId}` 는 작성자 본인일 때 제목·본문·카테고리를 갱신하고, 마크다운 파트가 없으면 본문을 보존한다 | `PostServiceImplTest` |
+| BLOG-AC-12 | 무토큰 또는 만료(스토어에 없는) 토큰으로 게시글/카테고리 쓰기를 호출하면 `401` + `ApiResponse` 실패 봉투를 반환한다 — 권한 부족(403)과 구분해야 프론트가 refresh 후 재시도할 수 있다 | `AccessTokenLoginIdHeaderFilterTest` |
 
 ## 지원 기능
 

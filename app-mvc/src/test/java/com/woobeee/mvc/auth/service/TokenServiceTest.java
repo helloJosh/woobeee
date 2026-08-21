@@ -45,8 +45,8 @@ class TokenServiceTest {
         assertThat(response.refreshToken()).isEqualTo("new-refresh");
         assertThat(response.accessTokenExpiresInSeconds()).isEqualTo(900);
         assertThat(response.refreshTokenExpiresInSeconds()).isEqualTo(2_592_000);
-        verify(tokenStore).save("new-access", AuthTokenType.ACCESS, metadata);
-        verify(tokenStore).save("new-refresh", AuthTokenType.REFRESH, metadata);
+        verify(tokenStore).save("new-access", AuthTokenType.ACCESS, metadata, java.time.Duration.ofMinutes(15));
+        verify(tokenStore).save("new-refresh", AuthTokenType.REFRESH, metadata, java.time.Duration.ofDays(30));
         verify(tokenStore).delete("refresh-1", AuthTokenType.REFRESH);
     }
 
@@ -78,9 +78,39 @@ class TokenServiceTest {
 
         assertThat(response.accessToken()).isEqualTo("new-access");
         assertThat(response.refreshToken()).isEqualTo("new-refresh");
-        verify(tokenStore).save("new-access", AuthTokenType.ACCESS, metadata);
-        verify(tokenStore).save("new-refresh", AuthTokenType.REFRESH, metadata);
+        verify(tokenStore).save("new-access", AuthTokenType.ACCESS, metadata, java.time.Duration.ofMinutes(15));
+        verify(tokenStore).save("new-refresh", AuthTokenType.REFRESH, metadata, java.time.Duration.ofDays(30));
         verify(tokenStore).delete("refresh-1", AuthTokenType.REFRESH);
+    }
+
+    /** AUTH-AC-17 — 긴 글 작성 중 만료 방지: ADMIN access 는 1일 */
+    @Test
+    void adminAccessTokenIsIssuedForOneDay() {
+        when(tokenGenerator.nextToken()).thenReturn("admin-access", "admin-refresh");
+
+        TokenResponse response = tokenService.issue(3L, "ROLE_ADMIN", "web", "127.0.0.1");
+
+        assertThat(response.accessTokenExpiresInSeconds()).isEqualTo(86_400);
+        verify(tokenStore).save(
+                "admin-access",
+                AuthTokenType.ACCESS,
+                new TokenMetadata(3L, "ROLE_ADMIN", "web", "127.0.0.1"),
+                java.time.Duration.ofDays(1));
+    }
+
+    /** AUTH-AC-17 — 그 외 role 은 기본 15분 유지 */
+    @Test
+    void memberAccessTokenKeepsDefaultTtl() {
+        when(tokenGenerator.nextToken()).thenReturn("member-access", "member-refresh");
+
+        TokenResponse response = tokenService.issue(7L, "ROLE_MEMBER", "web", "127.0.0.1");
+
+        assertThat(response.accessTokenExpiresInSeconds()).isEqualTo(900);
+        verify(tokenStore).save(
+                "member-access",
+                AuthTokenType.ACCESS,
+                new TokenMetadata(7L, "ROLE_MEMBER", "web", "127.0.0.1"),
+                java.time.Duration.ofMinutes(15));
     }
 
     @Test
