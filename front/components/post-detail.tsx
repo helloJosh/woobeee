@@ -182,6 +182,7 @@ import { Badge } from "@/components/ui/badge"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
+import rehypeHighlight from "rehype-highlight"
 import { useRouter } from "next/navigation"
 
 import { usePostDetail } from "@/hooks/use-post-detail"
@@ -379,7 +380,13 @@ export default function PostDetail({ postId }: PostDetailProps) {
               dark:[&_th]:border-slate-600 dark:[&_td]:border-slate-600
             "
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+              <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkBreaks]}
+                  // detect:false -- 언어를 안 적은 펜스는 추측하지 않고 평문으로 둔다.
+                  // 추측을 켜면 짧은 조각이 엉뚱한 언어로 칠해진다.
+                  // ignoreMissing:true -- 모르는 언어여도 던지지 않고 평문으로 넘긴다.
+                  rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
+              >
                 {post.content}
               </ReactMarkdown>
             </div>

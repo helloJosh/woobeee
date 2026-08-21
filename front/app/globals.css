@@ -75,3 +75,171 @@
 .post-editor-surface .bn-editor {
   min-height: 28rem;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * 본문 코드 펜스 하이라이팅 (rehype-highlight → highlight.js 클래스)
+ *
+ * highlight.js 가 제공하는 테마 CSS 를 그대로 쓰지 않고 직접 쓴다. 배포된 테마는 배경색까지
+ * 같이 칠하는데, 본문 pre 배경은 이미 Tailwind 쪽(gray-100 / slate-900)에서 정하고 있어 서로
+ * 덮어쓴다. 또 테마 파일은 라이트/다크가 각각 별개 파일이라 class 기반 다크모드에 얹으려면
+ * 어차피 스코프를 다시 씌워야 한다.
+ *
+ * 색은 두 배경 위에서 각각 읽히도록 골랐다 -- 라이트는 #f3f4f6, 다크는 #0f172a 기준이다.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+.hljs {
+  color: inherit;
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6a737d;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-formula {
+  color: #cf222e;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #0a3069;
+}
+
+.hljs-number,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-template-variable,
+.hljs-link {
+  color: #0550ae;
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name {
+  color: #8250df;
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-property,
+.hljs-params,
+.hljs-built_in,
+.hljs-type,
+.hljs-title.language_,
+.hljs-class .hljs-title {
+  color: #953800;
+}
+
+/* 연산자·구두점·함수 래퍼는 일부러 본문색 그대로 둔다. 기호까지 전부 칠하면 코드가
+ * 알록달록해져서 정작 키워드가 눈에 안 들어온다. .hljs-function 은 색이 아니라 자식
+ * (.hljs-title 등)을 묶는 래퍼다. */
+.hljs-operator,
+.hljs-punctuation,
+.hljs-function {
+  color: inherit;
+}
+
+.hljs-meta,
+.hljs-meta .hljs-keyword,
+.hljs-tag,
+.hljs-subst {
+  color: #116329;
+}
+
+.hljs-addition {
+  color: #116329;
+  background-color: #dafbe1;
+}
+
+.hljs-deletion {
+  color: #82071e;
+  background-color: #ffebe9;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
+
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: #8b949e;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-literal,
+.dark .hljs-doctag,
+.dark .hljs-formula {
+  color: #ff7b72;
+}
+
+.dark .hljs-string,
+.dark .hljs-regexp,
+.dark .hljs-symbol,
+.dark .hljs-bullet,
+.dark .hljs-selector-attr,
+.dark .hljs-selector-pseudo {
+  color: #a5d6ff;
+}
+
+.dark .hljs-number,
+.dark .hljs-selector-id,
+.dark .hljs-selector-class,
+.dark .hljs-template-variable,
+.dark .hljs-link {
+  color: #79c0ff;
+}
+
+.dark .hljs-title,
+.dark .hljs-title.class_,
+.dark .hljs-title.function_,
+.dark .hljs-section,
+.dark .hljs-name {
+  color: #d2a8ff;
+}
+
+.dark .hljs-attr,
+.dark .hljs-attribute,
+.dark .hljs-variable,
+.dark .hljs-property,
+.dark .hljs-params,
+.dark .hljs-built_in,
+.dark .hljs-type,
+.dark .hljs-title.language_,
+.dark .hljs-class .hljs-title {
+  color: #ffa657;
+}
+
+.dark .hljs-meta,
+.dark .hljs-meta .hljs-keyword,
+.dark .hljs-tag,
+.dark .hljs-subst {
+  color: #7ee787;
+}
+
+.dark .hljs-addition {
+  color: #aff5b4;
+  background-color: #033a16;
+}
+
+.dark .hljs-deletion {
+  color: #ffdcd7;
+  background-color: #67060c;
+}
