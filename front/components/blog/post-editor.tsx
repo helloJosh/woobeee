@@ -71,6 +71,15 @@ export default function PostEditor({ postId }: PostEditorProps) {
     const editorKo = useCreateBlockNote({ uploadFile })
     const editorEn = useCreateBlockNote({ uploadFile })
 
+    // 에디터(ProseMirror) 밖에 떨어진 파일 드롭은 브라우저가 이미지 문서로 이동해
+    // 버린다. 페이지 루트에서 삼켜 내비게이션만 막는다 — 에디터 안 드롭은 BlockNote가
+    // 처리하고, 여기의 추가 preventDefault는 그 경로에 영향이 없다.
+    const swallowStrayFileDrop = useCallback((event: React.DragEvent) => {
+        if (event.dataTransfer.types.includes("Files")) {
+            event.preventDefault()
+        }
+    }, [])
+
     useEffect(() => {
         const pendingImages = pendingImagesRef.current
         return () => {
@@ -177,7 +186,11 @@ export default function PostEditor({ postId }: PostEditorProps) {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6 space-y-6">
+        <div
+            className="max-w-4xl mx-auto p-6 space-y-6"
+            onDragOver={swallowStrayFileDrop}
+            onDrop={swallowStrayFileDrop}
+        >
             <div className="flex items-center justify-between">
                 <h1 className="text-2xl font-bold">{postId ? "글 수정" : "새 글 작성"}</h1>
                 <div className="flex gap-2">
@@ -240,7 +253,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         onChange={(event) => setTitleKo(event.target.value)}
                         className="text-lg font-semibold"
                     />
-                    <div className="rounded-lg border min-h-[480px] py-4">
+                    <div className="post-editor-surface rounded-lg border min-h-[480px] py-4">
                         <BlockNoteView
                             editor={editorKo}
                             theme={resolvedTheme === "dark" ? "dark" : "light"}
@@ -255,7 +268,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         onChange={(event) => setTitleEn(event.target.value)}
                         className="text-lg font-semibold"
                     />
-                    <div className="rounded-lg border min-h-[480px] py-4">
+                    <div className="post-editor-surface rounded-lg border min-h-[480px] py-4">
                         <BlockNoteView
                             editor={editorEn}
                             theme={resolvedTheme === "dark" ? "dark" : "light"}
