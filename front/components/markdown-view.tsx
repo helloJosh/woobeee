@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm"
 import remarkBreaks from "remark-breaks"
 import rehypeHighlight from "rehype-highlight"
 
+import { preserveBlankLines } from "@/lib/markdown-blank-lines"
 import { markdownUrlTransform } from "@/lib/markdown-url"
 
 /**
@@ -52,7 +53,7 @@ export default function MarkdownView({ content }: { content: string }) {
                 // 기본 sanitizer 가 blob: 을 지워 미리보기의 드롭 이미지가 깨진다 — blob: 만 추가 허용
                 urlTransform={markdownUrlTransform}
             >
-                {content}
+                {preserveBlankLines(content)}
             </ReactMarkdown>
         </div>
     )

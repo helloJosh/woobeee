@@ -78,6 +78,8 @@ React-free 모듈에 두고, 컴포넌트는 그 결과를 그리기만 한다.*
 | `lib/auth-redirect.ts` | 로그인 후 복귀 경로 — `next` 살균, 링크 조립, OAuth 왕복 보관 |
 | `lib/game-errors.ts` | 게임 API 오류 문구, 유니온 소진 검사(`assertNever`) — `lib/game-hub.ts` 가 기존 호출부(`app/game/page.tsx`)를 위해 그대로 재수출한다 |
 | `lib/blog-admin.ts` | 블로그 글 관리 — ADMIN 판정(`canManagePosts`), 초안 검증, multipart 조립, 카테고리 트리 평탄화, 드롭 이미지 보류·`${파일명}` 치환(`resolvePendingImages`), 마크다운 편집기 커서 삽입·드롭 이미지 수집(`insertSnippet`/`collectDroppedImages`) |
+| `lib/markdown-url.ts` | 마크다운 렌더 URL 판정 — 기본 sanitizer 에 `blob:`(드롭 이미지 미리보기)만 추가 허용 |
+| `lib/markdown-blank-lines.ts` | 연속 빈 줄 보존 — 여분 빈 줄을 `&nbsp;` 문단으로 살리되 코드 펜스 안은 보존 |
 
 (`game-socket.ts` 만 `"use client"` 를 달고 있다. Next 의 번들링 지시어일 뿐 React 에 의존하지는
 않으며, 다른 모듈과 똑같이 테스트된다.)
