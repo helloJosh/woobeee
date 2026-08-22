@@ -257,11 +257,27 @@ public class PostServiceImpl implements PostService {
         return result.toString();
     }
 
+    /**
+     * 본문에 박히는 이미지 주소. 서버가 MinIO 에 붙는 endpoint 가 아니라 <b>브라우저가 여는</b>
+     * 주소이므로 설정에서 따로 받는다(`S3_PUBLIC_BASE_URL`).
+     *
+     * <p>전에는 여기에 {@code https://woobeee.com} 이 박혀 있었다. 그 apex 는 오리진이 없어
+     * 루트까지 522 를 내므로 이미지가 전부 깨졌다 -- 공개 도메인은 {@code www} 쪽이다.
+     * 하드코딩이면 로컬에서도 같은 주소가 나와 MinIO 직결로 볼 수가 없다.
+     */
     private String publicUrl(Long postId, String fileName) {
-        String base = "https://woobeee.com";
+        String base = trimTrailingSlash(storageProperties.getPublicBaseUrl());
         String bucket = storageProperties.getBucket();
         String key = postId + "/" + fileName;
         return String.format("%s/%s/%s", base, bucket, key);
+    }
+
+    /** base 끝의 슬래시를 정리한다. 안 그러면 {@code https://host//bucket/1/a.png} 이 된다. */
+    private String trimTrailingSlash(String base) {
+        if (base == null || base.isBlank()) return "";
+        int end = base.length();
+        while (end > 0 && base.charAt(end - 1) == '/') end--;
+        return base.substring(0, end);
     }
 
     private String generatePresignedUrl(Long postId, String fileName) {

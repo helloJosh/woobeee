@@ -1,7 +1,7 @@
 # 블로그 이미지 서빙 — AS-IS / TO-BE / 변경 지점
 
 - 날짜: 2026-08-22
-- 상태: 검토 중 (TO-BE 는 계획이며 코드에 반영되지 않음)
+- 상태: **코드 반영 완료 (2-2), 인프라 1건 미적용 (2-1 버킷 정책)** — 아래 §4 참조
 - 관련 문서: [블로그 ADMIN 편집기 설계](2026-08-06-blog-admin-editor-design.md), `docs/blog/PRD.md`, `docs/api/README.md`
 
 ## 0. 요약
@@ -84,3 +84,64 @@ Mac mini(프로덕션 호스트)에서:
   문제)는 별도 과제 — CLAUDE.md "app-mvc 에 catch-all advice 없음" 항목.
 - 발급받고 등록하지 않은 업로드의 lifecycle 정리(고아 오브젝트)는 기존 후속 과제 유지.
 - CDN/캐시 정책, 이미지 리사이징.
+
+---
+
+## 4. 구현 기록 (2026-08-22)
+
+### 4-1. 계획과 달랐던 점 둘
+
+**① 522 의 원인은 프록시 규칙 부재가 아니라 apex 오리진 자체가 죽은 것이다.**
+진단을 apex(`woobeee.com`)로 했는데, 그 호스트는 `/` 조차 522 를 낸다. 공개 도메인은
+`www` 쪽이고 거기서 같은 경로는 522 가 아니라 **404** 다(= Next 가 받고 라우트가 없음).
+따라서 프록시 규칙만 넣고 base 를 apex 로 두면 여전히 안 뜬다 — base 는 `www` 여야 한다.
+
+| 호스트 | `/` | `/woobeee/13/ctid_structure.png` |
+| --- | --- | --- |
+| `woobeee.com` (apex) | 522 | 522 |
+| `www.woobeee.com` | 200 | 404 |
+
+**② 프록시는 nginx 가 아니라 Next rewrites 로 넣었다.**
+이 호스트의 리버스 프록시는 nginx 가 아니라 `cloudflared tunnel run --token-file …` 이다.
+토큰 방식이라 ingress 규칙이 Cloudflare 대시보드에 있어 레포에서 못 고친다. 반면 터널은
+`www` 를 `:3000`(Next)으로 넘기고 있으므로, Next 의 `rewrites()` 에 버킷 경로를 얹으면
+대시보드를 건드리지 않고 같은 결과가 된다. 설정이 레포 안에 남는다는 장점도 있다.
+
+### 4-2. 반영한 것
+
+- `StorageProperties.publicBaseUrl` 추가, `application.yaml` 에
+  `public-base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000}`.
+- `PostServiceImpl.publicUrl()` 이 그 값을 쓴다. 하드코딩 제거. base 끝 슬래시 정리 추가.
+- `front/next.config.mjs` 에 `/{bucket}/:path*` → `S3_ORIGIN`(기본 `http://localhost:9000`) rewrite.
+- `docs/blog/PRD.md` 에 BLOG-AC-13 / BLOG-AC-14 추가, `PostServiceImplTest` 에 테스트 3개.
+
+### 4-3. 남은 것 — 버킷 익명 읽기 (미적용)
+
+MinIO 는 지금 익명 GET 에 403 을 낸다. 오브젝트는 있다(`13/ctid_structure.png` 확인).
+정책을 걸기 전까지는 프록시가 뚫려도 이미지가 403 이다.
+
+계획서는 `mc anonymous set download local/woobeee` 를 제안했는데, 그러면 같은 버킷의
+`profiles/` 도 함께 공개된다(계획서 §2-1 이 이미 지적한 점). 지금 `profiles/` 오브젝트는
+0개라 당장 새는 것은 없지만, 프로필 업로드가 시작되면 공개된다. 그래서 Deny 를 함께 건
+아래 정책을 권한다:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "PublicReadBlogImages", "Effect": "Allow", "Principal": {"AWS": ["*"]},
+      "Action": ["s3:GetObject"], "Resource": ["arn:aws:s3:::woobeee/*"] },
+    { "Sid": "KeepProfilesPrivate", "Effect": "Deny", "Principal": {"AWS": ["*"]},
+      "Action": ["s3:GetObject"], "Resource": ["arn:aws:s3:::woobeee/profiles/*"] }
+  ]
+}
+```
+
+적용 후 확인할 것 — 익명 GET 이 blog 이미지는 200, `profiles/` 는 403 이어야 하고,
+**서명된**(access key) `profiles/` 읽기는 계속 200 이어야 한다(MinIO root 는 버킷 정책을
+우회하지만, 실제로 확인하고 넘어가야 한다).
+
+버킷을 공개하고 싶지 않다면 대안이 있다: app-mvc 가 자격증명으로 오브젝트를 스트리밍하는
+읽기 엔드포인트(`GET /api/back/posts/{id}/images/{파일명}`)를 두고 본문 URL 을 그쪽으로
+돌리는 것. 버킷은 계속 비공개로 두고 기존 `/api/back/*` rewrite 를 그대로 타지만, 코드가
+늘고 이미지 트래픽이 앱을 거친다.
