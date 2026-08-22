@@ -25,6 +25,7 @@ import {
     TokenResponse
 } from "./types"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
+import {describeHttpFailure} from "@/lib/errors/http-failure";
 
 // API 기본 설정
 // 빈 문자열 = 동일 오리진. Next rewrites(next.config.mjs)가 /api/auth, /api/back -> app-mvc,
@@ -299,7 +300,9 @@ export const apiRequest = async (
                 throw new Error(AUTH_EXPIRED_MESSAGE)
             }
             let code = "unknown"
-            let description = "요청에 실패했습니다."
+            // 413 은 본문이 비어 있어 아래 코드 기반 지도를 쓸 수 없다 — 컨테이너가 multipart
+            // 를 파싱하다 상한에서 끊으므로 ApiResponse 봉투가 만들어지기 전에 응답이 나간다.
+            let description = describeHttpFailure(response.status) ?? "요청에 실패했습니다."
 
             try {
                 const errorData = await response.json()
@@ -373,7 +376,10 @@ const uploadRequest = async (
     }
 
     if (result.json === null) {
-        throw new Error(`업로드에 실패했습니다. (HTTP ${result.status})`)
+        throw new Error(
+            describeHttpFailure(result.status)
+            ?? `업로드에 실패했습니다. (HTTP ${result.status})`,
+        )
     }
     return result.json
 }

@@ -46,6 +46,9 @@ export default function MyPage() {
     const [moreAvailable, setMoreAvailable] = useState(false)
     const [loadingMore, setLoadingMore] = useState(false)
     const [loadFailed, setLoadFailed] = useState(false)
+    // 전적은 프로필과 따로 도착한다. 세 상태를 구분해야 한다 — 도착 전에 "없습니다" 도,
+    // 실패했는데 "없습니다" 도 거짓말이다(빈 목록과 못 불러온 것은 다르다).
+    const [resultsState, setResultsState] = useState<"loading" | "ready" | "failed">("loading")
     const [error, setError] = useState<string | null>(null)
     const [replay, setReplay] = useState<OpenReplay | null>(null)
 
@@ -61,14 +64,16 @@ export default function MyPage() {
         }
 
         let active = true
-        Promise.all([authAPI.me(), gameAPI.myResults(PAGE_SIZE, 0)])
-            .then(([loadedProfile, loadedResults]) => {
-                if (!active) {
-                    return
+
+        // 프로필과 전적을 따로 받는다. Promise.all 로 묶으면 전적 하나가 실패하거나 늦는 것
+        // 만으로 프로필 카드가 아예 안 그려진다 — app-webflux 가 죽으면 프로필 이미지를
+        // 보거나 바꾸는 길이 사라진다. 두 섹션은 서로 다른 앱에서 오므로 함께 죽을 이유가 없다.
+        authAPI
+            .me()
+            .then((loadedProfile) => {
+                if (active) {
+                    setProfile(loadedProfile)
                 }
-                setProfile(loadedProfile)
-                setResults(loadedResults)
-                setMoreAvailable(hasMoreResults(loadedResults.length, PAGE_SIZE))
             })
             .catch((cause) => {
                 if (!active) {
@@ -77,6 +82,23 @@ export default function MyPage() {
                 // 스피너를 걷는다. 실패한 채로 계속 돌리면 "곧 됩니다" 라는 거짓말이 된다.
                 setLoadFailed(true)
                 setError(describeGameApiError(cause, "정보를 불러오지 못했습니다."))
+            })
+
+        gameAPI
+            .myResults(PAGE_SIZE, 0)
+            .then((loadedResults) => {
+                if (!active) {
+                    return
+                }
+                setResults(loadedResults)
+                setMoreAvailable(hasMoreResults(loadedResults.length, PAGE_SIZE))
+                setResultsState("ready")
+            })
+            .catch((cause) => {
+                if (active) {
+                    setResultsState("failed")
+                    setError(describeGameApiError(cause, "전적을 불러오지 못했습니다."))
+                }
             })
 
         return () => {
@@ -141,7 +163,11 @@ export default function MyPage() {
 
                 {results.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                        {loadFailed ? "전적을 불러오지 못했습니다." : "아직 끝낸 게임이 없습니다."}
+                        {resultsState === "loading"
+                            ? "전적을 불러오는 중입니다…"
+                            : resultsState === "failed"
+                              ? "전적을 불러오지 못했습니다."
+                              : "아직 끝낸 게임이 없습니다."}
                     </p>
                 ) : (
                     <ul className="space-y-2">
