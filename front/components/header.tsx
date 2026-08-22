@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper, User} from "lucide-react"
+import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -33,7 +33,7 @@ function useDebounce(value: string, delay: number) {
 
 export default function Header() {
   // /blog처럼 사이드바·검색을 갖는 페이지가 마운트돼 있을 때만 채워진다.
-  // 다른 라우트에서는 모두 undefined라서 아래 조건부 렌더링이 탭 3개만 남긴다.
+  // 다른 라우트에서는 모두 undefined라서 아래 조건부 렌더링이 탭 두 개만 남긴다.
   const { onToggleSidebar, searchQuery: searchQueryProp, onSearchChange } = useHeaderControls()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -98,12 +98,6 @@ export default function Header() {
               <Link href="/blog">
                 <Newspaper className="h-4 w-4" />
                 <span className="hidden sm:inline">기술블로그</span>
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
-              <Link href="/mypage">
-                <User className="h-4 w-4" />
-                <span className="hidden sm:inline">마이페이지</span>
               </Link>
             </Button>
           </div>
