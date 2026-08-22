@@ -8,11 +8,12 @@ import {
     imageMarkdownSnippet,
     insertSnippet,
     resolvePendingImages,
+    toPlaceholderMarkdown,
+    type PendingImage,
+    type PostDraft,
     uniqueFileName,
     uploadProgressLabel,
     validatePostDraft,
-    type PendingImage,
-    type PostDraft,
 } from "./blog-admin"
 
 const draft = (overrides: Partial<PostDraft> = {}): PostDraft => ({
@@ -257,5 +258,79 @@ describe("resolvePendingImages", () => {
 
         expect(result.markdownKo).toBe("# 그대로")
         expect(result.attachments).toEqual([])
+    })
+})
+
+describe("toPlaceholderMarkdown", () => {
+    /**
+     * BLOG-AC-17 — 수정 화면은 치환된 본문을 받아서 편집한다. 그대로 저장하면 해석된 경로가
+     * 원문에 구워져 `${파일명}` 계약(BLOG-AC-14)이 깨진다. 불러올 때 되돌린다.
+     */
+    it("이 글의 이미지 경로를 플레이스홀더로 되돌린다", () => {
+        expect(toPlaceholderMarkdown("![a](/api/back/posts/3/images/dropped.png)", 3)).toBe(
+            "![a](${dropped.png})",
+        )
+    })
+
+    it("퍼센트 인코딩된 한글 파일명을 디코딩해서 되돌린다", () => {
+        expect(
+            toPlaceholderMarkdown(
+                "![a](/api/back/posts/13/images/%ED%95%9C%EA%B8%80-%EA%B7%B8%EB%A6%BC.png)",
+                13,
+            ),
+        ).toBe("![a](${한글-그림.png})")
+    })
+
+    it("%20 은 공백으로 되돌린다 — 다시 저장하면 같은 키로 인코딩된다", () => {
+        expect(toPlaceholderMarkdown("![a](/api/back/posts/3/images/a%20b.png)", 3)).toBe(
+            "![a](${a b.png})",
+        )
+    })
+
+    it("이미지 여러 개를 모두 되돌린다", () => {
+        expect(
+            toPlaceholderMarkdown(
+                "![a](/api/back/posts/3/images/one.png)\n\n![b](/api/back/posts/3/images/two.png)",
+                3,
+            ),
+        ).toBe("![a](${one.png})\n\n![b](${two.png})")
+    })
+
+    /**
+     * 다른 글의 이미지 경로는 건드리지 않는다. 플레이스홀더는 저장 시 **이 글의** prefix 로
+     * 해석되므로, 남의 글 경로를 되돌리면 존재하지 않는 오브젝트를 가리키게 된다.
+     */
+    it("다른 postId 의 이미지 경로는 그대로 둔다", () => {
+        const content = "![a](/api/back/posts/99/images/other.png)"
+
+        expect(toPlaceholderMarkdown(content, 3)).toBe(content)
+    })
+
+    it("외부 이미지 URL 은 건드리지 않는다", () => {
+        const content = "![a](https://example.com/logo.png)\n![b](/static/hero.png)"
+
+        expect(toPlaceholderMarkdown(content, 3)).toBe(content)
+    })
+
+    it("이미 플레이스홀더인 본문은 그대로 둔다 — 두 번 적용해도 안전하다", () => {
+        const content = "![a](${dropped.png})"
+
+        expect(toPlaceholderMarkdown(content, 3)).toBe(content)
+        expect(toPlaceholderMarkdown(toPlaceholderMarkdown(content, 3), 3)).toBe(content)
+    })
+
+    it("빈 본문과 이미지 없는 본문을 그대로 돌려준다", () => {
+        expect(toPlaceholderMarkdown("", 3)).toBe("")
+        expect(toPlaceholderMarkdown("# 제목\n\n본문뿐", 3)).toBe("# 제목\n\n본문뿐")
+    })
+
+    /**
+     * 디코딩할 수 없는 시퀀스는 원문을 남긴다. decodeURIComponent 가 던지면 편집기가 글을
+     * 아예 못 여는데, 그건 이 되돌리기가 막으려는 문제보다 나쁘다.
+     */
+    it("깨진 퍼센트 인코딩은 되돌리지 않고 원문을 남긴다", () => {
+        const content = "![a](/api/back/posts/3/images/%E0%A4%A.png)"
+
+        expect(toPlaceholderMarkdown(content, 3)).toBe(content)
     })
 })

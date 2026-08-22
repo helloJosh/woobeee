@@ -163,6 +163,37 @@ export const collectDroppedImages = (
     }
 }
 
+/**
+ * 조회 응답의 이미지 경로를 저장 원문의 `${파일명}` 플레이스홀더로 되돌린다.
+ *
+ * 수정 화면은 **치환된** 본문을 받아서 편집한다(`GET /api/back/posts/{id}` 가 플레이스홀더를
+ * 해석해 내려준다). 그대로 저장하면 해석된 경로가 원문에 구워져 BLOG-AC-14 가 깨진다 —
+ * 서빙 방식이 바뀌는 날 그 글만 깨지고, postId 도 원문에 하드코딩된다. 실제로 오늘 이전에
+ * 수정을 눌렀다면 죽은 apex URL 이 DB 에 영구히 박혔다.
+ *
+ * 되돌리는 것은 **이 글의** 경로뿐이다. 플레이스홀더는 저장 시 이 글의 prefix 로 해석되므로
+ * 남의 글 경로를 되돌리면 존재하지 않는 오브젝트를 가리키게 된다.
+ *
+ * 한계: 오늘 이전에 원문에 구워진 절대 URL(`{호스트}/{버킷}/{postId}/{파일명}`)은 되돌리지
+ * 않는다. 버킷 이름은 서버 설정이라 프론트가 알 수 없고, 느슨하게 맞추면 작성자가 의도적으로
+ * 넣은 외부 이미지까지 건드린다. 그런 글이 있으면 일회성으로 손봐야 한다.
+ */
+export const toPlaceholderMarkdown = (content: string, postId: number): string =>
+    content.replace(
+        /\/api\/back\/posts\/(\d+)\/images\/([^\s)"'<>]+)/g,
+        (whole, id: string, encodedName: string) => {
+            if (Number(id) !== postId) {
+                return whole
+            }
+            try {
+                return `\${${decodeURIComponent(encodedName)}}`
+            } catch {
+                // 깨진 퍼센트 인코딩. 원문을 남긴다 — 여기서 던지면 글을 아예 못 연다.
+                return whole
+            }
+        },
+    )
+
 export const resolvePendingImages = (
     markdownKo: string,
     markdownEn: string,

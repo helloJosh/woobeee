@@ -24,6 +24,7 @@ import {
     flattenCategories,
     insertSnippet,
     resolvePendingImages,
+    toPlaceholderMarkdown,
     uploadProgressLabel,
     validatePostDraft,
     type PendingImage,
@@ -176,8 +177,10 @@ export default function PostEditor({ postId }: PostEditorProps) {
                 setTitleKo(ko.title ?? "")
                 setTitleEn(en.title ?? "")
                 setCategoryId(ko.categoryId ?? null)
-                setMarkdownKo(ko.content ?? "")
-                setMarkdownEn(en.content ?? "")
+                // 조회 응답은 `${파일명}` 이 해석된 상태다. 되돌려 놓지 않으면 저장이
+                // 해석된 경로를 원문에 구워 버린다(BLOG-AC-14/17).
+                setMarkdownKo(toPlaceholderMarkdown(ko.content ?? "", postId))
+                setMarkdownEn(toPlaceholderMarkdown(en.content ?? "", postId))
             } catch {
                 if (!cancelled) {
                     setErrors(["글을 불러오지 못했습니다."])

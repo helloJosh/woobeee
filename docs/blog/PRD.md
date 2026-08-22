@@ -73,6 +73,7 @@
 | BLOG-AC-14 | `${파일명}` 플레이스홀더는 저장 원문에 유지되고 치환은 조회 시점에만 일어난다 — 원문에 URL 을 구우면 서빙 방식이 바뀔 때 기존 글이 전부 깨진다 | `PostServiceImplTest` |
 | BLOG-AC-15 | 목록 응답도 `${파일명}` 을 치환한다 — 치환이 상세에만 걸려 있으면 목록 미리보기에 원문이 그대로 나간다 | `PostServiceImplTest` |
 | BLOG-AC-16 | `GET /api/back/posts/{postId}/images/{파일명}` 은 버킷을 공개하지 않고 앱 자격증명으로 오브젝트를 스트리밍한다. 파일명은 basename 만 남겨 `../` 로 같은 버킷의 `profiles/` 를 읽을 수 없고, 없는 오브젝트는 404 다 | `PostServiceImplTest` |
+| BLOG-AC-17 | 수정 화면은 불러온 본문의 `/api/back/posts/{postId}/images/{파일명}` 을 `${파일명}` 으로 되돌린다 — 되돌리지 않으면 저장이 해석된 경로를 원문에 구워 AC-14 가 깨진다. 다른 글의 경로와 외부 URL 은 건드리지 않는다 | `blog-admin.test.ts` |
 
 ## 지원 기능
 
