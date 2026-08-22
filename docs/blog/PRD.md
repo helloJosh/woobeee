@@ -69,8 +69,10 @@
 | BLOG-AC-10 | 댓글/좋아요 쓰기는 로그인 회원(`ROLE_MEMBER`)이면 가능하다(ADMIN 불필요) | `AccessTokenLoginIdHeaderFilterTest` |
 | BLOG-AC-11 | `PUT /api/back/posts/{postId}` 는 작성자 본인일 때 제목·본문·카테고리를 갱신하고, 마크다운 파트가 없으면 본문을 보존한다 | `PostServiceImplTest` |
 | BLOG-AC-12 | 무토큰 또는 만료(스토어에 없는) 토큰으로 게시글/카테고리 쓰기를 호출하면 `401` + `ApiResponse` 실패 봉투를 반환한다 — 권한 부족(403)과 구분해야 프론트가 refresh 후 재시도할 수 있다 | `AccessTokenLoginIdHeaderFilterTest` |
-| BLOG-AC-13 | 조회 응답의 이미지 URL 은 `storage.s3.public-base-url`(env `S3_PUBLIC_BASE_URL`) 을 base 로 조립된다 — 코드에 도메인 하드코딩 없음. base 끝 슬래시는 중복되지 않는다 | `PostServiceImplTest` |
-| BLOG-AC-14 | `${파일명}` 플레이스홀더는 저장 원문에 유지되고 치환은 조회 시점에만 일어난다 — 원문에 URL 을 구우면 도메인 변경 시 기존 글이 전부 깨진다 | `PostServiceImplTest` |
+| BLOG-AC-13 | 본문 이미지 URL 은 `/api/back/posts/{postId}/images/{파일명}` 상대 경로다 — 호스트가 박히면 로컬/프로덕션 중 한쪽이 깨진다. 한글·공백 파일명은 퍼센트 인코딩된다(`+` 아님) | `PostServiceImplTest` |
+| BLOG-AC-14 | `${파일명}` 플레이스홀더는 저장 원문에 유지되고 치환은 조회 시점에만 일어난다 — 원문에 URL 을 구우면 서빙 방식이 바뀔 때 기존 글이 전부 깨진다 | `PostServiceImplTest` |
+| BLOG-AC-15 | 목록 응답도 `${파일명}` 을 치환한다 — 치환이 상세에만 걸려 있으면 목록 미리보기에 원문이 그대로 나간다 | `PostServiceImplTest` |
+| BLOG-AC-16 | `GET /api/back/posts/{postId}/images/{파일명}` 은 버킷을 공개하지 않고 앱 자격증명으로 오브젝트를 스트리밍한다. 파일명은 basename 만 남겨 `../` 로 같은 버킷의 `profiles/` 를 읽을 수 없고, 없는 오브젝트는 404 다 | `PostServiceImplTest` |
 
 ## 지원 기능
 

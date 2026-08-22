@@ -25,15 +25,19 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -258,26 +262,47 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 본문에 박히는 이미지 주소. 서버가 MinIO 에 붙는 endpoint 가 아니라 <b>브라우저가 여는</b>
-     * 주소이므로 설정에서 따로 받는다(`S3_PUBLIC_BASE_URL`).
+     * 본문에 박히는 이미지 주소. 이 앱의 스트리밍 엔드포인트를 가리키는 <b>상대 경로</b>다.
      *
-     * <p>전에는 여기에 {@code https://woobeee.com} 이 박혀 있었다. 그 apex 는 오리진이 없어
-     * 루트까지 522 를 내므로 이미지가 전부 깨졌다 -- 공개 도메인은 {@code www} 쪽이다.
-     * 하드코딩이면 로컬에서도 같은 주소가 나와 MinIO 직결로 볼 수가 없다.
+     * <p>절대 URL 을 쓰지 않는 것이 요점이다. 전에는 {@code https://woobeee.com} 이 박혀
+     * 있었고(그 apex 는 오리진이 없어 루트까지 522 다), 그 다음에는 도메인을 설정으로 뺐지만
+     * 그 방식은 버킷 익명 읽기까지 열어야 동작했다. 상대 경로는 프론트가 이미 프록시하는
+     * {@code /api/back/*} 를 타므로 도메인 설정도, 버킷 공개도, 프록시 규칙 추가도 필요 없고
+     * 로컬과 프로덕션이 같은 값으로 동작한다.
+     *
+     * <p>파일명은 퍼센트 인코딩한다 -- 업로드가 원본 basename 을 키로 쓰므로 한글이나 공백이
+     * 들어올 수 있다. {@link URLEncoder} 는 공백을 {@code +} 로 만드는데 경로에서는 리터럴
+     * {@code +} 로 읽히므로 {@code %20} 으로 바꾼다.
      */
     private String publicUrl(Long postId, String fileName) {
-        String base = trimTrailingSlash(storageProperties.getPublicBaseUrl());
-        String bucket = storageProperties.getBucket();
-        String key = postId + "/" + fileName;
-        return String.format("%s/%s/%s", base, bucket, key);
+        String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
+        return String.format("/api/back/posts/%d/images/%s", postId, encoded);
     }
 
-    /** base 끝의 슬래시를 정리한다. 안 그러면 {@code https://host//bucket/1/a.png} 이 된다. */
-    private String trimTrailingSlash(String base) {
-        if (base == null || base.isBlank()) return "";
-        int end = base.length();
-        while (end > 0 && base.charAt(end - 1) == '/') end--;
-        return base.substring(0, end);
+    /**
+     * 버킷은 비공개로 두고 앱이 자격증명으로 오브젝트를 대신 읽는다.
+     *
+     * <p>파일명은 basename 만 남긴다. 그대로 이어 붙이면 {@code 13/../profiles/1/x.png} 로
+     * 같은 버킷의 비공개 오브젝트를 인증 없이 읽을 수 있다.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public PostImage loadPostImage(Long postId, String fileName) {
+        String safeName = Paths.get(fileName).getFileName().toString().trim();
+        String key = postId + "/" + safeName;
+
+        try {
+            ResponseBytes<GetObjectResponse> object = s3Client.getObjectAsBytes(
+                    GetObjectRequest.builder()
+                            .bucket(storageProperties.getBucket())
+                            .key(key)
+                            .build()
+            );
+
+            return new PostImage(object.asByteArray(), object.response().contentType());
+        } catch (NoSuchKeyException exception) {
+            throw new CustomNotFoundException(ErrorCode.post_imageNotFound);
+        }
     }
 
     private String generatePresignedUrl(Long postId, String fileName) {
@@ -303,7 +328,11 @@ public class PostServiceImpl implements PostService {
 
         List<GetPostsResponse.PostContent> contents = posts.getContent().stream().map(post -> {
             String title = locale.equalsIgnoreCase("en") ? post.getTitleEn() : post.getTitleKo();
-            String content = locale.equalsIgnoreCase("en") ? post.getTextEn() : post.getTextKo();
+            // 목록도 치환한다. 안 하면 미리보기에 ${파일명} 원문이 그대로 나간다.
+            String content = replaceImagePlaceholdersWithPresignedUrls(
+                    locale.equalsIgnoreCase("en") ? post.getTextEn() : post.getTextKo(),
+                    post.getId()
+            );
             String categoryName = categoryRepository.findById(post.getCategoryId())
                     .map(cat -> locale.equalsIgnoreCase("en") ? cat.getNameEn() : cat.getNameKo())
                     .orElse("Unknown");

@@ -12,6 +12,7 @@ public enum ErrorCode {
     like_needAuthentication,
     post_notFound,
     post_imageUploadError,
+    post_imageNotFound,
 
     api_idempotencyKeyConflictFuckYouStopTryingToMessWithMyServer,
     api_idempotencyKeyConflict

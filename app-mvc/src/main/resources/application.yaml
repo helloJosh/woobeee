@@ -19,9 +19,6 @@ oauth:
 storage:
   s3:
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
-    # 브라우저가 여는 주소. endpoint 와 달리 외부에서 닿아야 한다.
-    # 프로덕션은 S3_PUBLIC_BASE_URL=https://www.woobeee.com (apex 아님 -- apex 오리진은 522).
-    public-base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000}
     region: ${S3_REGION:ap-northeast-2}
     bucket: ${S3_BUCKET:woobeee}
     access-key: ${S3_ACCESS_KEY:admin}

@@ -11,11 +11,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Duration;
 import java.util.List;
 
 @RestController
@@ -49,6 +52,29 @@ public class PostController {
     ) {
         GetPostResponse response = postService.getPost(postId, locale, loginId, request);
         return ApiResponse.success(response, "Post retrieved");
+    }
+
+    /**
+     * 본문 이미지 스트리밍. 버킷을 공개하지 않고 앱이 자격증명으로 대신 읽어 준다 --
+     * 공개 URL 방식과 달리 프록시 규칙이나 버킷 익명 읽기 같은 인프라 작업이 필요 없다.
+     *
+     * <p>{@code ApiResponse} 봉투를 태우지 않는다. {@code <img>} 가 여는 주소이므로 바이트와
+     * contentType 이 그대로 나가야 한다. 쓰기만 ADMIN 이므로 이 GET 은 공개다(공개 게시물의 일부).
+     */
+    @Operation(summary = "게시글 이미지 조회 API", description = "글 본문에 첨부된 이미지를 스트리밍합니다.")
+    @GetMapping("/{postId}/images/{fileName}")
+    public ResponseEntity<byte[]> getPostImage(
+            @PathVariable("postId") Long postId,
+            @PathVariable("fileName") String fileName
+    ) {
+        PostService.PostImage image = postService.loadPostImage(postId, fileName);
+
+        return ResponseEntity.ok()
+                .contentType(image.contentType() == null
+                        ? MediaType.APPLICATION_OCTET_STREAM
+                        : MediaType.parseMediaType(image.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
+                .body(image.bytes());
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
