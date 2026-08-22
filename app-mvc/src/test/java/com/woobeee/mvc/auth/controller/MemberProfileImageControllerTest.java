@@ -1,15 +1,10 @@
 package com.woobeee.mvc.auth.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.woobeee.core.token.TokenStore;
 import com.woobeee.core.token.dto.AuthTokenType;
 import com.woobeee.core.token.dto.TokenMetadata;
 import com.woobeee.core.token.dto.TokenSnapshot;
 import com.woobeee.mvc.auth.entity.Member;
-import com.woobeee.mvc.auth.api.request.MemberProfileImagePresignedUrlRequest;
-import com.woobeee.mvc.auth.api.request.MemberProfileImageRegisterRequest;
-import com.woobeee.mvc.auth.api.response.MemberProfileImageResponse;
-import com.woobeee.mvc.auth.api.response.MemberProfileImageUploadUrlResponse;
 import com.woobeee.mvc.auth.api.response.MemberProfileResponse;
 import com.woobeee.mvc.auth.exception.AuthRestControllerAdvice;
 import com.woobeee.mvc.auth.repository.MemberRepository;
@@ -20,6 +15,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,13 +23,15 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -45,8 +43,6 @@ class MemberProfileImageControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @MockitoBean
     private MemberProfileImageService memberProfileImageService;
@@ -67,17 +63,12 @@ class MemberProfileImageControllerTest {
         when(memberRepository.findById(42L)).thenReturn(Optional.of(member));
     }
 
-    /** AUTH-AC-14 */
+    /** AUTH-AC-14 — 프로필은 이미지 URL 이 아니라 보유 여부를 내린다. */
     @Test
-    void getMyProfileReturnsPresignedGetUrl() throws Exception {
+    void getMyProfileReportsThatAProfileImageExists() throws Exception {
         authenticate();
-        when(memberProfileImageService.getMyProfile(LOGIN_ID)).thenReturn(new MemberProfileResponse(
-                42L,
-                LOGIN_ID,
-                "nick",
-                0L,
-                "https://s3.example.com/woobeee/profiles/42/uuid/avatar.png?sig=1"
-        ));
+        when(memberProfileImageService.getMyProfile(LOGIN_ID))
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, true));
 
         mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
@@ -86,20 +77,21 @@ class MemberProfileImageControllerTest {
                 .andExpect(jsonPath("$.data.email").value(LOGIN_ID))
                 .andExpect(jsonPath("$.data.nickname").value("nick"))
                 .andExpect(jsonPath("$.data.gameMoney").value(0))
-                .andExpect(jsonPath("$.data.profileImageUrl")
-                        .value("https://s3.example.com/woobeee/profiles/42/uuid/avatar.png?sig=1"));
+                .andExpect(jsonPath("$.data.hasProfileImage").value(true))
+                // 브라우저가 못 여는 presigned URL 이 계약으로 되돌아오면 잡는다.
+                .andExpect(jsonPath("$.data.profileImageUrl").doesNotExist());
     }
 
     /** AUTH-AC-14 */
     @Test
-    void getMyProfileReturnsNullProfileImageUrlWhenUnset() throws Exception {
+    void getMyProfileReportsNoImageWhenUnset() throws Exception {
         authenticate();
         when(memberProfileImageService.getMyProfile(LOGIN_ID))
-                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, null));
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, false));
 
         mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.profileImageUrl").doesNotExist());
+                .andExpect(jsonPath("$.data.hasProfileImage").value(false));
     }
 
     @Test
@@ -111,42 +103,48 @@ class MemberProfileImageControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    /** AUTH-AC-10 — 업로드는 multipart `file` 파트를 받아 갱신된 프로필을 돌려준다. */
     @Test
-    void createPresignedUploadUrlReturnsUploadTarget() throws Exception {
+    void uploadAcceptsAMultipartFileAndReturnsTheUpdatedProfile() throws Exception {
         authenticate();
-        MemberProfileImagePresignedUrlRequest request =
-                new MemberProfileImagePresignedUrlRequest("avatar.png", "image/png");
-        when(memberProfileImageService.createPresignedUploadUrl(eq(LOGIN_ID), eq(request)))
-                .thenReturn(new MemberProfileImageUploadUrlResponse(
-                        "https://s3.example.com/upload",
-                        "profiles/42/uuid/avatar.png",
-                        600L
-                ));
+        when(memberProfileImageService.upload(eq(LOGIN_ID), any()))
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, true));
 
-        mockMvc.perform(post("/api/auth/me/profile-image/presigned-url")
-                        .header("Authorization", "Bearer " + ACCESS_TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+        mockMvc.perform(multipart("/api/auth/me/profile-image")
+                        .file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1, 2, 3}))
+                        .header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.uploadUrl").value("https://s3.example.com/upload"))
-                .andExpect(jsonPath("$.data.fileKey").value("profiles/42/uuid/avatar.png"))
-                .andExpect(jsonPath("$.data.expiresInSeconds").value(600));
+                .andExpect(jsonPath("$.header.isSuccessful").value(true))
+                .andExpect(jsonPath("$.data.hasProfileImage").value(true));
     }
 
+    /**
+     * AUTH-AC-18 — 스트리밍은 {@code ApiResponse} 봉투를 타지 않는다. 봉투에 실으면
+     * {@code <img>}/blob 이 읽을 수 없는 JSON 이 된다.
+     */
     @Test
-    void registerReturnsProfileImageUrl() throws Exception {
+    void getMyProfileImageStreamsRawBytesOutsideTheEnvelope() throws Exception {
         authenticate();
-        MemberProfileImageRegisterRequest request =
-                new MemberProfileImageRegisterRequest("profiles/42/uuid/avatar.png");
-        when(memberProfileImageService.register(eq(LOGIN_ID), eq(request)))
-                .thenReturn(new MemberProfileImageResponse("https://s3.example.com/get"));
+        when(memberProfileImageService.loadMyProfileImage(LOGIN_ID))
+                .thenReturn(new MemberProfileImageService.ProfileImage(new byte[]{1, 2, 3}, "image/png"));
 
-        mockMvc.perform(put("/api/auth/me/profile-image")
-                        .header("Authorization", "Bearer " + ACCESS_TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+        mockMvc.perform(get("/api/auth/me/profile-image").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.profileImageUrl").value("https://s3.example.com/get"));
+                .andExpect(content().contentType(MediaType.IMAGE_PNG))
+                .andExpect(content().bytes(new byte[]{1, 2, 3}))
+                // 본인 전용 리소스이므로 공유 캐시에 남으면 안 된다.
+                .andExpect(header().string("Cache-Control", "no-store"));
+    }
+
+    /** AUTH-AC-19 */
+    @Test
+    void getMyProfileImageIsNotFoundWhenUnset() throws Exception {
+        authenticate();
+        when(memberProfileImageService.loadMyProfileImage(LOGIN_ID))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image is not set"));
+
+        mockMvc.perform(get("/api/auth/me/profile-image").header("Authorization", "Bearer " + ACCESS_TOKEN))
+                .andExpect(status().isNotFound());
     }
 
     @Test

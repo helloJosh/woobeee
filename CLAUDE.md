@@ -146,7 +146,6 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 항목 | 내용 |
 | --- | --- |
 | front 잔존 페이지·API | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 페이지뿐 아니라 `lib/api.ts` 의 `/api/products*`·`/api/buyers/{id}/carts/*` 클라이언트 여덟 개도 살아 있고 `next.config.mjs` 는 그 경로를 rewrite 하지 않는다. `app/products/[productId]/page.tsx` 에는 `/cart` 링크도 남아 있다 |
-| 프로필 이미지 업로드 화면 | 마이페이지가 이미지를 **표시**는 한다. 업로드 화면이 없다 |
 | front AC 미작성 | `docs/front/PRD.md` 에 `## 인수 기준` 표가 없다. 274개→331개로 이 레포에서 가장 큰 테스트 스위트인데 AC ID 를 참조하는 테스트가 하나도 없어, 위 "테스트는 PRD의 인수 기준에서 도출한다" 규칙이 가장 필요한 도메인에서 지켜지지 않는다 |
 | 프론트 컴포넌트 무검증 | vitest 가 node 환경이고 jsdom 이 없다. 판단은 전부 `lib/` 로 옮겨 뒀지만 fetch 이펙트·재생 타이머·이펙트 정리(cleanup)가 **돌긴 하는지**는 아무도 확인하지 않는다 — `return () => …` 을 통째로 지워도 331개가 그대로 통과한다 |
 | 기보 골든이 단방향 | `front/lib/dodge-engine.ts` 의 `GOLDEN` 은 `scripts/dodge-parity-trace.jsh` 로 손으로 다시 뽑는다. Java 쪽 `DodgeGame` 을 고치고 재컴파일·재실행하지 않으면 프론트 테스트는 낡은 기대값에 대고 계속 초록이다. 왕복 픽스처(`app-webflux/src/test/resources`)가 절반은 막지만, 골든 자체를 강제하는 CI 는 없다 |
@@ -155,8 +154,8 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | `ERROR` 프레임 일부가 여전히 방 전체로 | 명령 실패는 원인 세션으로 가도록 고쳤지만 두 경로는 의도적으로 방 전체다 — leave 정산 실패, 그리고 방이 `IN_PROGRESS` 로 넘어간 뒤 실패한 START. 둘 다 남은 참가자에게도 소식이라는 판단이다 |
 | 나감 처리가 인앱 이동에서만 즉시 | `LEAVE` 는 라우트 이동에서만 보낸다. 탭을 닫거나 새로고침하면 30초 유예를 타므로, 8인 피하기에서는 그동안 움직이지 않는 유령이 판에 남아 충돌 판정을 받는다. `pagehide` 를 쓰면 새로고침까지 즉시 나감이 되어 유예의 목적이 사라진다 — 없애려면 서버 쪽 liveness 신호가 필요하다 |
 | 소켓 계약 타입이 장식 | `ClientMessageType` / `ClientMessagePayloads` / `DodgeDirection` 을 아무도 import 하지 않는다. `send` 가 `(type: string, ...)` 이라 오타 난 타입 문자열도 컴파일되고 서버에서 조용히 버려진다 |
-| MinIO CORS 미검증 | 기보 뷰어는 presigned URL 을 rewrites 가 아니라 `S3_ENDPOINT` 로 직접 가져온다(`credentials:"omit"`). 막히면 원인 없는 일반 네트워크 문구만 뜬다. 같은 값이 서버 클라이언트와 브라우저용 presign 에 함께 쓰이므로, 클러스터 내부 주소를 넣으면 브라우저가 못 여는 URL 이 나온다 |
-| 고아 오브젝트 정리 | 발급받고 등록하지 않은 `profiles/` 업로드에 대한 lifecycle 정책 |
+| MinIO CORS 미검증 — **기보 뷰어만 남았다** | 기보 뷰어는 presigned URL 을 rewrites 가 아니라 `S3_ENDPOINT` 로 직접 가져온다(`credentials:"omit"`). 막히면 원인 없는 일반 네트워크 문구만 뜬다. 같은 값이 서버 클라이언트와 브라우저용 presign 에 함께 쓰이므로, 클러스터 내부 주소를 넣으면 브라우저가 못 여는 URL 이 나온다. **글 이미지와 프로필 이미지는 앱 스트리밍으로 옮겨 이 문제에서 빠졌다**(`GET /api/back/posts/{id}/images/{파일명}`, `GET /api/auth/me/profile-image`). 기보도 같은 모양으로 옮기는 것이 남은 수다 |
+| 고아 오브젝트 정리 | `profiles/` 의 고아 발생 경로는 사라졌다 — presigned 발급이 없어졌고 업로드가 앱을 거치며 즉시 컬럼에 등록되기 때문이다. 남은 경로는 **교체 시 이전 오브젝트 삭제 실패**뿐이다(의도적으로 조용히 넘긴다: 삭제가 프로필을 깨뜨리면 안 된다). 글 첨부(`{postId}/`)는 글이 지워져도 오브젝트가 남으므로 여전히 lifecycle 정책이 필요하다 |
 | 게임 머니 증감 | `members.game_money` 는 항상 0이다. 증감 계약은 game spec에서 설계 |
 | front 취약점 | 이관한 `package-lock.json` 기준 `npm audit` 17건(high 13, moderate 4). 전신 리포에서 그대로 넘어온 것 |
 | QueryDSL 잔존 | `blog/repository/PostQueryRepositoryImpl` 을 네이티브 SQL로 전환 |

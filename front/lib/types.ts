@@ -20,7 +20,6 @@ export interface User {
   id: string
   email: string
   name: string
-  profileImage?: string
   createdAt: Date
 }
 
@@ -247,7 +246,12 @@ export interface MemberProfile {
   email: string
   nickname: string
   gameMoney: number
-  profileImageUrl: string | null
+  /**
+   * 이미지 자체는 인증이 필요한 `GET /api/auth/me/profile-image` 로 따로 받는다 — `<img>` 는
+   * Authorization 헤더를 못 보내므로 프론트가 fetch 로 받아 blob URL 을 만든다. 전에 여기
+   * 있던 presigned URL 은 호스트가 서버용 S3_ENDPOINT 에서 나와 브라우저가 열 수 없었다.
+   */
+  hasProfileImage: boolean
 }
 
 export type CartStatus = "ACTIVE" | "EXPIRED" | "DELETED"

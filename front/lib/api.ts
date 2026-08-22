@@ -460,6 +460,63 @@ export const authAPI = {
         }
         return json.data
     },
+
+    /**
+     * 프로필 이미지 업로드/교체. 갱신된 프로필을 돌려준다.
+     *
+     * multipart 로 앱에 보낸다 — 전에는 presigned PUT 으로 브라우저가 MinIO 에 직접 붙었는데,
+     * 그 URL 의 호스트는 서버용 S3_ENDPOINT 에서 나와 프로덕션 브라우저가 열 수 없었다.
+     *
+     * suppressAlert: 마이페이지가 오류를 그 자리에 인라인으로 그린다. 켜지 않으면 같은 실패가
+     * 네이티브 대화상자와 인라인 문구로 두 번 안내된다.
+     */
+    uploadProfileImage: async (file: File): Promise<MemberProfile> => {
+        const form = new FormData()
+        form.append("file", file)
+
+        const response = await apiRequest(
+            "/api/auth/me/profile-image",
+            { method: "POST", body: form },
+            true,
+            { suppressAlert: true },
+        )
+        const json: ApiResponse<MemberProfile> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header.message || "프로필 이미지를 저장하지 못했습니다.")
+        }
+        return json.data
+    },
+
+    /**
+     * 프로필 이미지 바이트를 받는다. 호출부가 `URL.createObjectURL` 로 blob URL 을 만들고,
+     * 다 쓰면 `revokeObjectURL` 로 반드시 정리해야 한다.
+     *
+     * 미설정이면 404 인데 그것은 오류가 아니라 "아직 없음"이므로 null 을 준다.
+     * suppressUnauthorizedHandler: 화면 뒤에서 도는 호출이다 — 이 하나가 401 을 만났다고
+     * 전역 세션 만료 처리(토큰 삭제 + alert + 새로고침)를 돌리면 안 된다.
+     */
+    fetchProfileImageBlob: async (): Promise<Blob | null> => {
+        try {
+            const response = await apiRequest(
+                "/api/auth/me/profile-image",
+                {},
+                true,
+                { suppressAlert: true, suppressUnauthorizedHandler: true },
+            )
+            return await response.blob()
+        } catch {
+            return null
+        }
+    },
+
+    deleteProfileImage: async (): Promise<void> => {
+        await apiRequest(
+            "/api/auth/me/profile-image",
+            { method: "DELETE" },
+            true,
+            { suppressAlert: true },
+        )
+    },
 }
 
 /**

@@ -86,14 +86,16 @@
 | AUTH-AC-07 | Google callback에서 state/code 검증에 실패하면 인증을 거절한다 | `AuthServiceTest` |
 | AUTH-AC-08 | 회원가입이 성공하면 `members`에 `active=true`, `gameMoney=0`으로 생성한다 | `AuthServiceTest` |
 | AUTH-AC-09 | 로그인은 memberType 없이 google subject로 회원을 찾고, 미등록이면 `404`를 반환한다 | `AuthServiceTest` |
-| AUTH-AC-10 | presigned 발급은 `profiles/{요청자 memberId}/` prefix 키와 TTL을 반환한다 | `MemberProfileImageServiceTest` |
-| AUTH-AC-11 | 허용 목록 밖 contentType으로 발급을 요청하면 `400`을 반환한다 | `MemberProfileImageServiceTest` |
-| AUTH-AC-12 | 다른 회원 prefix의 fileKey를 등록하면 `403`을 반환한다 | `MemberProfileImageServiceTest` |
-| AUTH-AC-13 | 교체가 성공하면 컬럼을 갱신하고 이전 오브젝트를 삭제한다 | `MemberProfileImageServiceTest` |
-| AUTH-AC-14 | `GET /me`는 presigned GET URL을 반환하고, 프로필 미설정이면 `null`을 반환한다 | `MemberProfileImageControllerTest` |
+| AUTH-AC-10 | `POST /api/auth/me/profile-image` 는 multipart `file` 을 `profiles/{토큰의 memberId}/{uuid}/{파일명}` 키로 저장한다 — memberId 는 요청이 아니라 토큰에서 온다 | `MemberProfileImageServiceTest`, `MemberProfileImageControllerTest` |
+| AUTH-AC-11 | 허용 목록(png/jpeg/webp/gif) 밖 contentType 으로 업로드하면 `400` 이고 스토리지에 손대지 않는다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-12 | 업로드는 5MB 를 넘으면 `400`, 정확히 5MB 는 통과한다. 빈 파일도 `400` — 업로드가 앱을 거치므로 상한이 없으면 큰 파일이 앱 힙을 받는다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-13 | 교체가 성공하면 컬럼을 갱신하고 이전 오브젝트를 삭제한다. 삭제가 실패해도 교체는 성공으로 남는다(고아 오브젝트만 생긴다) | `MemberProfileImageServiceTest` |
+| AUTH-AC-14 | `GET /me` 는 이미지 URL 이 아니라 `hasProfileImage` 를 반환한다 — `<img>` 는 Authorization 을 못 보내므로 URL 을 주면 쓸 수 없는 값이 된다 | `MemberProfileImageServiceTest`, `MemberProfileImageControllerTest` |
 | AUTH-AC-15 | 회원가입으로 생성된 회원의 role은 `ROLE_MEMBER`다 | `AuthServiceTest` |
 | AUTH-AC-16 | 토큰의 role은 회원의 role에서 파생된다 — `ROLE_ADMIN` 회원이 로그인하면 `ROLE_ADMIN`으로 발급한다 | `AuthServiceTest` |
 | AUTH-AC-17 | `ROLE_ADMIN` 의 access token 은 1일 TTL 로, 그 외 role 은 기본 15분으로 발급한다. `TokenResponse` 의 만료 초도 실제 TTL 을 반영한다 (긴 글 작성 중 만료 방지 — 사용자 결정) | `TokenServiceTest` |
+| AUTH-AC-18 | `GET /api/auth/me/profile-image` 는 오브젝트 바이트와 저장된 contentType 을 `ApiResponse` 봉투 <b>밖으로</b> 반환하고 `Cache-Control: no-store` 를 붙인다 — 봉투에 실으면 blob 이 읽을 수 없는 JSON 이 되고, 본인 전용 리소스가 공유 캐시에 남으면 안 된다 | `MemberProfileImageServiceTest`, `MemberProfileImageControllerTest` |
+| AUTH-AC-19 | 프로필 이미지를 설정하지 않았거나 컬럼만 남고 오브젝트가 없으면 `404` 다 — 후자에서 500 이 나면 삭제가 반쯤 실패한 계정의 화면이 무너진다 | `MemberProfileImageServiceTest`, `MemberProfileImageControllerTest` |
 
 ## 설정
 

@@ -9,7 +9,7 @@ import { useTheme } from "next-themes"
 import { useState, useEffect } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import UserMenu from "@/components/auth/user-menu"
+import ProfileAvatar from "@/components/auth/profile-avatar"
 import { buildAuthHref, returnPathFor } from "@/lib/auth-redirect"
 import { useAuth } from "@/hooks/use-auth" // Updated import
 import { useHeaderControls } from "@/hooks/use-header-controls"
@@ -42,7 +42,7 @@ export default function Header() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const debouncedSearchQuery = useDebounce(searchQuery, 300)
-  const { user, loading, isAuthenticated } = useAuth()
+  const { loading, isAuthenticated, profileImageUrl } = useAuth()
 
   useEffect(() => {
     setMounted(true)
@@ -146,15 +146,27 @@ export default function Header() {
             {/* 로그인/사용자 메뉴 */}
             {loading ? (
                 <div className="h-8 w-8 rounded-full bg-muted animate-pulse" />
-            ) : user ? (
-                <UserMenu />
             ) : isAuthenticated ? (
-                <Button variant="ghost" asChild className="flex items-center gap-2">
-                  <Link href="/logout">
-                    <LogIn className="h-4 w-4" />
-                    <span className="hidden sm:inline">로그아웃</span>
+                /*
+                 * 아바타 + 로그아웃. 아바타는 마이페이지로 가는 링크다 — 드롭다운을 두지 않는
+                 * 것은 로그아웃이 헤더에 그대로 보여야 한다는 판단이다(한 번 더 누르게 만들지
+                 * 않는다). 이미지가 없으면 회색 원 + 사람 아이콘이다.
+                 */
+                <div className="flex items-center gap-1">
+                  <Link
+                      href="/mypage"
+                      aria-label="마이페이지"
+                      className="rounded-full ring-offset-background transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <ProfileAvatar src={profileImageUrl} />
                   </Link>
-                </Button>
+                  <Button variant="ghost" asChild className="flex items-center gap-2">
+                    <Link href="/logout">
+                      <LogIn className="h-4 w-4" />
+                      <span className="hidden sm:inline">로그아웃</span>
+                    </Link>
+                  </Button>
+                </div>
             ) : (
                 /*
                  * 헤더는 루트 레이아웃에 있어 모든 경로에서 렌더된다 — 초대 링크로 들어온

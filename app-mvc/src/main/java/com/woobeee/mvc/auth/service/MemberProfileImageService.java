@@ -1,10 +1,6 @@
 package com.woobeee.mvc.auth.service;
 
 import com.woobeee.mvc._common.storage.StorageProperties;
-import com.woobeee.mvc.auth.api.request.MemberProfileImagePresignedUrlRequest;
-import com.woobeee.mvc.auth.api.request.MemberProfileImageRegisterRequest;
-import com.woobeee.mvc.auth.api.response.MemberProfileImageResponse;
-import com.woobeee.mvc.auth.api.response.MemberProfileImageUploadUrlResponse;
 import com.woobeee.mvc.auth.api.response.MemberProfileResponse;
 import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.auth.repository.MemberRepository;
@@ -13,26 +9,33 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.time.Duration;
+import java.io.IOException;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * 회원 프로필 이미지의 presigned PUT 업로드 / presigned GET 조회를 담당한다.
+ * 회원 프로필 이미지의 업로드 / 조회 / 삭제를 담당한다.
  *
- * <p>파일 바이트가 서버를 경유하지 않으므로 contentType 화이트리스트와 fileKey prefix 검증으로
- * 임의 오브젝트가 남의 프로필에 붙는 것을 막는다.
+ * <p>업로드와 조회 <b>둘 다 앱을 거친다</b>. 전에는 presigned PUT/GET 으로 브라우저가 MinIO 에
+ * 직접 붙었는데, presigned URL 의 호스트는 서버가 MinIO 에 붙는 {@code S3_ENDPOINT} 에서 나온다
+ * — 브라우저가 열 주소가 아니라서 프로덕션에서는 업로드도 표시도 되지 않았다. 앱을 거치면
+ * 버킷을 공개하지 않고도 열리고, 만료도 없다. 같은 이유로 글 본문 이미지도 앱이 스트리밍한다.
  *
- * <p>등록·삭제는 트랜잭션을 열지 않는다. {@code memberRepository.save} 가 단건 커밋한 뒤에
+ * <p>키의 memberId 는 요청이 아니라 토큰에서 온 회원으로 정한다 — 요청 값을 믿으면 남의
+ * 프로필에 오브젝트를 붙일 수 있다.
+ *
+ * <p>업로드·삭제는 트랜잭션을 열지 않는다. {@code memberRepository.save} 가 단건 커밋한 뒤에
  * 이전 오브젝트를 지워야, 삭제가 실패해도 프로필이 정상으로 남고 고아 오브젝트만 생긴다.
  */
 @Slf4j
@@ -40,6 +43,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class MemberProfileImageService {
     static final String PROFILE_PREFIX = "profiles/";
+
+    /** 업로드가 앱을 거치므로 상한이 없으면 큰 파일이 그대로 앱 힙을 받는다. */
+    static final long MAX_PROFILE_IMAGE_BYTES = 5L * 1024 * 1024;
 
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/png",
@@ -50,43 +56,32 @@ public class MemberProfileImageService {
 
     private final MemberRepository memberRepository;
     private final S3Client s3Client;
-    private final S3Presigner s3Presigner;
     private final StorageProperties storageProperties;
 
-    public MemberProfileImageUploadUrlResponse createPresignedUploadUrl(
-            String loginId,
-            MemberProfileImagePresignedUrlRequest request
-    ) {
+    /** 프로필 이미지를 올리거나 교체한다. 이전 오브젝트는 저장이 커밋된 뒤에 지운다. */
+    public MemberProfileResponse upload(String loginId, MultipartFile file) {
         Member member = requireMember(loginId);
-        String contentType = normalizeContentType(request.contentType());
+        String contentType = normalizeContentType(file == null ? null : file.getContentType());
+        requireAcceptableSize(file);
 
         // 키의 memberId 는 요청 본문이 아니라 토큰에서 온 회원으로 정한다.
-        String fileKey = keyPrefixOf(member.getId()) + UUID.randomUUID() + "/" + sanitizeFileName(request.fileName());
+        String fileKey = keyPrefixOf(member.getId())
+                + UUID.randomUUID() + "/" + sanitizeFileName(file.getOriginalFilename());
 
-        PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-                .bucket(storageProperties.getBucket())
-                .key(fileKey)
-                .contentType(contentType)
-                .build();
-
-        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofSeconds(storageProperties.getPresignedUrlExpirationSeconds()))
-                .putObjectRequest(putObjectRequest)
-                .build();
-
-        return new MemberProfileImageUploadUrlResponse(
-                s3Presigner.presignPutObject(presignRequest).url().toString(),
-                fileKey,
-                storageProperties.getPresignedUrlExpirationSeconds()
-        );
-    }
-
-    public MemberProfileImageResponse register(String loginId, MemberProfileImageRegisterRequest request) {
-        Member member = requireMember(loginId);
-        String fileKey = request.fileKey() == null ? null : request.fileKey().trim();
-
-        if (!StringUtils.hasText(fileKey) || !fileKey.startsWith(keyPrefixOf(member.getId()))) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "File key does not belong to the requester");
+        try {
+            s3Client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(storageProperties.getBucket())
+                            .key(fileKey)
+                            .contentType(contentType)
+                            .build(),
+                    RequestBody.fromInputStream(file.getInputStream(), file.getSize())
+            );
+        } catch (IOException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Failed to store the profile image"
+            );
         }
 
         String previousFileKey = member.getProfileImageKey();
@@ -97,7 +92,35 @@ public class MemberProfileImageService {
             deleteQuietly(previousFileKey);
         }
 
-        return new MemberProfileImageResponse(createPresignedDownloadUrl(fileKey));
+        return profileOf(member);
+    }
+
+    /**
+     * 프로필 이미지 바이트를 읽어 온다. 버킷은 비공개로 두고 앱이 자격증명으로 대신 읽는다.
+     *
+     * <p>컬럼이 비었거나 오브젝트가 없으면 404 다. 후자는 삭제가 반쯤 실패해 컬럼만 남은
+     * 상태에서 화면이 500 으로 무너지지 않게 하려는 것이다.
+     */
+    public ProfileImage loadMyProfileImage(String loginId) {
+        Member member = requireMember(loginId);
+        String fileKey = member.getProfileImageKey();
+
+        if (!StringUtils.hasText(fileKey)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image is not set");
+        }
+
+        try {
+            ResponseBytes<GetObjectResponse> object = s3Client.getObjectAsBytes(
+                    GetObjectRequest.builder()
+                            .bucket(storageProperties.getBucket())
+                            .key(fileKey)
+                            .build()
+            );
+
+            return new ProfileImage(object.asByteArray(), object.response().contentType());
+        } catch (NoSuchKeyException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image object is missing");
+        }
     }
 
     public void delete(String loginId) {
@@ -114,33 +137,21 @@ public class MemberProfileImageService {
     }
 
     public MemberProfileResponse getMyProfile(String loginId) {
-        Member member = requireMember(loginId);
+        return profileOf(requireMember(loginId));
+    }
 
+    /** 스트리밍할 오브젝트 한 개. contentType 은 업로드 때 저장된 값이다. */
+    public record ProfileImage(byte[] bytes, String contentType) {
+    }
+
+    private MemberProfileResponse profileOf(Member member) {
         return new MemberProfileResponse(
                 member.getId(),
                 member.getEmail(),
                 member.getNickname(),
                 member.getGameMoney(),
-                createPresignedDownloadUrl(member.getProfileImageKey())
+                StringUtils.hasText(member.getProfileImageKey())
         );
-    }
-
-    private String createPresignedDownloadUrl(String fileKey) {
-        if (!StringUtils.hasText(fileKey)) {
-            return null;
-        }
-
-        GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                .bucket(storageProperties.getBucket())
-                .key(fileKey)
-                .build();
-
-        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofSeconds(storageProperties.getPresignedUrlExpirationSeconds()))
-                .getObjectRequest(getObjectRequest)
-                .build();
-
-        return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
 
     private Member requireMember(String loginId) {
@@ -162,6 +173,16 @@ public class MemberProfileImageService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported profile image content type");
         }
         return normalized;
+    }
+
+    /** 빈 파일도 거절한다 — 0바이트 오브젝트를 프로필로 붙이면 조회가 깨진 이미지가 된다. */
+    private void requireAcceptableSize(MultipartFile file) {
+        if (file == null || file.isEmpty() || file.getSize() <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Profile image file is empty");
+        }
+        if (file.getSize() > MAX_PROFILE_IMAGE_BYTES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Profile image must be 5MB or smaller");
+        }
     }
 
     private void deleteQuietly(String fileKey) {

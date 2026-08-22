@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import Image from "next/image"
-import { Loader2, UserRound } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import ProfileImageEditor from "@/components/auth/profile-image-editor"
 import ReplayViewer from "@/components/game/replay-viewer"
 import { authAPI, gameAPI } from "@/lib/api"
 import { buildAuthHref } from "@/lib/auth-redirect"
@@ -132,29 +132,7 @@ export default function MyPage() {
                 ) : null}
 
                 {profile ? (
-                    <div className="flex items-center gap-4 rounded-lg border p-5">
-                        <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted">
-                            {profile.profileImageUrl ? (
-                                <Image
-                                    src={profile.profileImageUrl}
-                                    alt=""
-                                    fill
-                                    unoptimized
-                                    sizes="64px"
-                                    className="object-cover"
-                                />
-                            ) : (
-                                <UserRound aria-hidden className="h-7 w-7 text-muted-foreground" />
-                            )}
-                        </div>
-                        <div className="min-w-0">
-                            <p className="truncate text-lg font-medium">{profile.nickname}</p>
-                            <p className="truncate text-sm text-muted-foreground">{profile.email}</p>
-                            <p className="mt-1 text-sm">
-                                게임 머니 {profile.gameMoney.toLocaleString()}
-                            </p>
-                        </div>
-                    </div>
+                    <ProfileImageEditor profile={profile} onProfileChange={setProfile} />
                 ) : null}
             </section>
 
