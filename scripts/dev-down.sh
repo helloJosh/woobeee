@@ -31,6 +31,10 @@ if [ -n "$leftover" ]; then
     sleep 1
 fi
 
+# PID 파일은 여기서 치운다. 남겨 두면 다음에 볼 때 이미 죽은 프로세스를 가리켜, 없는 것보다
+# 나쁘다(살아 있다고 착각하게 된다).
+rm -f app-mvc.pid app-webflux.pid
+
 for p in 3000 8000 8001; do
     if lsof -ti:$p >/dev/null 2>&1; then
         printf '  \033[31m✗\033[0m :%s 아직 사용중\n' "$p"

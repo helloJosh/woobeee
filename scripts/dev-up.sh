@@ -2,9 +2,22 @@
 #
 # 로컬 개발 서버 셋을 백그라운드로 띄운다.
 #
-#   app-mvc     :8000  → app-mvc.log
-#   app-webflux :8001  → app-webflux.log
-#   front       :3000  → front/dev.log
+#   app-mvc     :8000  → logs/app-mvc.log   (PID: app-mvc.pid)
+#   app-webflux :8001  → logs/app-webflux.log (PID: app-webflux.pid)
+#   front       :3000  → front/front.log
+#
+# 두 백엔드의 stdout 은 버린다. logback 이 이미 logs/ 에 같은 내용을 쓰고 날짜별로 돌리기
+# 때문에(application.yaml 의 logging.file.name), 리다이렉트를 두면 루트에 중복 사본이 하나 더
+# 쌓인다. stderr 만 logs/*.stderr.log 로 받는다 — logback 은 stdout 을 쓰므로 여기엔 JVM 이
+# 죽는 수준의 사고(잘못된 jar, 클래스 버전 불일치)만 남고, 그건 logs/ 에 안 찍힌다.
+#
+# 프론트는 기본이 **프로덕션 빌드**다(`next build` → `next start`). 이 호스트가 공개 도메인
+# (www.woobeee.com)을 서빙하기 때문이다 — 개발 서버를 그대로 내보내면 번들이 최소화되지 않고,
+# HMR 웹소켓이 인터넷에 열리고, React Strict Mode 가 이펙트를 두 번 실행해 같은 API 를 두 번
+# 호출한다. 핫리로드로 개발할 때만 `--dev` 를 붙인다.
+#
+#   scripts/dev-up.sh          # 프로덕션 프론트 (기본)
+#   scripts/dev-up.sh --dev    # 개발 서버 프론트 (핫리로드)
 #
 # nohup 으로 띄우므로 터미널을 닫아도 살아 있다. 내릴 때는 scripts/dev-down.sh.
 #
@@ -16,6 +29,15 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+FRONT_MODE=prod
+for arg in "$@"; do
+    case "$arg" in
+        --dev)  FRONT_MODE=dev ;;
+        --prod) FRONT_MODE=prod ;;
+        *) printf '알 수 없는 인자: %s (쓸 수 있는 것: --dev, --prod)\n' "$arg" >&2; exit 2 ;;
+    esac
+done
 
 MVC_JAR="app-mvc/target/app-mvc.jar"
 WEBFLUX_JAR="app-webflux/target/app-webflux.jar"
@@ -33,12 +55,34 @@ info() { printf '\033[36m%s\033[0m\n' "$*"; }
 
 [ -d front/node_modules ] || fail "없음: front/node_modules — cd front && npm install"
 
+# jar 가 소스보다 오래됐으면 경고한다. 이 스크립트는 **빌드하지 않고** 있는 jar 를 실행하므로,
+# 재시작만 반복하면 옛 코드가 계속 뜬다 — 실제로 한 번 겪었다(고친 줄 알았던 이미지 경로가
+# 3주 전 jar 로 돌고 있었다). 자동으로 빌드하지는 않는다: 몇 분 걸리고 실패할 수도 있어서
+# 사용자가 정할 일이다.
+newest_src="$(find core/src app-mvc/src app-webflux/src -type f \( -name '*.java' -o -name '*.yaml' -o -name '*.sql' \) -newer "$MVC_JAR" -print -quit 2>/dev/null)"
+if [ -n "$newest_src" ]; then
+    printf '\033[33m⚠ jar 이 소스보다 오래됐다\033[0m — 예: %s\n' "$newest_src" >&2
+    printf '  이대로 띄우면 옛 코드가 뜬다. 반영하려면:\n' >&2
+    printf '    ./mvnw -pl app-mvc,app-webflux -am package -DskipTests\n\n' >&2
+fi
+
 # 인프라는 포트로 확인한다. 컨테이너 이름은 compose 프로젝트마다 다를 수 있다.
 for probe in "postgres:9432" "redis:9379" "minio:9000"; do
     name="${probe%%:*}"; port="${probe##*:}"
     nc -z localhost "$port" 2>/dev/null || fail "$name (:$port) 에 연결되지 않는다.
   docker compose -f .docker-compose/docker-compose.yml up -d"
 done
+
+# ── 프론트 프로덕션 빌드 (기동 전에) ────────────────────────────────────────
+# 포트를 죽이기 **전에** 빌드한다. 뒤에서 하면 빌드하는 40초 동안 공개 사이트가 내려간다.
+# next start 는 .next 를 실행할 뿐 다시 빌드하지 않으므로, 매번 빌드해서 서빙되는 것이
+# 항상 지금 소스와 일치하게 한다(낡은 jar 로 한 번 겪은 함정을 프론트에서 반복하지 않는다).
+if [ "$FRONT_MODE" = prod ]; then
+    info "front       → 프로덕션 빌드 중… (front/front.log)"
+    ( cd front && npm run build > front.log 2>&1 ) \
+        || fail "프론트 빌드 실패 — 기존 서버는 그대로 살려 둔다. 마지막 줄:
+$(tail -15 front/front.log 2>/dev/null | sed 's/^/      /')"
+fi
 
 # ── 기존 프로세스 정리 ───────────────────────────────────────────────────────
 # 포트를 쥔 프로세스를 먼저 치운다. 이게 없으면 두 번째 실행부터 백엔드가
@@ -57,14 +101,23 @@ if [ -n "$existing" ]; then
 fi
 
 # ── 기동 ─────────────────────────────────────────────────────────────────────
-info "app-mvc     → :8000  (app-mvc.log)"
-nohup java -jar "$MVC_JAR" > app-mvc.log 2>&1 &
+mkdir -p logs
 
-info "app-webflux → :8001  (app-webflux.log)"
-nohup java -jar "$WEBFLUX_JAR" > app-webflux.log 2>&1 &
+info "app-mvc     → :8000  (logs/app-mvc.log)"
+nohup java -jar "$MVC_JAR" > /dev/null 2> logs/app-mvc.stderr.log &
+echo $! > app-mvc.pid
 
-info "front       → :3000  (front/dev.log)"
-( cd front && nohup npm run dev > dev.log 2>&1 & )
+info "app-webflux → :8001  (logs/app-webflux.log)"
+nohup java -jar "$WEBFLUX_JAR" > /dev/null 2> logs/app-webflux.stderr.log &
+echo $! > app-webflux.pid
+
+if [ "$FRONT_MODE" = prod ]; then
+    info "front       → :3000  (front/front.log)"
+    ( cd front && nohup npm start >> front.log 2>&1 & )
+else
+    info "front       → :3000  개발 서버 (front/front.log)"
+    ( cd front && nohup npm run dev > front.log 2>&1 & )
+fi
 
 # ── 확인 ─────────────────────────────────────────────────────────────────────
 # 고정 sleep 대신 포트가 열릴 때까지 기다린다. 셋 다 뜨면 즉시 통과한다.
@@ -81,13 +134,23 @@ done
 
 echo
 failed=0
-for entry in "app-mvc:8000:app-mvc.log" "app-webflux:8001:app-webflux.log" "front:3000:front/dev.log"; do
+for entry in "app-mvc:8000:logs/app-mvc.log" "app-webflux:8001:logs/app-webflux.log" "front:3000:front/front.log"; do
     name="${entry%%:*}"; rest="${entry#*:}"; port="${rest%%:*}"; log="${rest##*:}"
     if lsof -ti:"$port" >/dev/null 2>&1; then
         printf '  \033[32m✓\033[0m %-12s :%s\n' "$name" "$port"
     else
-        printf '  \033[31m✗\033[0m %-12s :%s  — %s 마지막 줄:\n' "$name" "$port" "$log"
-        tail -5 "$log" 2>/dev/null | sed 's/^/      /'
+        printf '  \033[31m✗\033[0m %-12s :%s\n' "$name" "$port"
+        # stderr 를 먼저 본다. logback 이 붙기 전에 죽었다면 logs/*.log 는 비어 있고 원인은
+        # 여기에만 있다.
+        stderr_log="logs/$(basename "$log" .log).stderr.log"
+        if [ -s "$stderr_log" ]; then
+            printf '      %s 마지막 줄:\n' "$stderr_log"
+            tail -8 "$stderr_log" | sed 's/^/        /'
+        fi
+        if [ -s "$log" ]; then
+            printf '      %s 마지막 줄:\n' "$log"
+            tail -8 "$log" | sed 's/^/        /'
+        fi
         failed=1
     fi
 done
@@ -95,7 +158,8 @@ done
 echo
 if [ $failed -eq 0 ]; then
     echo "  http://localhost:3000"
-    echo "  로그: tail -f app-mvc.log app-webflux.log front/dev.log"
+    echo "  로그: tail -f logs/app-mvc.log logs/app-webflux.log front/front.log"
+    [ "$FRONT_MODE" = prod ] && echo "  프론트: 프로덕션 빌드 (핫리로드가 필요하면 --dev)"
     echo "  종료: scripts/dev-down.sh"
 else
     fail "일부가 뜨지 않았다. 위 로그를 확인한다."
