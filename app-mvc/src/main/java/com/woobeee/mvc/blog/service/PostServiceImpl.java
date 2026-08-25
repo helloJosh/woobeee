@@ -25,19 +25,15 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
-import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -262,57 +258,36 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 본문에 박히는 이미지 주소. 이 앱의 스트리밍 엔드포인트를 가리키는 <b>상대 경로</b>다.
+     * 본문에 박히는 이미지 주소. <b>presigned URL</b> 이다 -- 브라우저가 MinIO 에 직접 붙는다.
      *
-     * <p>절대 URL 을 쓰지 않는 것이 요점이다. 전에는 {@code https://woobeee.com} 이 박혀
-     * 있었고(그 apex 는 오리진이 없어 루트까지 522 다), 그 다음에는 도메인을 설정으로 뺐지만
-     * 그 방식은 버킷 익명 읽기까지 열어야 동작했다. 상대 경로는 프론트가 이미 프록시하는
-     * {@code /api/back/*} 를 타므로 도메인 설정도, 버킷 공개도, 프록시 규칙 추가도 필요 없고
-     * 로컬과 프로덕션이 같은 값으로 동작한다.
+     * <p>host 는 서버용 {@code endpoint} 가 아니라 {@code public-endpoint}(프로덕션:
+     * {@code https://image.woobeee.com}) 에서 나온다. 서명이 host 를 포함하므로 만든 뒤에
+     * 문자열로 갈아끼울 수 없고, presigner 를 만들 때 정해진다({@code StorageConfig}).
      *
-     * <p>파일명은 퍼센트 인코딩한다 -- 업로드가 원본 basename 을 키로 쓰므로 한글이나 공백이
-     * 들어올 수 있다. {@link URLEncoder} 는 공백을 {@code +} 로 만드는데 경로에서는 리터럴
-     * {@code +} 로 읽히므로 {@code %20} 으로 바꾼다.
+     * <p>서명이 접근을 허가하므로 <b>버킷은 비공개로 남는다</b>. 같은 버킷의 {@code profiles/}
+     * 도 공개되지 않는다.
+     *
+     * <p>파일명 인코딩은 SDK 가 키를 서명할 때 처리하므로 여기서 손대지 않는다 -- 직접 인코딩해
+     * 넘기면 이중 인코딩이 되어 서명이 실제 키와 어긋난다.
      */
     private String publicUrl(Long postId, String fileName) {
-        String encoded = URLEncoder.encode(fileName, StandardCharsets.UTF_8).replace("+", "%20");
-        return String.format("/api/back/posts/%d/images/%s", postId, encoded);
+        return generatePresignedUrl(postId, fileName);
     }
 
-    /**
-     * 버킷은 비공개로 두고 앱이 자격증명으로 오브젝트를 대신 읽는다.
-     *
-     * <p>파일명은 basename 만 남긴다. 그대로 이어 붙이면 {@code 13/../profiles/1/x.png} 로
-     * 같은 버킷의 비공개 오브젝트를 인증 없이 읽을 수 있다.
-     */
-    @Override
-    @Transactional(readOnly = true)
-    public PostImage loadPostImage(Long postId, String fileName) {
-        String safeName = Paths.get(fileName).getFileName().toString().trim();
-        String key = postId + "/" + safeName;
-
-        try {
-            ResponseBytes<GetObjectResponse> object = s3Client.getObjectAsBytes(
-                    GetObjectRequest.builder()
-                            .bucket(storageProperties.getBucket())
-                            .key(key)
-                            .build()
-            );
-
-            return new PostImage(object.asByteArray(), object.response().contentType());
-        } catch (NoSuchKeyException exception) {
-            throw new CustomNotFoundException(ErrorCode.post_imageNotFound);
-        }
-    }
 
     private String generatePresignedUrl(Long postId, String fileName) {
+        // basename 만 남긴다. 본문의 ${..} 가 경로 성분을 담고 있으면 같은 버킷의 다른
+        // prefix(profiles/ 등)를 여는 유효한 서명이 만들어진다 -- 버킷이 비공개여도 서명이
+        // 접근을 허가하므로 막히지 않는다.
+        String safeName = Paths.get(fileName).getFileName().toString().trim();
+
         GetObjectRequest getReq = GetObjectRequest.builder()
                 .bucket(storageProperties.getBucket())
-                .key(postId + "/" + fileName)
+                .key(postId + "/" + safeName)
                 .build();
 
         GetObjectPresignRequest preReq = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofDays(7))
+                .signatureDuration(Duration.ofSeconds(storageProperties.getPresignedUrlExpirationSeconds()))
                 .getObjectRequest(getReq)
                 .build();
 

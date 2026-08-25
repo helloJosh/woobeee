@@ -60,7 +60,7 @@ export default function ProfileImageEditor({
         setError(null)
         try {
             await authAPI.deleteProfileImage()
-            onProfileChange({ ...profile, hasProfileImage: false })
+            onProfileChange({ ...profile, profileImageUrl: null })
             await refreshProfileImage()
         } catch (cause) {
             setError(describeProfileImageError(cause))
@@ -115,7 +115,7 @@ export default function ProfileImageEditor({
                     <p className="mt-1 text-sm">게임 머니 {profile.gameMoney.toLocaleString()}</p>
                 </div>
 
-                {profile.hasProfileImage ? (
+                {profile.profileImageUrl ? (
                     <Button variant="ghost" size="sm" disabled={busy} onClick={remove} className="shrink-0">
                         <Trash2 className="mr-1.5 h-4 w-4" />
                         삭제

@@ -164,7 +164,7 @@ class MemberProfileImageServiceTest {
 
         assertThat(member.getProfileImageKey()).endsWith("/new.png");
         assertThat(member.getProfileImageKey()).isNotEqualTo("profiles/42/old-uuid/old.png");
-        assertThat(response.hasProfileImage()).isTrue();
+        assertThat(response.profileImageUrl()).isEqualTo("/api/auth/members/42/profile-image");
 
         ArgumentCaptor<DeleteObjectRequest> deleteCaptor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
         verify(s3Client).deleteObject(deleteCaptor.capture());
@@ -187,7 +187,7 @@ class MemberProfileImageServiceTest {
         MemberProfileResponse response = memberProfileImageService.upload(LOGIN_ID, png("new.png", 10));
 
         assertThat(member.getProfileImageKey()).endsWith("/new.png");
-        assertThat(response.hasProfileImage()).isTrue();
+        assertThat(response.profileImageUrl()).isEqualTo("/api/auth/members/42/profile-image");
     }
 
     /**
@@ -198,8 +198,8 @@ class MemberProfileImageServiceTest {
      * 이미지가 깨져 있던 원인이다.
      */
     @Test
-    void loadMyProfileImageReturnsTheObjectBytesAndItsContentType() {
-        when(memberRepository.findByEmail(LOGIN_ID))
+    void loadProfileImageReturnsTheObjectBytesAndItsContentType() {
+        when(memberRepository.findById(42L))
                 .thenReturn(Optional.of(member(42L, "profiles/42/uuid/avatar.png")));
         when(s3Client.getObjectAsBytes(GetObjectRequest.builder()
                 .bucket("woobeee")
@@ -210,7 +210,7 @@ class MemberProfileImageServiceTest {
                         new byte[]{1, 2, 3}
                 ));
 
-        MemberProfileImageService.ProfileImage image = memberProfileImageService.loadMyProfileImage(LOGIN_ID);
+        MemberProfileImageService.ProfileImage image = memberProfileImageService.loadProfileImage(42L);
 
         assertThat(image.bytes()).containsExactly(1, 2, 3);
         assertThat(image.contentType()).isEqualTo("image/png");
@@ -218,10 +218,10 @@ class MemberProfileImageServiceTest {
 
     /** AUTH-AC-19 — 프로필 이미지를 설정하지 않았으면 404 다. */
     @Test
-    void loadMyProfileImageIsNotFoundWhenTheMemberHasNoImage() {
-        when(memberRepository.findByEmail(LOGIN_ID)).thenReturn(Optional.of(member(42L, null)));
+    void loadProfileImageIsNotFoundWhenTheMemberHasNoImage() {
+        when(memberRepository.findById(42L)).thenReturn(Optional.of(member(42L, null)));
 
-        assertThatThrownBy(() -> memberProfileImageService.loadMyProfileImage(LOGIN_ID))
+        assertThatThrownBy(() -> memberProfileImageService.loadProfileImage(42L))
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(exception -> ((ResponseStatusException) exception).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
@@ -235,12 +235,12 @@ class MemberProfileImageServiceTest {
      */
     @Test
     void aMissingObjectBecomesNotFoundRatherThanAServerError() {
-        when(memberRepository.findByEmail(LOGIN_ID))
+        when(memberRepository.findById(42L))
                 .thenReturn(Optional.of(member(42L, "profiles/42/uuid/gone.png")));
         when(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
                 .thenThrow(NoSuchKeyException.builder().message("nope").build());
 
-        assertThatThrownBy(() -> memberProfileImageService.loadMyProfileImage(LOGIN_ID))
+        assertThatThrownBy(() -> memberProfileImageService.loadProfileImage(42L))
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(exception -> ((ResponseStatusException) exception).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
@@ -289,7 +289,7 @@ class MemberProfileImageServiceTest {
         assertThat(response.email()).isEqualTo(LOGIN_ID);
         assertThat(response.nickname()).isEqualTo("nick");
         assertThat(response.gameMoney()).isZero();
-        assertThat(response.hasProfileImage()).isTrue();
+        assertThat(response.profileImageUrl()).isEqualTo("/api/auth/members/42/profile-image");
         verifyNoInteractions(s3Client);
     }
 
@@ -300,7 +300,7 @@ class MemberProfileImageServiceTest {
 
         MemberProfileResponse response = memberProfileImageService.getMyProfile(LOGIN_ID);
 
-        assertThat(response.hasProfileImage()).isFalse();
+        assertThat(response.profileImageUrl()).isNull();
         verifyNoInteractions(s3Client);
     }
 

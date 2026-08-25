@@ -493,28 +493,6 @@ export const authAPI = {
         return json.data
     },
 
-    /**
-     * 프로필 이미지 바이트를 받는다. 호출부가 `URL.createObjectURL` 로 blob URL 을 만들고,
-     * 다 쓰면 `revokeObjectURL` 로 반드시 정리해야 한다.
-     *
-     * 미설정이면 404 인데 그것은 오류가 아니라 "아직 없음"이므로 null 을 준다.
-     * suppressUnauthorizedHandler: 화면 뒤에서 도는 호출이다 — 이 하나가 401 을 만났다고
-     * 전역 세션 만료 처리(토큰 삭제 + alert + 새로고침)를 돌리면 안 된다.
-     */
-    fetchProfileImageBlob: async (): Promise<Blob | null> => {
-        try {
-            const response = await apiRequest(
-                "/api/auth/me/profile-image",
-                {},
-                true,
-                { suppressAlert: true, suppressUnauthorizedHandler: true },
-            )
-            return await response.blob()
-        } catch {
-            return null
-        }
-    },
-
     deleteProfileImage: async (): Promise<void> => {
         await apiRequest(
             "/api/auth/me/profile-image",

@@ -3,7 +3,6 @@ package com.woobeee.mvc.blog.service;
 import com.woobeee.mvc.blog.api.request.PostPostRequest;
 import com.woobeee.mvc.blog.entity.Posts;
 import com.woobeee.mvc.blog.exception.CustomAuthenticationException;
-import com.woobeee.mvc.blog.exception.CustomNotFoundException;
 import com.woobeee.mvc.blog.repository.CategoryRepository;
 import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
@@ -24,18 +23,18 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
-import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+import java.net.URI;
+import java.net.MalformedURLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
 class PostServiceImplTest {
@@ -138,6 +137,20 @@ class PostServiceImplTest {
         assertThat(post.getTitleKo()).isEqualTo("new-ko");
     }
 
+    /** 서명된 URL 한 개를 돌려주도록 presigner 를 스텁한다. 반환값은 그대로 본문에 박혀야 한다. */
+    private static final String SIGNED =
+            "https://image.woobeee.com/woobeee/13/a.png?X-Amz-Signature=deadbeef&X-Amz-Expires=3600";
+
+    private ArgumentCaptor<GetObjectPresignRequest> stubPresigner(String signedUrl)
+            throws MalformedURLException {
+        PresignedGetObjectRequest presigned = mock(PresignedGetObjectRequest.class);
+        when(presigned.url()).thenReturn(URI.create(signedUrl).toURL());
+        ArgumentCaptor<GetObjectPresignRequest> captor =
+                ArgumentCaptor.forClass(GetObjectPresignRequest.class);
+        when(s3Presigner.presignGetObject(captor.capture())).thenReturn(presigned);
+        return captor;
+    }
+
     private Posts postWithOneImage(String placeholderFileName) {
         Posts post = new Posts("ko", "en", "본문 ![a](${" + placeholderFileName + "}) 끝", "body", 1L, 3L);
         ReflectionTestUtils.setField(post, "id", 13L);
@@ -154,44 +167,78 @@ class PostServiceImplTest {
     }
 
     /**
-     * BLOG-AC-13 — 본문 이미지 URL 은 app-mvc 의 스트리밍 엔드포인트를 가리키는 <b>상대 경로</b>다.
+     * BLOG-AC-13 — 본문 이미지 URL 은 <b>presigned URL</b> 이고, host 는 공개 endpoint 에서 온다.
      *
-     * <p>전에는 {@code https://woobeee.com} 이 코드에 박혀 있었다. 그 apex 는 오리진이 없어
-     * 루트까지 522 를 내므로 이미지가 전부 깨졌다. 도메인을 설정으로 빼는 것으로도 부족했는데,
-     * 그 방식은 버킷 익명 읽기(인프라 작업)까지 있어야 열렸기 때문이다. 상대 경로는 프론트가
-     * 이미 프록시하는 {@code /api/back/*} 를 타므로 도메인도, 버킷 공개도 필요하지 않다.
+     * <p>이 자리는 두 번 갈아탔다. 처음엔 {@code https://woobeee.com} 이 코드에 박혀 있었고(그
+     * apex 는 오리진이 없어 522), 다음엔 앱 스트리밍 상대경로였다. 지금은 브라우저가
+     * {@code image.woobeee.com} 으로 MinIO 에 직접 붙는다.
      *
-     * <p>절대 URL 이 돌아오면 이 테스트가 잡는다 — 호스트가 박히는 순간 로컬/프로덕션 중
-     * 한쪽이 깨진다.
+     * <p>여기서 고정하는 것은 <b>presigner 가 준 URL 을 손대지 않고 그대로 박는다</b>는 것이다.
+     * 서명은 host 와 키를 포함하므로 문자열을 건드리면 서명이 깨진다.
      */
     @Test
-    void postImageUrlsPointAtTheAppStreamingEndpoint() {
+    void postImageUrlsAreThePresignedUrlVerbatim() throws Exception {
+        stubPresigner(SIGNED);
+
         GetPostResponse response = getPostWithOneImage("a.png");
 
-        assertThat(response.content()).contains("](/api/back/posts/13/images/a.png)");
-        assertThat(response.content()).doesNotContain("http://");
-        assertThat(response.content()).doesNotContain("https://");
+        assertThat(response.content()).contains("](" + SIGNED + ")");
+        assertThat(response.content()).doesNotContain("${");
+    }
+
+    /** BLOG-AC-13 — 서명 대상은 {@code {postId}/{basename}} 키다. */
+    @Test
+    void thePresignedRequestCarriesTheBucketAndKey() throws Exception {
+        ArgumentCaptor<GetObjectPresignRequest> captor = stubPresigner(SIGNED);
+        when(storageProperties.getBucket()).thenReturn("woobeee");
+        when(storageProperties.getPresignedUrlExpirationSeconds()).thenReturn(3600L);
+
+        getPostWithOneImage("a.png");
+
+        GetObjectPresignRequest request = captor.getValue();
+        assertThat(request.getObjectRequest().bucket()).isEqualTo("woobeee");
+        assertThat(request.getObjectRequest().key()).isEqualTo("13/a.png");
+        assertThat(request.signatureDuration()).isEqualTo(java.time.Duration.ofSeconds(3600));
     }
 
     /**
-     * BLOG-AC-13 — 한글·공백 파일명은 퍼센트 인코딩된다. 블로그 업로드는 프로필 이미지와 달리
-     * 파일명을 ASCII 로 강제하지 않으므로(원본 basename 을 그대로 키로 쓴다) 인코딩이 필요하다.
-     * 공백이 {@code +} 로 나가면 경로에서는 리터럴 {@code +} 로 읽혀 키가 어긋난다.
+     * BLOG-AC-13 — 경로 성분이 섞인 플레이스홀더는 basename 만 서명한다.
+     *
+     * <p>{@code ${../profiles/1/x.png}} 를 그대로 서명하면 같은 버킷의 비공개 오브젝트를 여는
+     * 유효한 URL 이 만들어진다. 서명이 접근을 허가하므로 버킷이 비공개여도 막지 못한다.
      */
     @Test
-    void nonAsciiImageFileNamesArePercentEncoded() {
-        GetPostResponse response = getPostWithOneImage("한글 그림.png");
+    void pathComponentsInAPlaceholderAreStrippedBeforeSigning() throws Exception {
+        ArgumentCaptor<GetObjectPresignRequest> captor = stubPresigner(SIGNED);
 
-        assertThat(response.content()).contains("](/api/back/posts/13/images/%ED%95%9C%EA%B8%80%20%EA%B7%B8%EB%A6%BC.png)");
-        assertThat(response.content()).doesNotContain("+");
+        getPostWithOneImage("../profiles/1/secret.png");
+
+        assertThat(captor.getValue().getObjectRequest().key()).isEqualTo("13/secret.png");
     }
+
+    /**
+     * BLOG-AC-13 — 파일명을 직접 퍼센트 인코딩하지 않는다. SDK 가 서명할 때 인코딩하므로,
+     * 미리 인코딩해 넘기면 이중 인코딩이 되어 서명이 실제 키와 어긋난다.
+     */
+    @Test
+    void nonAsciiFileNamesAreSignedRawNotPreEncoded() throws Exception {
+        ArgumentCaptor<GetObjectPresignRequest> captor = stubPresigner(SIGNED);
+
+        getPostWithOneImage("한글 그림.png");
+
+        assertThat(captor.getValue().getObjectRequest().key()).isEqualTo("13/한글 그림.png");
+    }
+
 
     /**
      * BLOG-AC-14 — 치환은 조회 시점에만 일어나고 저장 원문은 {@code ${파일명}} 을 유지한다.
-     * 원문에 URL 을 구워 버리면 서빙 방식이 바뀔 때 기존 글이 전부 깨진다.
+     * 원문에 URL 을 구워 버리면 서빙 방식이 바뀔 때 기존 글이 전부 깨진다 — 이 자리가 두 번
+     * 바뀌었는데도 기존 글이 멀쩡했던 이유가 이것이다. presigned URL 은 만료까지 있으므로
+     * 원문에 굽는 것은 특히 안 된다.
      */
     @Test
-    void theStoredMarkdownKeepsItsPlaceholders() {
+    void theStoredMarkdownKeepsItsPlaceholders() throws Exception {
+        stubPresigner(SIGNED);
         Posts post = postWithOneImage("a.png");
 
         when(postRepository.findById(13L)).thenReturn(Optional.of(post));
@@ -199,7 +246,7 @@ class PostServiceImplTest {
 
         GetPostResponse response = postService.getPost(13L, "ko", null, mock(HttpServletRequest.class));
 
-        assertThat(response.content()).contains("](/api/back/posts/13/images/a.png)");
+        assertThat(response.content()).contains("](" + SIGNED + ")");
         assertThat(post.getTextKo()).isEqualTo("본문 ![a](${a.png}) 끝");
     }
 
@@ -210,7 +257,8 @@ class PostServiceImplTest {
      * 내려갔다. 목록 카드가 본문을 미리보기로 그리면 그 자리에 깨진 이미지가 뜬다.
      */
     @Test
-    void theListResponseResolvesImagePlaceholdersToo() {
+    void theListResponseResolvesImagePlaceholdersToo() throws Exception {
+        stubPresigner(SIGNED);
         Posts post = postWithOneImage("a.png");
 
         when(postRepository.searchPosts(null, null, "ko", Pageable.unpaged()))
@@ -221,56 +269,10 @@ class PostServiceImplTest {
 
         assertThat(response.contents()).hasSize(1);
         assertThat(response.contents().getFirst().content())
-                .contains("](/api/back/posts/13/images/a.png)")
+                .contains("](" + SIGNED + ")")
                 .doesNotContain("${");
     }
 
-    /** BLOG-AC-16 — 스트리밍 엔드포인트는 오브젝트 바이트와 저장된 contentType 을 함께 준다. */
-    @Test
-    void loadPostImageReturnsTheObjectBytesAndItsContentType() {
-        when(storageProperties.getBucket()).thenReturn("woobeee");
-        when(s3Client.getObjectAsBytes(GetObjectRequest.builder()
-                .bucket("woobeee")
-                .key("13/a.png")
-                .build()))
-                .thenReturn(ResponseBytes.fromByteArray(
-                        GetObjectResponse.builder().contentType("image/png").build(),
-                        new byte[]{1, 2, 3}
-                ));
 
-        PostService.PostImage image = postService.loadPostImage(13L, "a.png");
 
-        assertThat(image.bytes()).containsExactly(1, 2, 3);
-        assertThat(image.contentType()).isEqualTo("image/png");
-    }
-
-    /**
-     * BLOG-AC-16 — 파일명에 경로가 섞여 오면 basename 만 남긴다. 그대로 키에 이어 붙이면
-     * {@code 13/../profiles/1/x.png} 로 같은 버킷의 비공개 오브젝트를 인증 없이 읽을 수 있다.
-     */
-    @Test
-    void loadPostImageStripsPathsFromTheFileName() {
-        when(storageProperties.getBucket()).thenReturn("woobeee");
-        when(s3Client.getObjectAsBytes(GetObjectRequest.builder()
-                .bucket("woobeee")
-                .key("13/x.png")
-                .build()))
-                .thenReturn(ResponseBytes.fromByteArray(
-                        GetObjectResponse.builder().contentType("image/png").build(),
-                        new byte[]{9}
-                ));
-
-        assertThat(postService.loadPostImage(13L, "../profiles/1/x.png").bytes()).containsExactly(9);
-    }
-
-    /** BLOG-AC-16 — 없는 오브젝트는 500 이 아니라 404 다. */
-    @Test
-    void aMissingImageObjectBecomesNotFound() {
-        when(storageProperties.getBucket()).thenReturn("woobeee");
-        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
-                .thenThrow(NoSuchKeyException.builder().message("nope").build());
-
-        assertThatThrownBy(() -> postService.loadPostImage(13L, "missing.png"))
-                .isInstanceOf(CustomNotFoundException.class);
-    }
 }

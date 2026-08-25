@@ -251,7 +251,8 @@ export interface MemberProfile {
    * Authorization 헤더를 못 보내므로 프론트가 fetch 로 받아 blob URL 을 만든다. 전에 여기
    * 있던 presigned URL 은 호스트가 서버용 S3_ENDPOINT 에서 나와 브라우저가 열 수 없었다.
    */
-  hasProfileImage: boolean
+  /** 프로필 이미지 주소. 미설정이면 null. 공개 경로라 <img src> 로 바로 쓴다. */
+  profileImageUrl: string | null
 }
 
 export type CartStatus = "ACTIVE" | "EXPIRED" | "DELETED"

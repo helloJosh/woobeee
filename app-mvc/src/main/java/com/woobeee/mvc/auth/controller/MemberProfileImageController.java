@@ -12,6 +12,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.context.request.WebRequest;
+import java.time.Duration;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -49,24 +52,38 @@ public class MemberProfileImageController {
     }
 
     /**
-     * 프로필 이미지 스트리밍. 버킷을 공개하지 않고 앱이 자격증명으로 대신 읽어 준다.
+     * 프로필 이미지 스트리밍. <b>인증하지 않는다 -- 누구나 볼 수 있다.</b>
      *
-     * <p>{@code ApiResponse} 봉투를 태우지 않는다 — 바이트와 contentType 이 그대로 나가야 한다.
-     * 본인 전용 리소스이므로 캐시는 {@code no-store} 다. 프론트가 blob URL 로 들고 있으므로
-     * 재요청 시점은 프론트가 정한다(업로드·삭제 직후).
+     * <p>{@code /me} 가 아니라 회원 id 로 받는 이유가 이 변경의 요점이다. 전에는 인증이 필요한
+     * {@code GET /me/profile-image} 뿐이어서 <b>남의 아바타를 그릴 방법이 없었다</b> --
+     * {@code <img>} 는 Authorization 헤더를 못 보내므로 프론트가 fetch 로 받아 blob URL 을
+     * 만들어야 했고, 그건 본인 것에만 가능했다. 댓글 작성자 아바타를 붙이려면 공개여야 한다.
+     *
+     * <p>{@code ApiResponse} 봉투를 태우지 않는다 -- {@code <img>} 가 여는 주소이므로 바이트와
+     * contentType 이 그대로 나가야 한다.
+     *
+     * <p>ETag 는 오브젝트 키에서 파생한다. 이미지를 교체하면 키의 UUID 가 바뀌므로 값도 바뀌고,
+     * 브라우저는 {@code If-None-Match} 로 재검증해 안 바뀌었으면 304 를 받는다. URL 자체는
+     * 고정이므로(presigned URL 과 달리) 캐시가 실제로 쓰인다.
      */
-    @GetMapping("/me/profile-image")
-    @Operation(summary = "프로필 이미지 조회", description = "내 프로필 이미지 바이트를 반환합니다. 미설정이면 404입니다.")
-    public ResponseEntity<byte[]> getMyProfileImage(
-            @RequestHeader(value = LOGIN_ID_HEADER, required = false) String loginId
+    @Operation(summary = "프로필 이미지 조회(공개)", description = "회원의 프로필 이미지 바이트를 반환합니다. 미설정이면 404입니다.")
+    @GetMapping("/members/{memberId}/profile-image")
+    public ResponseEntity<byte[]> getProfileImage(
+            @PathVariable("memberId") Long memberId,
+            WebRequest webRequest
     ) {
-        MemberProfileImageService.ProfileImage image = memberProfileImageService.loadMyProfileImage(loginId);
+        MemberProfileImageService.ProfileImage image = memberProfileImageService.loadProfileImage(memberId);
+
+        if (webRequest.checkNotModified(image.eTag())) {
+            return null;
+        }
 
         return ResponseEntity.ok()
                 .contentType(image.contentType() == null
                         ? MediaType.APPLICATION_OCTET_STREAM
                         : MediaType.parseMediaType(image.contentType()))
-                .cacheControl(CacheControl.noStore())
+                .eTag("\"" + image.eTag() + "\"")
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePublic())
                 .body(image.bytes());
     }
 

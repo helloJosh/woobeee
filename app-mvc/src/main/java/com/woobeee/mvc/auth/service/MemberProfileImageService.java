@@ -21,6 +21,9 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Set;
 import java.util.UUID;
 
@@ -98,11 +101,17 @@ public class MemberProfileImageService {
     /**
      * 프로필 이미지 바이트를 읽어 온다. 버킷은 비공개로 두고 앱이 자격증명으로 대신 읽는다.
      *
+     * <p><b>인증하지 않는다.</b> 아바타는 남이 봐야 하는 이미지다 -- 댓글 작성자 아바타를
+     * 그리려면 남의 것을 받을 수 있어야 하고, {@code <img>} 는 Authorization 헤더를 못 보낸다.
+     * 오브젝트 키에 UUID 가 들어 있어 키 자체는 열거되지 않지만, 이 엔드포인트는 회원 id 로
+     * 조회하므로 <b>id 를 아는 누구나 볼 수 있다</b>. 그것이 의도다.
+     *
      * <p>컬럼이 비었거나 오브젝트가 없으면 404 다. 후자는 삭제가 반쯤 실패해 컬럼만 남은
      * 상태에서 화면이 500 으로 무너지지 않게 하려는 것이다.
      */
-    public ProfileImage loadMyProfileImage(String loginId) {
-        Member member = requireMember(loginId);
+    public ProfileImage loadProfileImage(Long memberId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member is not found"));
         String fileKey = member.getProfileImageKey();
 
         if (!StringUtils.hasText(fileKey)) {
@@ -117,7 +126,7 @@ public class MemberProfileImageService {
                             .build()
             );
 
-            return new ProfileImage(object.asByteArray(), object.response().contentType());
+            return new ProfileImage(object.asByteArray(), object.response().contentType(), eTagOf(fileKey));
         } catch (NoSuchKeyException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image object is missing");
         }
@@ -140,8 +149,28 @@ public class MemberProfileImageService {
         return profileOf(requireMember(loginId));
     }
 
-    /** 스트리밍할 오브젝트 한 개. contentType 은 업로드 때 저장된 값이다. */
-    public record ProfileImage(byte[] bytes, String contentType) {
+    /**
+     * 스트리밍할 오브젝트 한 개. contentType 은 업로드 때 저장된 값이다.
+     *
+     * @param eTag 오브젝트 키에서 파생한 버전. 키에 UUID 가 있어 이미지를 교체하면 반드시
+     *             바뀌므로, 브라우저가 {@code If-None-Match} 로 재검증할 수 있다.
+     */
+    public record ProfileImage(byte[] bytes, String contentType, String eTag) {
+    }
+
+    /** 키를 그대로 노출하지 않으려고 해시로 줄인다. 키가 바뀌면 값도 바뀐다. */
+    private static String eTagOf(String fileKey) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(fileKey.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < 8; i++) {
+                hex.append(String.format("%02x", digest[i]));
+            }
+            return hex.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", exception);
+        }
     }
 
     private MemberProfileResponse profileOf(Member member) {
@@ -150,8 +179,21 @@ public class MemberProfileImageService {
                 member.getEmail(),
                 member.getNickname(),
                 member.getGameMoney(),
-                StringUtils.hasText(member.getProfileImageKey())
+                profileImageUrlOf(member)
         );
+    }
+
+    /**
+     * 프로필 이미지 주소. 미설정이면 {@code null} 이다.
+     *
+     * <p>같은 오리진의 상대 경로다 -- 프론트가 {@code /api/auth/*} 를 이미 프록시하므로 도메인
+     * 설정이 필요 없고, presigned URL 과 달리 조회마다 값이 바뀌지 않아 캐시가 걸린다.
+     */
+    public static String profileImageUrlOf(Member member) {
+        if (!StringUtils.hasText(member.getProfileImageKey())) {
+            return null;
+        }
+        return "/api/auth/members/" + member.getId() + "/profile-image";
     }
 
     private Member requireMember(String loginId) {

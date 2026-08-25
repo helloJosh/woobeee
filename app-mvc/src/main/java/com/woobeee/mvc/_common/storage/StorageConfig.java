@@ -38,6 +38,14 @@ public class StorageConfig {
         return builder.build();
     }
 
+    /**
+     * presigned URL 전용 presigner. <b>공개</b> endpoint 로 서명한다.
+     *
+     * <p>presigner 가 존재하는 이유는 "남이 열 URL" 을 만드는 것이므로, 서버가 MinIO 에 붙는
+     * {@code endpoint} 가 아니라 브라우저가 닿는 {@code publicEndpoint} 를 써야 한다. 서명은
+     * host 를 포함하기 때문에 나중에 문자열 치환으로 고칠 수 없다 -- 여기서 정해야 한다.
+     * 서버 대 서버 작업은 {@link #s3Client} 가 내부 endpoint 로 처리한다.
+     */
     @Bean
     public S3Presigner s3Presigner(StorageProperties properties, S3Configuration s3Configuration) {
         S3Presigner.Builder builder = S3Presigner.builder()
@@ -45,8 +53,12 @@ public class StorageConfig {
                 .region(Region.of(properties.getRegion()))
                 .serviceConfiguration(s3Configuration);
 
-        if (StringUtils.hasText(properties.getEndpoint())) {
-            builder.endpointOverride(URI.create(properties.getEndpoint()));
+        String browserFacing = StringUtils.hasText(properties.getPublicEndpoint())
+                ? properties.getPublicEndpoint()
+                : properties.getEndpoint();
+
+        if (StringUtils.hasText(browserFacing)) {
+            builder.endpointOverride(URI.create(browserFacing));
         }
 
         return builder.build();

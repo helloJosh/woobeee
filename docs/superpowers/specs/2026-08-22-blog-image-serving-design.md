@@ -208,3 +208,57 @@ MinIO 는 지금 익명 GET 에 403 을 낸다. 오브젝트는 있다(`13/ctid_
   `200 image/png` 를 반환하면 완료.
 - `generatePresignedUrl` 과 `s3Presigner` 주입은 blog 쪽에서 호출부가 없다(프로필 이미지는
   계속 presign 을 쓴다). 되돌릴 계획이 없다면 blog 에서는 삭제 대상.
+
+---
+
+## 5. 최종 결론 (2026-08-25) — presigned URL
+
+§4 의 앱 스트리밍을 거쳐 **presigned URL** 로 확정했다. Cloudflare 터널에 MinIO 전용
+서브도메인이 추가되면서 전제가 바뀌었다.
+
+```
+image.woobeee.com  →  http://localhost:9000   (Published application, order 2)
+www.woobeee.com    →  http://localhost:3000   (order 1)
+```
+
+### 5-1. 이 방식이 이긴 이유
+
+**버킷을 공개하지 않아도 된다.** 서명이 접근을 허가하므로 익명 읽기 정책이 필요 없다 — §4-3
+에서 고민했던 `profiles/` 동반 공개 문제가 아예 사라진다. 실측으로 확인했다:
+
+```
+GET https://image.woobeee.com/woobeee/13/ctid_structure.png            → 403 AccessDenied  (서명 없음)
+GET https://image.woobeee.com/woobeee/13/ctid_structure.png?X-Amz-…    → 200 image/png 152632B
+```
+
+**앱이 이미지 트래픽을 지지 않는다.** 앱 스트리밍은 `getObjectAsBytes` 로 오브젝트를 힙에
+통째로 올렸다. 첨부 상한이 500MB 인데 읽기는 공개·무인증이라, 큰 첨부 하나로 OOM 이 가능한
+구조였다. presign 은 바이트가 MinIO 에서 브라우저로 바로 간다.
+
+### 5-2. 핵심 — endpoint 를 둘로 쪼갰다
+
+`S3Presigner` 가 **서버용 endpoint** 로 서명하던 것이 CLAUDE.md "MinIO CORS 미검증" 항목의
+실제 내용이었다. 서명은 host 를 포함하므로 만든 뒤 문자열로 못 고친다.
+
+| 설정 | 쓰는 곳 | 값 |
+| --- | --- | --- |
+| `storage.s3.endpoint` (`S3_ENDPOINT`) | `S3Client` — 서버→MinIO (putObject 등) | `http://localhost:9000` |
+| `storage.s3.public-endpoint` (`S3_PUBLIC_ENDPOINT`) | `S3Presigner` — 브라우저가 열 URL | `https://image.woobeee.com` |
+
+`public-endpoint` 가 비면 `endpoint` 로 폴백하므로 로컬은 설정 없이 그대로 돈다.
+
+### 5-3. 남은 것
+
+- ~~`GET /api/back/posts/{id}/images/{파일명}`~~ **제거했다** (2026-08-25). 본문 URL 이
+  presigned 절대 URL 이 되어 호출부가 없어졌다. `PostService.loadPostImage`, `PostImage`
+  레코드, 관련 테스트 3개, 그리고 그로 인해 쓰이지 않게 된 import 14개를 함께 지웠다.
+  `docs/api/README.md` 의 해당 행도 삭제했다.
+- **브라우저 캐시가 안 걸린다.** 서명에 `X-Amz-Date` 가 들어가 URL 이 조회마다 바뀐다. 앱
+  스트리밍 때 붙였던 `immutable` 1년 캐시의 이점이 사라졌다 — 같은 이미지를 매번 다시
+  받는다. 유효기간을 1일(`presigned-url-expiration-seconds: 86400`)로 늘린 것은 만료로
+  깨지는 것을 막을 뿐 캐시 문제는 그대로다. 만료 시각을 시간 단위로 내림해 URL 을 결정적으로
+  만들면 캐시가 살아난다.
+- 첨부 상한 500MB 와 SVG contentType 허용목록은 presign 과 무관하게 여전히 과제다
+  (SVG 는 이제 `image.woobeee.com` 오리진에서 서빙되므로 XSS 영향 범위는 줄었다).
+- 기보(replay) 뷰어도 같은 `public-endpoint` 분리가 필요하다 — app-webflux 쪽은 아직
+  서버용 endpoint 로 presign 한다.

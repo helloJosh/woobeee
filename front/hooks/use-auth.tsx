@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef, createContext, useContext } from "react"
+import { useState, useEffect, useCallback, createContext, useContext } from "react"
 import type { ReactNode } from "react"
 import { authAPI, tokenManager } from "@/lib/api"
 import { rememberPendingRedirect } from "@/lib/auth-redirect"
@@ -50,28 +50,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [role, setRole] = useState<string | null>(null)
     const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null)
 
-    // revoke 는 state 가 아니라 ref 로 붙잡는다 — 교체·언마운트 시점에 "직전 값"을 확실히
-    // 알아야 하고, state 로 읽으면 클로저가 낡은 값을 잡는다. 놓치면 blob 이 그대로 새어
-    // 페이지를 떠날 때까지 메모리에 남는다.
-    const objectUrlRef = useRef<string | null>(null)
-
-    const replaceObjectUrl = useCallback((next: string | null) => {
-        if (objectUrlRef.current) {
-            URL.revokeObjectURL(objectUrlRef.current)
-        }
-        objectUrlRef.current = next
-        setProfileImageUrl(next)
-    }, [])
-
+    // 아바타는 이제 공개 URL 이라 <img src> 로 바로 쓴다. 전에는 인증이 필요한
+    // /me/profile-image 를 fetch 해 blob URL 을 만들고 revoke 로 정리해야 했는데, 그 구조로는
+    // 남의 아바타를 그릴 수 없었다(<img> 는 Authorization 헤더를 못 보낸다).
     const refreshProfileImage = useCallback(async () => {
         if (!tokenManager.getToken()) {
-            replaceObjectUrl(null)
+            setProfileImageUrl(null)
             return
         }
 
-        const blob = await authAPI.fetchProfileImageBlob()
-        replaceObjectUrl(blob ? URL.createObjectURL(blob) : null)
-    }, [replaceObjectUrl])
+        try {
+            const profile = await authAPI.me()
+            setProfileImageUrl(profile.profileImageUrl)
+        } catch {
+            // 아바타는 화면 뒤에서 받는다 -- 실패해도 헤더가 무너지면 안 되므로 비워만 둔다.
+            setProfileImageUrl(null)
+        }
+    }, [])
 
     useEffect(() => {
         const initAuth = async () => {
@@ -85,24 +80,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         initAuth()
     }, [])
 
-    // 인증 상태가 되면 아바타를 한 번 받아 온다. 헤더가 모든 라우트에 있으므로 여기서
-    // 한 번만 받아 공유한다 — 화면마다 받으면 같은 이미지를 여러 번 가져온다.
+    // 인증 상태가 되면 아바타 주소를 한 번 받아 온다. 헤더가 모든 라우트에 있으므로 여기서
+    // 한 번만 받아 공유한다.
     useEffect(() => {
         if (!isAuthenticated) {
-            replaceObjectUrl(null)
+            setProfileImageUrl(null)
             return
         }
 
         void refreshProfileImage()
-    }, [isAuthenticated, refreshProfileImage, replaceObjectUrl])
-
-    // 언마운트 시 정리. 이걸 빼면 blob 이 남는다.
-    useEffect(() => () => {
-        if (objectUrlRef.current) {
-            URL.revokeObjectURL(objectUrlRef.current)
-            objectUrlRef.current = null
-        }
-    }, [])
+    }, [isAuthenticated, refreshProfileImage])
 
     // rememberPendingRedirect 는 반드시 assign 앞이다. assign 뒤에 두면 페이지가 이미
     // 떠나는 중이라 실행이 보장되지 않는다.
@@ -156,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setMemberId(null)
             setRole(null)
             setIsAuthenticated(false)
-            replaceObjectUrl(null)
+            setProfileImageUrl(null)
         }
     }
 

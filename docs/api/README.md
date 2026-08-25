@@ -36,7 +36,7 @@
 | POST | `/api/auth/refresh-tokens` | refresh token 재발급 (rotation, device 일치 검증) | 공개 (refresh token 필요) |
 | GET | `/api/auth/me` | 내 프로필 조회 (`hasProfileImage` 보유 여부. 이미지 URL 은 주지 않는다) | 로그인 |
 | POST | `/api/auth/me/profile-image` | 프로필 이미지 업로드/교체 (multipart `file`, png·jpeg·webp·gif, 5MB 이하) | 본인 |
-| GET | `/api/auth/me/profile-image` | 프로필 이미지 스트리밍. 앱이 자격증명으로 대신 읽는다 — `ApiResponse` 봉투 없이 바이트를 반환하고 미설정이면 404 | 본인 |
+| GET | `/api/auth/members/{memberId}/profile-image` | 프로필 이미지 스트리밍. 앱이 자격증명으로 대신 읽는다 — `ApiResponse` 봉투 없이 바이트를 반환하고 미설정이면 404. ETag + `public, max-age=300` | **공개** |
 | DELETE | `/api/auth/me/profile-image` | 프로필 이미지 삭제 | 본인 |
 
 ### blog — `/api/back`
@@ -45,7 +45,6 @@
 | --- | --- | --- | --- |
 | GET | `/api/back/posts` | 게시글 목록 (검색·카테고리·페이징, `Accept-Language` 로 ko/en, `${파일명}` 치환) | 공개 |
 | GET | `/api/back/posts/{postId}` | 게시글 상세 (조회수 증가, `${파일명}` → 이미지 엔드포인트 상대 경로 치환) | 공개 |
-| GET | `/api/back/posts/{postId}/images/{파일명}` | 본문 이미지 스트리밍. 버킷은 비공개고 앱이 자격증명으로 대신 읽는다 — `ApiResponse` 봉투 없이 바이트를 반환한다 | 공개 |
 | POST | `/api/back/posts` | 게시글 작성 (multipart: `request` JSON + `markdownKr`/`markdownEn` + `file`*) | **ADMIN** |
 | PUT | `/api/back/posts/{postId}` | 게시글 수정 (같은 multipart 계약, 마크다운 파트 없으면 본문 보존) | **ADMIN** + 작성자 본인 |
 | DELETE | `/api/back/posts/{postId}` | 게시글 삭제 | **ADMIN** + 작성자 본인 |
