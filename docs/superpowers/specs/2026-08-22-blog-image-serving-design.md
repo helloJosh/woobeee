@@ -262,3 +262,84 @@ GET https://image.woobeee.com/woobeee/13/ctid_structure.png?X-Amz-…    → 200
   (SVG 는 이제 `image.woobeee.com` 오리진에서 서빙되므로 XSS 영향 범위는 줄었다).
 - 기보(replay) 뷰어도 같은 `public-endpoint` 분리가 필요하다 — app-webflux 쪽은 아직
   서버용 endpoint 로 presign 한다.
+
+---
+
+## 6. 결정적 presigned URL (2026-08-26)
+
+§5 의 presign 에는 구멍이 있었다 — **캐시가 전혀 걸리지 않았다.**
+
+### 6-1. 실측한 문제
+
+CDN 은 쿼리스트링까지 캐시 키에 넣는다. presigned URL 은 `X-Amz-Date` 와 `X-Amz-Signature`
+가 생성마다 달라지므로 방문자마다 다른 오브젝트가 된다.
+
+```
+같은 서명 URL 3번:   MISS → MISS → HIT     ← URL 이 같으면 결국 캐시된다
+새 서명 URL 2개:      MISS,  MISS           ← 방문자마다 원점까지 내려온다
+```
+
+글 13 은 이미지 2장 약 300KB 다. 100명이 오면 원점 트래픽이 300KB 대 **30MB** 로 갈린다.
+게다가 같은 사람이 새로고침만 해도 서명이 새로 생겨 또 받는다. MinIO 가 앱과 같은 호스트·같은
+터널 뒤에 있으므로 "presign 이 바이트를 넘겨 준다"는 이점이 업링크에는 해당되지 않는다 —
+실제로 아끼는 것은 JVM 힙뿐이다.
+
+### 6-2. AWS SDK 로는 불가능하다
+
+서명 시각을 우리가 정해야 하는데 SDK 에 수단이 없다.
+
+```
+S3Presigner.Builder            → credentialsProvider, region, endpointOverride,
+                                  serviceConfiguration, dualstack, fips … 클록 없음
+GetObjectPresignRequest.Builder → getObjectRequest, signatureDuration … 서명 시각 없음
+```
+
+그래서 `PresignedUrlFactory` 에 SigV4 쿼리 서명을 직접 구현했다. 클록을 주입받으므로 테스트가
+시각을 고정할 수 있다.
+
+### 6-3. 버킷 1시간 / TTL 24시간
+
+버킷(내림 단위)과 TTL 은 서로 다른 일을 한다 — 버킷은 **캐시 공유 범위**를, TTL 은 **안전
+여유**를 정한다. 둘을 같게 두면 시간 끝에 들어온 방문자가 곧 만료되는 URL 을 받아 이미지가
+깨진다(만료 절벽).
+
+| | 버킷 = TTL = 1h | 버킷 1h / TTL 24h |
+| --- | --- | --- |
+| 10:00:01 방문자 | 남은 유효기간 ~1h | ~24h |
+| 10:59:59 방문자 | **남은 유효기간 1초** | **23h** |
+
+TTL ≤ 버킷이면 `PresignedUrlFactory` 가 `IllegalStateException` 을 던진다 — 조용히 깨지는
+것보다 기동에서 터지는 편이 낫다.
+
+### 6-4. 검증
+
+Java 팩토리가 만든 URL 을 실제 MinIO 에 쳤다.
+
+```
+X-Amz-Date=20260825T160000Z      ← 정시로 내려갔다
+HTTP 200  image/png  152632 bytes
+HTTP 200  image/png  147973 bytes
+
+3초 간격으로 두 번 생성 → 두 URL 이 완전히 동일
+같은 URL 4번 → MISS → HIT → HIT → HIT
+```
+
+`PresignedUrlFactoryTest` 11개가 결정성·절벽 없음·host 출처·인코딩을 고정한다. 서명이 유효한지
+(MinIO 가 받아주는지)는 실 스토리지가 필요해 단위 테스트로는 못 본다 — 위 수동 검증이 그것을
+대신한다.
+
+### 6-5. 프로필 이미지도 같은 방식으로
+
+`GET /api/auth/members/{memberId}/profile-image` 스트리밍을 제거하고 presigned URL 로 옮겼다.
+아바타는 헤더에 있어 모든 페이지에 뜨고 댓글에 붙으면 한 화면에 수십 개라 캐시가 특히 중요한데,
+결정적 URL 이 되면서 그 조건이 갖춰졌다. 바이트도 앱을 거치지 않는다.
+
+대가: 브라우저가 오브젝트 키를 보게 되고(`profiles/{memberId}/{uuid}/{파일명}`), URL 이 시간당
+한 번 바뀌어 아바타를 1시간에 한 번 다시 받는다. 둘 다 감수할 만하다.
+
+### 6-6. 남은 것
+
+- app-webflux 의 기보 뷰어는 아직 SDK presigner 를 **서버용 endpoint** 로 쓴다. `PresignedUrlFactory`
+  를 core 로 올리거나 같은 모양을 옮겨야 한다.
+- 글 첨부 상한 500MB 와 contentType 허용목록 부재는 그대로 남았다(프로필은 5MB + 허용목록 있음).
+- presign 은 글 존재를 확인하지 않는다 — 지운 글의 첨부도 서명만 있으면 열린다.

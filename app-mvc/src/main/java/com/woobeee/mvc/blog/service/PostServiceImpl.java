@@ -15,6 +15,7 @@ import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
 import com.woobeee.mvc.blog.support.ProgressInputStream;
 import com.woobeee.mvc.blog.support.RedisSupport;
+import com.woobeee.mvc._common.storage.PresignedUrlFactory;
 import com.woobeee.mvc._common.storage.StorageProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -27,16 +28,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,7 +53,7 @@ public class PostServiceImpl implements PostService {
     private final RedisSupport redisSupport;
     private final S3Client s3Client;
     private final StorageProperties storageProperties;
-    private final S3Presigner s3Presigner;
+    private final PresignedUrlFactory presignedUrlFactory;
 
     /**
      * 이미지 삽입 글작성시: 마크다운에는 ![설명](${파일명}) 형태로 넣어두세요.
@@ -245,10 +242,6 @@ public class PostServiceImpl implements PostService {
         while (matcher.find()) {
             String fileName = matcher.group(1); // ${fileName} 에서 fileName 추출
 
-            // Presigned URL 생성
-            //String presignedUrl = generatePresignedUrl(postId, fileName);
-
-            // public URL
             String publicUrl = publicUrl(postId, fileName);
 
             matcher.appendReplacement(result, Matcher.quoteReplacement(publicUrl));
@@ -258,40 +251,17 @@ public class PostServiceImpl implements PostService {
     }
 
     /**
-     * 본문에 박히는 이미지 주소. <b>presigned URL</b> 이다 -- 브라우저가 MinIO 에 직접 붙는다.
+     * 본문에 박히는 이미지 주소. presigned URL 이고, <b>같은 시간대의 모든 방문자가 같은 값</b>을
+     * 받는다({@link PresignedUrlFactory} 가 서명 시각을 시간 단위로 내린다). 그래야 CDN 이
+     * 캐시한다 -- 서명이 요청마다 달라지면 방문자마다 다른 오브젝트가 되어 원점까지 다 내려온다.
      *
-     * <p>host 는 서버용 {@code endpoint} 가 아니라 {@code public-endpoint}(프로덕션:
-     * {@code https://image.woobeee.com}) 에서 나온다. 서명이 host 를 포함하므로 만든 뒤에
-     * 문자열로 갈아끼울 수 없고, presigner 를 만들 때 정해진다({@code StorageConfig}).
-     *
-     * <p>서명이 접근을 허가하므로 <b>버킷은 비공개로 남는다</b>. 같은 버킷의 {@code profiles/}
-     * 도 공개되지 않는다.
-     *
-     * <p>파일명 인코딩은 SDK 가 키를 서명할 때 처리하므로 여기서 손대지 않는다 -- 직접 인코딩해
-     * 넘기면 이중 인코딩이 되어 서명이 실제 키와 어긋난다.
+     * <p>basename 만 남긴다. 본문의 {@code ${..}} 가 경로 성분을 담고 있으면 같은 버킷의 다른
+     * prefix 를 여는 유효한 서명이 만들어진다 -- 버킷이 비공개여도 서명이 접근을 허가하므로
+     * 막히지 않는다.
      */
     private String publicUrl(Long postId, String fileName) {
-        return generatePresignedUrl(postId, fileName);
-    }
-
-
-    private String generatePresignedUrl(Long postId, String fileName) {
-        // basename 만 남긴다. 본문의 ${..} 가 경로 성분을 담고 있으면 같은 버킷의 다른
-        // prefix(profiles/ 등)를 여는 유효한 서명이 만들어진다 -- 버킷이 비공개여도 서명이
-        // 접근을 허가하므로 막히지 않는다.
         String safeName = Paths.get(fileName).getFileName().toString().trim();
-
-        GetObjectRequest getReq = GetObjectRequest.builder()
-                .bucket(storageProperties.getBucket())
-                .key(postId + "/" + safeName)
-                .build();
-
-        GetObjectPresignRequest preReq = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofSeconds(storageProperties.getPresignedUrlExpirationSeconds()))
-                .getObjectRequest(getReq)
-                .build();
-
-        return s3Presigner.presignGetObject(preReq).url().toString();
+        return presignedUrlFactory.getUrl(postId + "/" + safeName);
     }
 
     @Override

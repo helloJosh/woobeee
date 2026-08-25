@@ -68,7 +68,7 @@ class MemberProfileImageControllerTest {
     void getMyProfileReportsThatAProfileImageExists() throws Exception {
         authenticate();
         when(memberProfileImageService.getMyProfile(LOGIN_ID))
-                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, "/api/auth/members/42/profile-image"));
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
 
         mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
@@ -77,10 +77,10 @@ class MemberProfileImageControllerTest {
                 .andExpect(jsonPath("$.data.email").value(LOGIN_ID))
                 .andExpect(jsonPath("$.data.nickname").value("nick"))
                 .andExpect(jsonPath("$.data.gameMoney").value(0))
-                .andExpect(jsonPath("$.data.profileImageUrl").value("/api/auth/members/42/profile-image"))
-                // 상대 경로여야 한다. 절대 URL 이 돌아오면(presigned 든 도메인 하드코딩이든)
-                // 로컬/프로덕션 중 한쪽이 깨진다.
-                .andExpect(jsonPath("$.data.profileImageUrl").value(org.hamcrest.Matchers.startsWith("/")));
+                // presigned URL 을 그대로 내린다. 서명이 host 와 키를 포함하므로 컨트롤러가
+                // 손대면 서명이 깨진다.
+                .andExpect(jsonPath("$.data.profileImageUrl").value(
+                        "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
     }
 
     /** AUTH-AC-14 */
@@ -109,71 +109,20 @@ class MemberProfileImageControllerTest {
     void uploadAcceptsAMultipartFileAndReturnsTheUpdatedProfile() throws Exception {
         authenticate();
         when(memberProfileImageService.upload(eq(LOGIN_ID), any()))
-                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, "/api/auth/members/42/profile-image"));
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
 
         mockMvc.perform(multipart("/api/auth/me/profile-image")
                         .file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1, 2, 3}))
                         .header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.header.isSuccessful").value(true))
-                .andExpect(jsonPath("$.data.profileImageUrl").value("/api/auth/members/42/profile-image"));
+                .andExpect(jsonPath("$.data.profileImageUrl").value(
+                        "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
     }
 
-    /**
-     * AUTH-AC-18 — 스트리밍은 {@code ApiResponse} 봉투를 타지 않는다. 봉투에 실으면
-     * {@code <img>} 가 읽을 수 없는 JSON 이 된다.
-     */
-    @Test
-    void profileImageStreamsRawBytesOutsideTheEnvelope() throws Exception {
-        when(memberProfileImageService.loadProfileImage(42L))
-                .thenReturn(new MemberProfileImageService.ProfileImage(new byte[]{1, 2, 3}, "image/png", "abc123"));
 
-        mockMvc.perform(get("/api/auth/members/42/profile-image"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.IMAGE_PNG))
-                .andExpect(content().bytes(new byte[]{1, 2, 3}));
-    }
 
-    /**
-     * AUTH-AC-20 — <b>토큰 없이도</b> 조회된다. 아바타는 남이 봐야 하는 이미지다 -- 인증을
-     * 요구하면 {@code <img>} 가 Authorization 헤더를 못 보내므로 댓글 작성자 아바타를 그릴 수
-     * 없다. 이 테스트가 인증 요구가 되돌아오는 것을 막는다.
-     */
-    @Test
-    void anyoneCanReadAProfileImageWithoutAToken() throws Exception {
-        when(memberProfileImageService.loadProfileImage(42L))
-                .thenReturn(new MemberProfileImageService.ProfileImage(new byte[]{9}, "image/png", "abc123"));
 
-        mockMvc.perform(get("/api/auth/members/42/profile-image"))
-                .andExpect(status().isOk())
-                .andExpect(content().bytes(new byte[]{9}))
-                // 공개 리소스이므로 공유 캐시에 남아도 된다. no-store 로 되돌아오면 잡는다.
-                .andExpect(header().string("Cache-Control", "max-age=300, public"))
-                .andExpect(header().string("ETag", "\"abc123\""));
-    }
-
-    /**
-     * AUTH-AC-20 — ETag 가 같으면 304 다. 오브젝트 키에 UUID 가 있어 이미지를 교체하면 ETag 가
-     * 반드시 바뀌므로, 캐시가 낡은 아바타를 붙들고 있지 않는다.
-     */
-    @Test
-    void anUnchangedProfileImageAnswersNotModified() throws Exception {
-        when(memberProfileImageService.loadProfileImage(42L))
-                .thenReturn(new MemberProfileImageService.ProfileImage(new byte[]{1}, "image/png", "abc123"));
-
-        mockMvc.perform(get("/api/auth/members/42/profile-image").header("If-None-Match", "\"abc123\""))
-                .andExpect(status().isNotModified());
-    }
-
-    /** AUTH-AC-19 */
-    @Test
-    void profileImageIsNotFoundWhenUnset() throws Exception {
-        when(memberProfileImageService.loadProfileImage(42L))
-                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image is not set"));
-
-        mockMvc.perform(get("/api/auth/members/42/profile-image"))
-                .andExpect(status().isNotFound());
-    }
 
     @Test
     void deleteReturnsNoContent() throws Exception {

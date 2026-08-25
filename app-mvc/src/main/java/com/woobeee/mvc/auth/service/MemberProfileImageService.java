@@ -1,5 +1,6 @@
 package com.woobeee.mvc.auth.service;
 
+import com.woobeee.mvc._common.storage.PresignedUrlFactory;
 import com.woobeee.mvc._common.storage.StorageProperties;
 import com.woobeee.mvc.auth.api.response.MemberProfileResponse;
 import com.woobeee.mvc.auth.entity.Member;
@@ -60,6 +61,7 @@ public class MemberProfileImageService {
     private final MemberRepository memberRepository;
     private final S3Client s3Client;
     private final StorageProperties storageProperties;
+    private final PresignedUrlFactory presignedUrlFactory;
 
     /** 프로필 이미지를 올리거나 교체한다. 이전 오브젝트는 저장이 커밋된 뒤에 지운다. */
     public MemberProfileResponse upload(String loginId, MultipartFile file) {
@@ -98,40 +100,6 @@ public class MemberProfileImageService {
         return profileOf(member);
     }
 
-    /**
-     * 프로필 이미지 바이트를 읽어 온다. 버킷은 비공개로 두고 앱이 자격증명으로 대신 읽는다.
-     *
-     * <p><b>인증하지 않는다.</b> 아바타는 남이 봐야 하는 이미지다 -- 댓글 작성자 아바타를
-     * 그리려면 남의 것을 받을 수 있어야 하고, {@code <img>} 는 Authorization 헤더를 못 보낸다.
-     * 오브젝트 키에 UUID 가 들어 있어 키 자체는 열거되지 않지만, 이 엔드포인트는 회원 id 로
-     * 조회하므로 <b>id 를 아는 누구나 볼 수 있다</b>. 그것이 의도다.
-     *
-     * <p>컬럼이 비었거나 오브젝트가 없으면 404 다. 후자는 삭제가 반쯤 실패해 컬럼만 남은
-     * 상태에서 화면이 500 으로 무너지지 않게 하려는 것이다.
-     */
-    public ProfileImage loadProfileImage(Long memberId) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member is not found"));
-        String fileKey = member.getProfileImageKey();
-
-        if (!StringUtils.hasText(fileKey)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image is not set");
-        }
-
-        try {
-            ResponseBytes<GetObjectResponse> object = s3Client.getObjectAsBytes(
-                    GetObjectRequest.builder()
-                            .bucket(storageProperties.getBucket())
-                            .key(fileKey)
-                            .build()
-            );
-
-            return new ProfileImage(object.asByteArray(), object.response().contentType(), eTagOf(fileKey));
-        } catch (NoSuchKeyException exception) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Profile image object is missing");
-        }
-    }
-
     public void delete(String loginId) {
         Member member = requireMember(loginId);
 
@@ -149,29 +117,6 @@ public class MemberProfileImageService {
         return profileOf(requireMember(loginId));
     }
 
-    /**
-     * 스트리밍할 오브젝트 한 개. contentType 은 업로드 때 저장된 값이다.
-     *
-     * @param eTag 오브젝트 키에서 파생한 버전. 키에 UUID 가 있어 이미지를 교체하면 반드시
-     *             바뀌므로, 브라우저가 {@code If-None-Match} 로 재검증할 수 있다.
-     */
-    public record ProfileImage(byte[] bytes, String contentType, String eTag) {
-    }
-
-    /** 키를 그대로 노출하지 않으려고 해시로 줄인다. 키가 바뀌면 값도 바뀐다. */
-    private static String eTagOf(String fileKey) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(fileKey.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder();
-            for (int i = 0; i < 8; i++) {
-                hex.append(String.format("%02x", digest[i]));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 algorithm is not available", exception);
-        }
-    }
 
     private MemberProfileResponse profileOf(Member member) {
         return new MemberProfileResponse(
@@ -186,14 +131,18 @@ public class MemberProfileImageService {
     /**
      * 프로필 이미지 주소. 미설정이면 {@code null} 이다.
      *
-     * <p>같은 오리진의 상대 경로다 -- 프론트가 {@code /api/auth/*} 를 이미 프록시하므로 도메인
-     * 설정이 필요 없고, presigned URL 과 달리 조회마다 값이 바뀌지 않아 캐시가 걸린다.
+     * <p>presigned URL 이다 -- 브라우저가 {@code public-endpoint}(프로덕션
+     * {@code image.woobeee.com})로 MinIO 에 직접 붙는다. 서명 시각을 시간 단위로 내리므로 같은
+     * 시간대의 모든 방문자가 같은 URL 을 받고, 그래서 CDN 이 캐시한다. 아바타는 헤더에 있어
+     * 모든 페이지에 뜨고 댓글에 붙으면 한 화면에 수십 개라 캐시가 특히 중요하다.
+     *
+     * <p>버킷은 비공개로 남는다 -- 서명이 접근을 허가한다.
      */
-    public static String profileImageUrlOf(Member member) {
+    public String profileImageUrlOf(Member member) {
         if (!StringUtils.hasText(member.getProfileImageKey())) {
             return null;
         }
-        return "/api/auth/members/" + member.getId() + "/profile-image";
+        return presignedUrlFactory.getUrl(member.getProfileImageKey());
     }
 
     private Member requireMember(String loginId) {

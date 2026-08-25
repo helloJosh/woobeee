@@ -1,6 +1,10 @@
 package com.woobeee.mvc.auth.service;
 
+import com.woobeee.mvc._common.storage.PresignedUrlFactory;
 import com.woobeee.mvc._common.storage.StorageProperties;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import com.woobeee.mvc.auth.api.response.MemberProfileResponse;
 import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.auth.repository.MemberRepository;
@@ -51,11 +55,21 @@ class MemberProfileImageServiceTest {
     void setUp() {
         storageProperties = new StorageProperties();
         storageProperties.setBucket("woobeee");
+        storageProperties.setPublicEndpoint("https://image.woobeee.com");
+        storageProperties.setRegion("ap-northeast-2");
+        storageProperties.setAccessKey("admin");
+        storageProperties.setSecretKey("admin!23");
+        storageProperties.setPresignedUrlExpirationSeconds(86400);
 
+        // presigner 는 모킹하지 않고 실물을 고정 클록으로 넣는다 -- 프로필 응답의 URL 이
+        // 실제로 어떤 모양인지 이 테스트에서 확인할 수 있어야 한다.
         memberProfileImageService = new MemberProfileImageService(
                 memberRepository,
                 s3Client,
-                storageProperties
+                storageProperties,
+                new PresignedUrlFactory(
+                        storageProperties,
+                        Clock.fixed(Instant.parse("2026-08-26T10:00:00Z"), ZoneOffset.UTC))
         );
     }
 
@@ -164,7 +178,10 @@ class MemberProfileImageServiceTest {
 
         assertThat(member.getProfileImageKey()).endsWith("/new.png");
         assertThat(member.getProfileImageKey()).isNotEqualTo("profiles/42/old-uuid/old.png");
-        assertThat(response.profileImageUrl()).isEqualTo("/api/auth/members/42/profile-image");
+        assertThat(response.profileImageUrl())
+                .startsWith("https://image.woobeee.com/woobeee/profiles/42/")
+                .contains("X-Amz-Signature=")
+                .contains("X-Amz-Date=20260826T100000Z");
 
         ArgumentCaptor<DeleteObjectRequest> deleteCaptor = ArgumentCaptor.forClass(DeleteObjectRequest.class);
         verify(s3Client).deleteObject(deleteCaptor.capture());
@@ -187,64 +204,14 @@ class MemberProfileImageServiceTest {
         MemberProfileResponse response = memberProfileImageService.upload(LOGIN_ID, png("new.png", 10));
 
         assertThat(member.getProfileImageKey()).endsWith("/new.png");
-        assertThat(response.profileImageUrl()).isEqualTo("/api/auth/members/42/profile-image");
+        assertThat(response.profileImageUrl())
+                .startsWith("https://image.woobeee.com/woobeee/profiles/42/")
+                .contains("X-Amz-Signature=")
+                .contains("X-Amz-Date=20260826T100000Z");
     }
 
-    /**
-     * AUTH-AC-18 — 스트리밍은 오브젝트 바이트와 저장된 contentType 을 함께 준다.
-     *
-     * <p>전에는 presigned GET URL 을 내려보냈다. 그 URL 의 호스트는 서버가 MinIO 에 붙는
-     * {@code S3_ENDPOINT} 에서 나오므로 브라우저가 열 수 없었다 — 프로덕션에서 프로필
-     * 이미지가 깨져 있던 원인이다.
-     */
-    @Test
-    void loadProfileImageReturnsTheObjectBytesAndItsContentType() {
-        when(memberRepository.findById(42L))
-                .thenReturn(Optional.of(member(42L, "profiles/42/uuid/avatar.png")));
-        when(s3Client.getObjectAsBytes(GetObjectRequest.builder()
-                .bucket("woobeee")
-                .key("profiles/42/uuid/avatar.png")
-                .build()))
-                .thenReturn(ResponseBytes.fromByteArray(
-                        GetObjectResponse.builder().contentType("image/png").build(),
-                        new byte[]{1, 2, 3}
-                ));
 
-        MemberProfileImageService.ProfileImage image = memberProfileImageService.loadProfileImage(42L);
 
-        assertThat(image.bytes()).containsExactly(1, 2, 3);
-        assertThat(image.contentType()).isEqualTo("image/png");
-    }
-
-    /** AUTH-AC-19 — 프로필 이미지를 설정하지 않았으면 404 다. */
-    @Test
-    void loadProfileImageIsNotFoundWhenTheMemberHasNoImage() {
-        when(memberRepository.findById(42L)).thenReturn(Optional.of(member(42L, null)));
-
-        assertThatThrownBy(() -> memberProfileImageService.loadProfileImage(42L))
-                .isInstanceOf(ResponseStatusException.class)
-                .extracting(exception -> ((ResponseStatusException) exception).getStatusCode())
-                .isEqualTo(HttpStatus.NOT_FOUND);
-
-        verifyNoInteractions(s3Client);
-    }
-
-    /**
-     * AUTH-AC-19 — 컬럼은 있는데 오브젝트가 없으면 500 이 아니라 404 다. 삭제가 반쯤 실패한
-     * 상태(컬럼은 남고 오브젝트만 사라진 경우)에서 화면이 오류로 무너지지 않아야 한다.
-     */
-    @Test
-    void aMissingObjectBecomesNotFoundRatherThanAServerError() {
-        when(memberRepository.findById(42L))
-                .thenReturn(Optional.of(member(42L, "profiles/42/uuid/gone.png")));
-        when(s3Client.getObjectAsBytes(any(GetObjectRequest.class)))
-                .thenThrow(NoSuchKeyException.builder().message("nope").build());
-
-        assertThatThrownBy(() -> memberProfileImageService.loadProfileImage(42L))
-                .isInstanceOf(ResponseStatusException.class)
-                .extracting(exception -> ((ResponseStatusException) exception).getStatusCode())
-                .isEqualTo(HttpStatus.NOT_FOUND);
-    }
 
     @Test
     void deleteClearsColumnAndRemovesObject() {
@@ -289,7 +256,10 @@ class MemberProfileImageServiceTest {
         assertThat(response.email()).isEqualTo(LOGIN_ID);
         assertThat(response.nickname()).isEqualTo("nick");
         assertThat(response.gameMoney()).isZero();
-        assertThat(response.profileImageUrl()).isEqualTo("/api/auth/members/42/profile-image");
+        assertThat(response.profileImageUrl())
+                .startsWith("https://image.woobeee.com/woobeee/profiles/42/")
+                .contains("X-Amz-Signature=")
+                .contains("X-Amz-Date=20260826T100000Z");
         verifyNoInteractions(s3Client);
     }
 

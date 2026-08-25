@@ -10,6 +10,7 @@ import com.woobeee.mvc.blog.support.RedisSupport;
 import com.woobeee.mvc.blog.api.response.GetPostResponse;
 import com.woobeee.mvc.blog.api.response.GetPostsResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import com.woobeee.mvc._common.storage.PresignedUrlFactory;
 import com.woobeee.mvc._common.storage.StorageProperties;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -24,11 +25,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
-import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
-import java.net.URI;
-import java.net.MalformedURLException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -60,7 +56,7 @@ class PostServiceImplTest {
     private StorageProperties storageProperties;
 
     @Mock
-    private S3Presigner s3Presigner;
+    private PresignedUrlFactory presignedUrlFactory;
 
     @InjectMocks
     private PostServiceImpl postService;
@@ -137,17 +133,17 @@ class PostServiceImplTest {
         assertThat(post.getTitleKo()).isEqualTo("new-ko");
     }
 
-    /** 서명된 URL 한 개를 돌려주도록 presigner 를 스텁한다. 반환값은 그대로 본문에 박혀야 한다. */
+    /**
+     * presigner 를 스텁하고 넘겨받은 키를 잡는다. URL 자체의 형식(결정성·host·인코딩)은
+     * {@code PresignedUrlFactoryTest} 가 보고, 여기서는 <b>어떤 키를 서명하라고 넘기는지</b>와
+     * 받은 URL 을 손대지 않고 박는지를 본다.
+     */
     private static final String SIGNED =
-            "https://image.woobeee.com/woobeee/13/a.png?X-Amz-Signature=deadbeef&X-Amz-Expires=3600";
+            "https://image.woobeee.com/woobeee/13/a.png?X-Amz-Date=20260826T100000Z&X-Amz-Signature=abc";
 
-    private ArgumentCaptor<GetObjectPresignRequest> stubPresigner(String signedUrl)
-            throws MalformedURLException {
-        PresignedGetObjectRequest presigned = mock(PresignedGetObjectRequest.class);
-        when(presigned.url()).thenReturn(URI.create(signedUrl).toURL());
-        ArgumentCaptor<GetObjectPresignRequest> captor =
-                ArgumentCaptor.forClass(GetObjectPresignRequest.class);
-        when(s3Presigner.presignGetObject(captor.capture())).thenReturn(presigned);
+    private ArgumentCaptor<String> stubPresigner(String signedUrl) {
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        when(presignedUrlFactory.getUrl(captor.capture())).thenReturn(signedUrl);
         return captor;
     }
 
@@ -186,19 +182,14 @@ class PostServiceImplTest {
         assertThat(response.content()).doesNotContain("${");
     }
 
-    /** BLOG-AC-13 — 서명 대상은 {@code {postId}/{basename}} 키다. */
+    /** BLOG-AC-13 — 서명하라고 넘기는 키는 {@code {postId}/{basename}} 이다. */
     @Test
-    void thePresignedRequestCarriesTheBucketAndKey() throws Exception {
-        ArgumentCaptor<GetObjectPresignRequest> captor = stubPresigner(SIGNED);
-        when(storageProperties.getBucket()).thenReturn("woobeee");
-        when(storageProperties.getPresignedUrlExpirationSeconds()).thenReturn(3600L);
+    void theKeyHandedToThePresignerIsPostIdSlashBasename() throws Exception {
+        ArgumentCaptor<String> captor = stubPresigner(SIGNED);
 
         getPostWithOneImage("a.png");
 
-        GetObjectPresignRequest request = captor.getValue();
-        assertThat(request.getObjectRequest().bucket()).isEqualTo("woobeee");
-        assertThat(request.getObjectRequest().key()).isEqualTo("13/a.png");
-        assertThat(request.signatureDuration()).isEqualTo(java.time.Duration.ofSeconds(3600));
+        assertThat(captor.getValue()).isEqualTo("13/a.png");
     }
 
     /**
@@ -209,11 +200,11 @@ class PostServiceImplTest {
      */
     @Test
     void pathComponentsInAPlaceholderAreStrippedBeforeSigning() throws Exception {
-        ArgumentCaptor<GetObjectPresignRequest> captor = stubPresigner(SIGNED);
+        ArgumentCaptor<String> captor = stubPresigner(SIGNED);
 
         getPostWithOneImage("../profiles/1/secret.png");
 
-        assertThat(captor.getValue().getObjectRequest().key()).isEqualTo("13/secret.png");
+        assertThat(captor.getValue()).isEqualTo("13/secret.png");
     }
 
     /**
@@ -222,11 +213,11 @@ class PostServiceImplTest {
      */
     @Test
     void nonAsciiFileNamesAreSignedRawNotPreEncoded() throws Exception {
-        ArgumentCaptor<GetObjectPresignRequest> captor = stubPresigner(SIGNED);
+        ArgumentCaptor<String> captor = stubPresigner(SIGNED);
 
         getPostWithOneImage("한글 그림.png");
 
-        assertThat(captor.getValue().getObjectRequest().key()).isEqualTo("13/한글 그림.png");
+        assertThat(captor.getValue()).isEqualTo("13/한글 그림.png");
     }
 
 

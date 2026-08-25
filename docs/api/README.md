@@ -36,7 +36,6 @@
 | POST | `/api/auth/refresh-tokens` | refresh token 재발급 (rotation, device 일치 검증) | 공개 (refresh token 필요) |
 | GET | `/api/auth/me` | 내 프로필 조회 (`hasProfileImage` 보유 여부. 이미지 URL 은 주지 않는다) | 로그인 |
 | POST | `/api/auth/me/profile-image` | 프로필 이미지 업로드/교체 (multipart `file`, png·jpeg·webp·gif, 5MB 이하) | 본인 |
-| GET | `/api/auth/members/{memberId}/profile-image` | 프로필 이미지 스트리밍. 앱이 자격증명으로 대신 읽는다 — `ApiResponse` 봉투 없이 바이트를 반환하고 미설정이면 404. ETag + `public, max-age=300` | **공개** |
 | DELETE | `/api/auth/me/profile-image` | 프로필 이미지 삭제 | 본인 |
 
 ### blog — `/api/back`
