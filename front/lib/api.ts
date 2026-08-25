@@ -322,7 +322,11 @@ export const apiRequest = async (
         }
         return response
     } catch (error) {
-        console.error("API request failed:", error)
+        // 취소는 실패가 아니다. 라우트 이동마다 "API request failed" 가 찍히면 진짜 오류가
+        // 묻힌다. 호출부도 이 경우를 무시하도록 되어 있다.
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+            console.error("API request failed:", error)
+        }
         throw error
     }
 }
@@ -673,9 +677,14 @@ export const postsAPI = {
         return apiResponse.data
     },
 
-    getPost: async (postId: number): Promise<GetPostResponse> => {
+    /**
+     * signal: 호출부가 요청을 취소할 수 있게 받는다. 글 상세 훅이 언마운트·postId 변경 시
+     * 취소해, 늦게 도착한 응답이 이미 떠난 화면에 상태를 쓰는 것을 막는다.
+     */
+    getPost: async (postId: number, signal?: AbortSignal): Promise<GetPostResponse> => {
         const res = await apiRequest(`/api/back/posts/${postId}`, {
-            method: "GET"
+            method: "GET",
+            signal,
         })
 
         if (!res.ok) {

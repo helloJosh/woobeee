@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { authAPI, gameAPI, tokenManager } from "./api"
+import { authAPI, gameAPI, postsAPI, tokenManager } from "./api"
 
 /**
  * `apiRequest` 의 401 처리 하나만 본다 — 그 경로가 <b>플레이 중인 판을 날릴 수 있는</b>
@@ -166,5 +166,77 @@ describe("token removal", () => {
         expect(store.has("refreshToken")).toBe(false)
         expect(store.has("authMemberId")).toBe(false)
         expect(store.has("authRole")).toBe(false)
+    })
+})
+
+/**
+ * 글 상세 요청의 <b>취소</b>. `usePostDetail` 이 언마운트·postId 변경 시 취소해, 늦게 도착한
+ * 응답이 사라진 화면에 상태를 쓰거나(경주) 이전 글이 최종 상태로 남는 것을 막는다.
+ *
+ * <p>훅 자체는 React 층이라 이 스위트에서 검증할 수 없다(node 환경, jsdom 없음). 대신 훅이
+ * 의지하는 <b>통로</b>를 여기서 고정한다 — signal 이 fetch 까지 내려가지 않으면 훅의 정리는
+ * 아무것도 취소하지 못하고, 그 실패는 조용하다.
+ */
+describe("post detail request cancellation", () => {
+    it("getPost forwards the abort signal down to fetch", async () => {
+        const fetchSpy = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ header: { isSuccessful: true }, data: { id: 13 } }),
+        }))
+        ;(globalThis as any).fetch = fetchSpy
+
+        const controller = new AbortController()
+        await postsAPI.getPost(13, controller.signal)
+
+        expect(fetchSpy).toHaveBeenCalledTimes(1)
+        const init = (fetchSpy.mock.calls[0] as unknown[])[1] as RequestInit
+        expect(init.signal).toBe(controller.signal)
+    })
+
+    /** signal 을 안 넘긴 호출부는 그대로 동작해야 한다 — 선택 인자다. */
+    it("getPost still works without a signal", async () => {
+        const fetchSpy = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ header: { isSuccessful: true }, data: { id: 13 } }),
+        }))
+        ;(globalThis as any).fetch = fetchSpy
+
+        await postsAPI.getPost(13)
+
+        const init = (fetchSpy.mock.calls[0] as unknown[])[1] as RequestInit
+        expect(init.signal).toBeUndefined()
+    })
+
+    /**
+     * 취소는 실패가 아니다. 라우트 이동마다 `console.error("API request failed")` 가 찍히면
+     * 진짜 오류가 그 소음에 묻힌다.
+     */
+    it("an aborted request is not logged as a failure", async () => {
+        const abortError = new DOMException("The operation was aborted.", "AbortError")
+        ;(globalThis as any).fetch = vi.fn(async () => {
+            throw abortError
+        })
+        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+        await expect(postsAPI.getPost(13)).rejects.toBe(abortError)
+        expect(errorSpy).not.toHaveBeenCalled()
+
+        errorSpy.mockRestore()
+    })
+
+    /** 취소가 아닌 실패는 계속 찍혀야 한다 — 위 테스트가 모든 로그를 지우지 않았음을 고정한다. */
+    it("a real network failure is still logged", async () => {
+        const boom = new Error("network is down")
+        ;(globalThis as any).fetch = vi.fn(async () => {
+            throw boom
+        })
+        const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+
+        await expect(postsAPI.getPost(13)).rejects.toBe(boom)
+        expect(errorSpy).toHaveBeenCalled()
+
+        errorSpy.mockRestore()
     })
 })
