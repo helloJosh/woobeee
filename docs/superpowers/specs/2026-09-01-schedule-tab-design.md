@@ -143,13 +143,15 @@ schedule/
 
 | 검증 | 규칙 | 실패 코드 |
 | --- | --- | --- |
-| 소유권 | 모든 쓰기·트리 조회에서 대상 프로젝트 `member_id = 나` | `SCHEDULE_PROJECT_NOT_FOUND` (404로 위장 — 남의 리소스 존재 여부를 흘리지 않음) |
-| 참조 존재 | `projectId`/`parentId`/`milestoneId`가 실제 존재하는지 | `SCHEDULE_*_NOT_FOUND` |
-| 같은 프로젝트 | `parentId` 마일스톤·`milestoneId`가 요청의 `projectId`와 같은 프로젝트 소속 | `SCHEDULE_CROSS_PROJECT` |
-| 재귀 깊이 | 마일스톤 깊이 ≤ 5 (생성·이동 시 조상 체인 계산) | `SCHEDULE_DEPTH_EXCEEDED` |
-| 순환 금지 | 마일스톤을 자기 자신/자기 자손 아래로 이동 불가 | `SCHEDULE_CYCLE` |
-| 날짜 | `endDate >= startDate` (둘 다 있을 때) | `SCHEDULE_INVALID_DATE_RANGE` |
-| 색 | `#RRGGBB` 형식 | `SCHEDULE_INVALID_COLOR` |
+| 소유권 | 모든 쓰기·트리 조회에서 대상 프로젝트 `member_id = 나` | `schedule_projectNotFound` (404로 위장 — 남의 리소스 존재 여부를 흘리지 않음) |
+| 참조 존재 | `projectId`/`parentId`/`milestoneId`가 실제 존재하는지 | `schedule_projectNotFound` / `schedule_milestoneNotFound` / `schedule_taskNotFound` |
+| 같은 프로젝트 | `parentId` 마일스톤·`milestoneId`가 요청의 `projectId`와 같은 프로젝트 소속 | `schedule_crossProject` |
+| 재귀 깊이 | 마일스톤 깊이 ≤ 5 (생성·이동 시 조상 체인 계산) | `schedule_depthExceeded` |
+| 순환 금지 | 마일스톤을 자기 자신/자기 자손 아래로 이동 불가 | `schedule_cycle` |
+| 날짜 | `endDate >= startDate` (둘 다 있을 때) | `schedule_invalidDateRange` |
+| 색 | `#RRGGBB` 형식 | `schedule_invalidColor` |
+
+에러 코드 키는 `GameErrorCode`와 같은 관례(`schedule_` 접두 + camelCase)를 따른다.
 
 ### 명시적 캐스케이드 삭제 (전 과정 `@Transactional`)
 
