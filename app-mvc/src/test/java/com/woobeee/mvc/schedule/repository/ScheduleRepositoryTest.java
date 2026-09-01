@@ -108,6 +108,33 @@ class ScheduleRepositoryTest {
         assertThat(milestoneRepository.findAllForProject(p.getId())).isEmpty();
     }
 
+    /** SCHEDULE-AC-26 — 다이제스트 조회는 오늘 마감/오늘 시작/기한 경과(미완료)를 소유자 기준으로 가른다. */
+    @Test
+    void digestQueriesPickTheRightTasksForTheRightMember() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate today = LocalDate.now();
+
+        Projects mine = project(401L);
+        Tasks dueToday = taskRepository.save(Tasks.create(
+                mine.getId(), null, "due-today", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
+        Tasks startingToday = taskRepository.save(Tasks.create(
+                mine.getId(), null, "starting-today", ScheduleStatus.NOT_STARTED, today, null, "#ef4444"));
+        Tasks overdue = taskRepository.save(Tasks.create(
+                mine.getId(), null, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        taskRepository.save(Tasks.create(
+                mine.getId(), null, "overdue-done", ScheduleStatus.DONE, null, yesterday, "#ef4444"));
+        Projects others = project(402L);
+        taskRepository.save(Tasks.create(
+                others.getId(), null, "not-mine", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
+
+        assertThat(taskRepository.findDueTodayForMember(401L))
+                .extracting(Tasks::getId).containsExactly(dueToday.getId());
+        assertThat(taskRepository.findStartingTodayForMember(401L))
+                .extracting(Tasks::getId).containsExactly(startingToday.getId());
+        assertThat(taskRepository.findOverdueForMember(401L))
+                .extracting(Tasks::getId).containsExactly(overdue.getId());
+    }
+
     /** SCHEDULE-AC-21/22 — 기한 경과(어제 이전)는 세 층 모두 완료로, 미정·당일·남의 것은 유지. */
     @Test
     void overdueItemsFlipToDoneWhileOpenEndedDueTodayAndOthersSurvive() {

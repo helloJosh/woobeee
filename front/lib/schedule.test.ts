@@ -7,6 +7,8 @@ import {
     formatDateRange,
     isValidDateRange,
     isValidHexColor,
+    isValidSlackWebhookUrl,
+    nextStatus,
     todayIso,
     type ScheduleTree,
 } from "./schedule"
@@ -148,6 +150,25 @@ describe("isValidDateRange", () => {
 
     it("종료가 시작보다 빠르면 무효하다", () => {
         expect(isValidDateRange("2026-08-20", "2026-08-19")).toBe(false)
+    })
+})
+
+// SCHEDULE-AC-29
+describe("nextStatus", () => {
+    it("시작전 → 진행중 → 완료 → 시작전으로 순환한다", () => {
+        expect(nextStatus("NOT_STARTED")).toBe("IN_PROGRESS")
+        expect(nextStatus("IN_PROGRESS")).toBe("DONE")
+        expect(nextStatus("DONE")).toBe("NOT_STARTED")
+    })
+})
+
+// SCHEDULE-AC-24
+describe("isValidSlackWebhookUrl", () => {
+    it("hooks.slack.com 으로 시작하는 https URL만 허용한다", () => {
+        expect(isValidSlackWebhookUrl("https://hooks.slack.com/services/T0/B0/xxx")).toBe(true)
+        expect(isValidSlackWebhookUrl("https://example.com/hook")).toBe(false)
+        expect(isValidSlackWebhookUrl("http://hooks.slack.com/services/T0")).toBe(false)
+        expect(isValidSlackWebhookUrl("")).toBe(false)
     })
 })
 

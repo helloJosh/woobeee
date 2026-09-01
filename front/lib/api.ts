@@ -792,6 +792,13 @@ export const scheduleAPI = {
         scheduleRequest(`/api/back/schedule/tasks/${taskId}`, "PUT", body),
     deleteTask: (taskId: number) =>
         scheduleRequest(`/api/back/schedule/tasks/${taskId}`, "DELETE"),
+
+    getNotification: (): Promise<{ webhookUrl: string | null }> =>
+        scheduleRequest("/api/back/schedule/notification", "GET"),
+    updateNotification: (webhookUrl: string): Promise<{ webhookUrl: string | null }> =>
+        scheduleRequest("/api/back/schedule/notification", "PUT", { webhookUrl }),
+    deleteNotification: () =>
+        scheduleRequest("/api/back/schedule/notification", "DELETE"),
 }
 
 export const productAPI = {

@@ -21,6 +21,8 @@ public enum ScheduleErrorCode {
     CYCLE(HttpStatus.BAD_REQUEST, "schedule_cycle", "A milestone cannot move under itself or its descendant"),
     INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST, "schedule_invalidDateRange", "endDate must not be before startDate"),
     INVALID_COLOR(HttpStatus.BAD_REQUEST, "schedule_invalidColor", "Color must be #RRGGBB"),
+    INVALID_WEBHOOK_URL(HttpStatus.BAD_REQUEST, "schedule_invalidWebhookUrl",
+            "Webhook URL must start with https://hooks.slack.com/"),
 
     BAD_REQUEST(HttpStatus.BAD_REQUEST, "schedule_badRequest", "Malformed request"),
     UNEXPECTED(HttpStatus.INTERNAL_SERVER_ERROR, "schedule_unexpected", "Unexpected server error");

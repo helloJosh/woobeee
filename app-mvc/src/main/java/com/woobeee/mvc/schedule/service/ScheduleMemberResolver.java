@@ -18,11 +18,15 @@ public class ScheduleMemberResolver {
     private final MemberRepository memberRepository;
 
     public Long requireMemberId(String loginId) {
+        return requireMember(loginId).getId();
+    }
+
+    /** 알림 설정처럼 Member 엔티티 자체가 필요한 경로용. 트랜잭션 안에서는 관리 엔티티다. */
+    public Member requireMember(String loginId) {
         if (!StringUtils.hasText(loginId)) {
             throw ScheduleErrorCode.UNAUTHORIZED.asException();
         }
         return memberRepository.findByEmail(loginId)
-                .map(Member::getId)
                 .orElseThrow(ScheduleErrorCode.MEMBER_NOT_FOUND::asException);
     }
 }

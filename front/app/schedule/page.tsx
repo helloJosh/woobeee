@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Bell, Plus } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -10,11 +10,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ScheduleTree from "@/components/schedule/schedule-tree"
 import ScheduleCalendar from "@/components/schedule/schedule-calendar"
 import ScheduleItemDialog, { type ItemDraft, type ItemKind } from "@/components/schedule/schedule-item-dialog"
+import NotificationDialog from "@/components/schedule/notification-dialog"
 import { useAuth } from "@/hooks/use-auth"
 import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
-    collectTasks, filterTree, STATUS_LABELS, todayIso,
+    collectTasks, filterTree, nextStatus, STATUS_LABELS, todayIso,
     type FilteredMilestone, type FilteredProject, type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
 
@@ -39,6 +40,7 @@ export default function SchedulePage() {
     const [filter, setFilter] = useState<StatusFilter>("ALL")
     const [dialog, setDialog] = useState<DialogState>(null)
     const [dialogInitial, setDialogInitial] = useState<ItemDraft>(EMPTY_DRAFT)
+    const [notifOpen, setNotifOpen] = useState(false)
     const [calYear, setCalYear] = useState(() => new Date().getFullYear())
     const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1)
 
@@ -78,6 +80,34 @@ export default function SchedulePage() {
         return null
     }
 
+    const findMilestoneParentId = (milestoneId: number): number | null => {
+        if (!tree) return null
+        for (const p of tree.projects) {
+            const list: { id: number; parentId: number | null }[] = []
+            const visit = (ms: typeof p.milestones, parentId: number | null) => {
+                for (const m of ms) { list.push({ id: m.id, parentId }); visit(m.milestones, m.id) }
+            }
+            visit(p.milestones, null)
+            const hit = list.find((m) => m.id === milestoneId)
+            if (hit) return hit.parentId
+        }
+        return null
+    }
+
+    // SCHEDULE-AC-29 — 배지 클릭: 상태만 다음 값으로 바꿔 즉시 저장한다
+    const cycleProject = async (p: FilteredProject) => {
+        await scheduleAPI.updateProject(p.id, { name: p.name, status: nextStatus(p.status), startDate: p.startDate, endDate: p.endDate })
+        await fetchTree()
+    }
+    const cycleMilestone = async (m: FilteredMilestone) => {
+        await scheduleAPI.updateMilestone(m.id, { name: m.name, status: nextStatus(m.status), startDate: m.startDate, endDate: m.endDate, parentId: findMilestoneParentId(m.id) })
+        await fetchTree()
+    }
+    const cycleTask = async (task: ScheduleTask) => {
+        await scheduleAPI.updateTask(task.id, { name: task.name, status: nextStatus(task.status), startDate: task.startDate, endDate: task.endDate, milestoneId: task.milestoneId, color: task.color })
+        await fetchTree()
+    }
+
     const openEditTask = (projectId: number, task: ScheduleTask) => {
         setDialogInitial({ name: task.name, status: task.status, startDate: task.startDate, endDate: task.endDate, color: task.color })
         setDialog({ kind: "task", mode: "edit", projectId, id: task.id })
@@ -92,15 +122,7 @@ export default function SchedulePage() {
         } else if (dialog.kind === "milestone") {
             if (dialog.mode === "create") await scheduleAPI.createMilestone({ ...base, projectId: dialog.projectId, parentId: dialog.parentId })
             else {
-                const current = tree?.projects.flatMap(function walk(p): { id: number; parentId: number | null }[] {
-                    const list: { id: number; parentId: number | null }[] = []
-                    const visit = (ms: typeof p.milestones, parentId: number | null) => {
-                        for (const m of ms) { list.push({ id: m.id, parentId }); visit(m.milestones, m.id) }
-                    }
-                    visit(p.milestones, null)
-                    return list
-                }).find((m) => m.id === dialog.id)
-                await scheduleAPI.updateMilestone(dialog.id, { ...base, parentId: current?.parentId ?? null })
+                await scheduleAPI.updateMilestone(dialog.id, { ...base, parentId: findMilestoneParentId(dialog.id) })
             }
         } else {
             if (dialog.mode === "create") await scheduleAPI.createTask({ ...base, projectId: dialog.projectId, milestoneId: dialog.milestoneId })
@@ -126,9 +148,15 @@ export default function SchedulePage() {
         <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
             <div className="flex items-center justify-between gap-2">
                 <h1 className="text-xl font-bold">일정</h1>
-                <Button size="sm" onClick={() => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "project", mode: "create" }) }}>
-                    <Plus className="mr-1 h-4 w-4" />새 프로젝트
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" aria-label="Slack 알림 설정" onClick={() => setNotifOpen(true)}>
+                        <Bell className="h-4 w-4" />
+                        <span className="hidden sm:inline sm:ml-1">알림</span>
+                    </Button>
+                    <Button size="sm" onClick={() => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "project", mode: "create" }) }}>
+                        <Plus className="mr-1 h-4 w-4" />새 프로젝트
+                    </Button>
+                </div>
             </div>
 
             <Tabs value={filter} onValueChange={(v) => setFilter(v as StatusFilter)}>
@@ -156,6 +184,9 @@ export default function SchedulePage() {
                 <ScheduleTree
                     tree={filtered}
                     cb={{
+                        onCycleProject: (p) => void cycleProject(p),
+                        onCycleMilestone: (_projectId, m) => void cycleMilestone(m),
+                        onCycleTask: (_projectId, task) => void cycleTask(task),
                         onAddMilestone: (projectId, parentId) => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "milestone", mode: "create", projectId, parentId }) },
                         // 할 일 생성은 시작일 기본값이 오늘이다 (SCHEDULE-AC-23) — 입력란에서 바꿀 수 있다
                         onAddTask: (projectId, milestoneId) => { setDialogInitial({ ...EMPTY_DRAFT, startDate: todayIso() }); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
@@ -191,6 +222,8 @@ export default function SchedulePage() {
                     }}
                 />
             ) : null}
+
+            <NotificationDialog open={notifOpen} onClose={() => setNotifOpen(false)} />
 
             {dialog ? (
                 <ScheduleItemDialog

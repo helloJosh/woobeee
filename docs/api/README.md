@@ -75,6 +75,13 @@ access token TTL 은 role 로 갈린다 — `ROLE_ADMIN` 1일, 그 외 15분 (AU
 | POST | `/api/back/schedule/tasks` | 할 일 생성 | 로그인 |
 | PUT | `/api/back/schedule/tasks/{taskId}` | 할 일 수정 | 로그인 + 본인 |
 | DELETE | `/api/back/schedule/tasks/{taskId}` | 할 일 삭제 | 로그인 + 본인 |
+| GET | `/api/back/schedule/notification` | Slack 알림 설정 조회 (`webhookUrl`, null = 미사용) | 로그인 |
+| PUT | `/api/back/schedule/notification` | Slack Incoming Webhook URL 등록 — `https://hooks.slack.com/` 접두만 허용 | 로그인 |
+| DELETE | `/api/back/schedule/notification` | Slack 알림 해제 | 로그인 |
+
+매일 09:00(Asia/Seoul)에 `ScheduleSlackNotifier`(`@Scheduled`)가 webhook 을 등록한 멤버에게
+오늘 마감·오늘 시작·기한 경과(자동 완료 처리되는) 할 일 요약을 발송한다. 세 목록이 모두 비면
+보내지 않고, 한 멤버의 발송 실패는 다음 멤버 발송을 막지 않는다.
 
 ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아니라 서비스 계층에서 이뤄지며,
 본인 소유가 아니거나 존재하지 않는 리소스는 구분 없이 404 로 응답한다. FK 제약은 두지 않고
@@ -106,4 +113,4 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
   advice 만 있어 일부가 봉투 밖으로 나간다(`CLAUDE.md` 후속 과제 참조).
 - 게임 도메인의 상세 인수 기준은 `docs/game/PRD.md`, blog/auth 는 각각
   `docs/blog/PRD.md` · `docs/auth/PRD.md` 의 AC 표를 본다. schedule 은 `docs/schedule/PRD.md`
-  의 SCHEDULE-AC-01~20.
+  의 SCHEDULE-AC 표.

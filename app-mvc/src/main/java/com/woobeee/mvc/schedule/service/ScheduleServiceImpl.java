@@ -1,5 +1,6 @@
 package com.woobeee.mvc.schedule.service;
 
+import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.schedule.api.request.*;
 import com.woobeee.mvc.schedule.api.response.*;
 import com.woobeee.mvc.schedule.entity.Milestones;
@@ -351,5 +352,31 @@ public class ScheduleServiceImpl implements ScheduleService {
                 .orElseThrow(ScheduleErrorCode.TASK_NOT_FOUND::asException);
         ownedProject(memberId, target.getProjectId());
         taskRepository.delete(target);
+    }
+
+    /* ===== 알림 설정 ===== */
+
+    static final String SLACK_WEBHOOK_PREFIX = "https://hooks.slack.com/";
+
+    @Override
+    @Transactional(readOnly = true)
+    public NotificationResponse getNotification(String loginId) {
+        return new NotificationResponse(memberResolver.requireMember(loginId).getSlackWebhookUrl());
+    }
+
+    /** SCHEDULE-AC-24/25 — Slack Incoming Webhook 만 허용한다. */
+    @Override
+    public NotificationResponse updateNotification(String loginId, PutNotificationRequest r) {
+        Member member = memberResolver.requireMember(loginId);
+        if (r.webhookUrl() == null || !r.webhookUrl().startsWith(SLACK_WEBHOOK_PREFIX)) {
+            throw ScheduleErrorCode.INVALID_WEBHOOK_URL.asException();
+        }
+        member.changeSlackWebhookUrl(r.webhookUrl());
+        return new NotificationResponse(member.getSlackWebhookUrl());
+    }
+
+    @Override
+    public void deleteNotification(String loginId) {
+        memberResolver.requireMember(loginId).removeSlackWebhookUrl();
     }
 }

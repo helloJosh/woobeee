@@ -38,3 +38,9 @@
 | SCHEDULE-AC-21 | 종료일이 지난(어제 이전) 항목이 있을 때 `GET /tree` | 프로젝트·마일스톤·할 일 모두 조회 전에 상태가 `DONE`으로 자동 갱신되어 반환 |
 | SCHEDULE-AC-22 | 종료일 미정(NULL) 또는 종료일이 오늘 당일인 항목 | 자동 완료 대상에서 제외 — 상태 유지 |
 | SCHEDULE-AC-23 | 할 일 생성 다이얼로그 | 시작일 기본값이 오늘(`todayIso()`, 수정 가능). 프로젝트·마일스톤 생성은 빈 값 유지 |
+| SCHEDULE-AC-24 | `PUT /notification`에 `https://hooks.slack.com/`으로 시작하지 않는 URL | 400 + `schedule_invalidWebhookUrl` |
+| SCHEDULE-AC-25 | Slack webhook 등록/조회/해제 (`GET`/`PUT`/`DELETE /notification`) | 본인 `members.slack_webhook_url`만 읽고 쓴다. 미등록 조회는 `webhookUrl: null` |
+| SCHEDULE-AC-26 | 매일 09:00(Asia/Seoul) 다이제스트 | webhook 등록 멤버에게 오늘 마감·오늘 시작·기한 경과(자동 완료 대상) **할 일**을 한 메시지로 발송. 세 목록이 모두 비면 발송하지 않는다 |
+| SCHEDULE-AC-27 | 다이제스트 발송 중 한 멤버의 webhook 호출 실패 | 로그만 남기고 다음 멤버 발송을 계속한다 |
+| SCHEDULE-AC-28 | 다이제스트의 기한 경과 목록 | 목록을 수집한 **뒤** 세 층 자동 완료(`completeOverdueForMember`)를 실행한다 — 알림에는 완료 전 상태로 담긴다 |
+| SCHEDULE-AC-29 | 트리에서 상태 배지 클릭 | `nextStatus`: 시작전→진행중→완료→시작전 순환. 다이얼로그 없이 즉시 저장되고 트리가 갱신된다 |

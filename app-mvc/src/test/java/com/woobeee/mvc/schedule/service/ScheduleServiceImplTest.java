@@ -1,9 +1,11 @@
 package com.woobeee.mvc.schedule.service;
 
+import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.schedule.api.request.PostMilestoneRequest;
 import com.woobeee.mvc.schedule.api.request.PostProjectRequest;
 import com.woobeee.mvc.schedule.api.request.PostTaskRequest;
 import com.woobeee.mvc.schedule.api.request.PutMilestoneRequest;
+import com.woobeee.mvc.schedule.api.request.PutNotificationRequest;
 import com.woobeee.mvc.schedule.api.request.PutTaskRequest;
 import com.woobeee.mvc.schedule.api.response.GetScheduleTreeResponse;
 import com.woobeee.mvc.schedule.api.response.TaskResponse;
@@ -335,6 +337,37 @@ class ScheduleServiceImplTest {
                 new PutMilestoneRequest(4L, "s", ScheduleStatus.NOT_STARTED, null, null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.DEPTH_EXCEEDED));
+    }
+
+    /** SCHEDULE-AC-24 — hooks.slack.com 으로 시작하지 않는 URL 은 거부된다. */
+    @Test
+    void aNonSlackWebhookUrlIsRejected() {
+        Member member = Member.create("sub", LOGIN, "me", true, true);
+        when(memberResolver.requireMember(LOGIN)).thenReturn(member);
+
+        assertThatThrownBy(() -> service.updateNotification(LOGIN,
+                new PutNotificationRequest("https://example.com/hook")))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.INVALID_WEBHOOK_URL));
+        assertThat(member.getSlackWebhookUrl()).isNull();
+    }
+
+    /** SCHEDULE-AC-25 — 웹훅 등록·조회·해제는 본인 멤버 행에만 닿는다. */
+    @Test
+    void webhookUrlIsStoredAndCleared() {
+        Member member = Member.create("sub", LOGIN, "me", true, true);
+        when(memberResolver.requireMember(LOGIN)).thenReturn(member);
+
+        var saved = service.updateNotification(LOGIN,
+                new PutNotificationRequest("https://hooks.slack.com/services/T000/B000/xxx"));
+
+        assertThat(saved.webhookUrl()).isEqualTo("https://hooks.slack.com/services/T000/B000/xxx");
+        assertThat(service.getNotification(LOGIN).webhookUrl())
+                .isEqualTo("https://hooks.slack.com/services/T000/B000/xxx");
+
+        service.deleteNotification(LOGIN);
+
+        assertThat(service.getNotification(LOGIN).webhookUrl()).isNull();
     }
 
     /** SCHEDULE-AC-21 — 트리 조회는 읽기 전에 세 층의 기한 경과 항목을 완료로 갱신한다. */

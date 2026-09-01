@@ -14,6 +14,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -92,5 +94,19 @@ class ScheduleControllerTest {
                         .content("{\"name\":\"t\",\"status\":\"NOT_STARTED\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.header.message").value("schedule_badRequest"));
+    }
+
+    /** SCHEDULE-AC-24 — 서비스의 INVALID_WEBHOOK_URL 이 400 봉투로 나간다. */
+    @Test
+    void anInvalidWebhookUrlBecomesA400Envelope() throws Exception {
+        when(scheduleService.updateNotification(eq("me@example.com"), any()))
+                .thenThrow(ScheduleErrorCode.INVALID_WEBHOOK_URL.asException());
+
+        mockMvc.perform(put("/api/back/schedule/notification")
+                        .header("loginId", "me@example.com")
+                        .contentType("application/json")
+                        .content("{\"webhookUrl\":\"https://example.com/hook\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.header.message").value("schedule_invalidWebhookUrl"));
     }
 }

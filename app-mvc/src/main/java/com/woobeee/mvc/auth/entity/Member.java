@@ -42,6 +42,10 @@ public class Member {
     @Column(length = 1000)
     private String profileImageKey;
 
+    /** 일정 다이제스트를 받을 Slack Incoming Webhook URL. NULL = 알림 미사용. */
+    @Column(length = 500)
+    private String slackWebhookUrl;
+
     @Column(nullable = false)
     private long gameMoney;
 
@@ -107,5 +111,13 @@ public class Member {
 
     public void removeProfileImageKey() {
         this.profileImageKey = null;
+    }
+
+    public void changeSlackWebhookUrl(String slackWebhookUrl) {
+        this.slackWebhookUrl = slackWebhookUrl;
+    }
+
+    public void removeSlackWebhookUrl() {
+        this.slackWebhookUrl = null;
     }
 }

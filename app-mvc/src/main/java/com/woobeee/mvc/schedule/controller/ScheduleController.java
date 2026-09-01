@@ -105,4 +105,27 @@ public class ScheduleController {
         scheduleService.deleteTask(loginId, taskId);
         return ApiResponse.success("Task deleted");
     }
+
+    @GetMapping("/notification")
+    @Operation(summary = "알림 설정 조회", description = "내 Slack webhook URL을 조회합니다. null이면 미사용.")
+    public ApiResponse<NotificationResponse> getNotification(
+            @RequestHeader(name = "loginId", required = false) String loginId) {
+        return ApiResponse.success(scheduleService.getNotification(loginId), "Notification settings retrieved");
+    }
+
+    @PutMapping("/notification")
+    @Operation(summary = "알림 설정 등록", description = "Slack Incoming Webhook URL을 등록합니다.")
+    public ApiResponse<NotificationResponse> updateNotification(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @Valid @RequestBody PutNotificationRequest request) {
+        return ApiResponse.success(scheduleService.updateNotification(loginId, request), "Notification settings updated");
+    }
+
+    @DeleteMapping("/notification")
+    @Operation(summary = "알림 설정 해제")
+    public ApiResponse<Void> deleteNotification(
+            @RequestHeader(name = "loginId", required = false) String loginId) {
+        scheduleService.deleteNotification(loginId);
+        return ApiResponse.success("Notification settings deleted");
+    }
 }

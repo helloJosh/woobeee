@@ -62,6 +62,18 @@ export function isValidDateRange(start: string | null, end: string | null): bool
     return end >= start
 }
 
+/** SCHEDULE-AC-29 — 배지 클릭 순환: 시작전 → 진행중 → 완료 → 시작전. */
+export function nextStatus(status: ScheduleStatus): ScheduleStatus {
+    if (status === "NOT_STARTED") return "IN_PROGRESS"
+    if (status === "IN_PROGRESS") return "DONE"
+    return "NOT_STARTED"
+}
+
+/** SCHEDULE-AC-24 — Slack Incoming Webhook 만 허용한다 (서버와 같은 규칙). */
+export function isValidSlackWebhookUrl(url: string): boolean {
+    return url.startsWith("https://hooks.slack.com/")
+}
+
 /** 로컬 기준 오늘을 "YYYY-MM-DD"로 — 할 일 생성 시작일 기본값 (SCHEDULE-AC-23). */
 export function todayIso(now: Date = new Date()): string {
     const y = now.getFullYear()
