@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ChevronRight, MoreHorizontal, Plus } from "lucide-react"
+import { ChevronDown, ChevronRight, ListTodo, Milestone, MoreHorizontal, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -44,6 +44,31 @@ function StatusBadge({ status, onClick }: { status: ScheduleStatus; onClick?: ()
     )
 }
 
+/** 추가는 + 메뉴 한 곳으로 — 무엇을 만드는지 라벨로 보여준다. ⋯ 는 수정/삭제 전용. */
+function AddMenu({ onAddTask, onAddMilestone, milestoneLabel }: {
+    onAddTask: () => void
+    onAddMilestone: () => void
+    milestoneLabel: string
+}) {
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="항목 추가">
+                    <Plus className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onAddTask}>
+                    <ListTodo className="mr-2 h-4 w-4" />할 일 추가
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onAddMilestone}>
+                    <Milestone className="mr-2 h-4 w-4" />{milestoneLabel}
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    )
+}
+
 function TaskRow({ projectId, task, cb }: { projectId: number; task: ScheduleTask; cb: TreeCallbacks }) {
     const done = task.status === "DONE"
     return (
@@ -78,13 +103,16 @@ function MilestoneRow({ projectId, milestone, cb }: {
                 <StatusBadge status={milestone.status} onClick={() => cb.onCycleMilestone(projectId, milestone)} />
                 <span className="flex-1 truncate text-sm font-medium">{milestone.name}</span>
                 <span className="hidden text-xs text-muted-foreground sm:inline">{formatDateRange(milestone.startDate, milestone.endDate)}</span>
+                <AddMenu
+                    onAddTask={() => cb.onAddTask(projectId, milestone.id)}
+                    onAddMilestone={() => cb.onAddMilestone(projectId, milestone.id)}
+                    milestoneLabel="하위 마일스톤 추가"
+                />
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => cb.onAddTask(projectId, milestone.id)}>할 일 추가</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => cb.onAddMilestone(projectId, milestone.id)}>하위 마일스톤 추가</DropdownMenuItem>
                         <DropdownMenuItem onClick={() => cb.onEditMilestone(projectId, milestone)}>수정</DropdownMenuItem>
                         <DropdownMenuItem className="text-destructive" onClick={() => cb.onDeleteMilestone(milestone.id)}>삭제</DropdownMenuItem>
                     </DropdownMenuContent>
@@ -102,7 +130,12 @@ function MilestoneRow({ projectId, milestone, cb }: {
     )
 }
 
-export default function ScheduleTree({ tree, cb }: { tree: FilteredTree; cb: TreeCallbacks }) {
+export default function ScheduleTree({ tree, cb, showEmptyHints }: {
+    tree: FilteredTree
+    cb: TreeCallbacks
+    /** 상태 필터가 꺼져 있을 때만 — 필터로 비어 보이는 프로젝트에 잘못된 안내를 하지 않기 위해. */
+    showEmptyHints: boolean
+}) {
     return (
         <ul className="space-y-4">
             {tree.projects.map((p) => (
@@ -111,16 +144,16 @@ export default function ScheduleTree({ tree, cb }: { tree: FilteredTree; cb: Tre
                         <StatusBadge status={p.status} onClick={() => cb.onCycleProject(p)} />
                         <span className="flex-1 truncate font-semibold">{p.name}</span>
                         <span className="hidden text-xs text-muted-foreground sm:inline">{formatDateRange(p.startDate, p.endDate)}</span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="항목 추가"
-                                onClick={() => cb.onAddTask(p.id, null)}>
-                            <Plus className="h-4 w-4" />
-                        </Button>
+                        <AddMenu
+                            onAddTask={() => cb.onAddTask(p.id, null)}
+                            onAddMilestone={() => cb.onAddMilestone(p.id, null)}
+                            milestoneLabel="마일스톤 추가"
+                        />
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => cb.onAddMilestone(p.id, null)}>마일스톤 추가</DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => cb.onEditProject(p)}>수정</DropdownMenuItem>
                                 <DropdownMenuItem className="text-destructive" onClick={() => cb.onDeleteProject(p.id)}>삭제</DropdownMenuItem>
                             </DropdownMenuContent>
@@ -132,6 +165,19 @@ export default function ScheduleTree({ tree, cb }: { tree: FilteredTree; cb: Tre
                             <MilestoneRow key={m.id} projectId={p.id} milestone={m} cb={cb} />
                         ))}
                     </ul>
+                    {showEmptyHints && p.tasks.length === 0 && p.milestones.length === 0 ? (
+                        <div className="mt-1 flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+                            아직 항목이 없습니다 —
+                            <Button variant="outline" size="sm" className="h-7"
+                                    onClick={() => cb.onAddTask(p.id, null)}>
+                                <ListTodo className="mr-1 h-3.5 w-3.5" />할 일
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-7"
+                                    onClick={() => cb.onAddMilestone(p.id, null)}>
+                                <Milestone className="mr-1 h-3.5 w-3.5" />마일스톤
+                            </Button>
+                        </div>
+                    ) : null}
                 </li>
             ))}
         </ul>

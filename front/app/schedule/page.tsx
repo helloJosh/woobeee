@@ -42,6 +42,7 @@ export default function SchedulePage() {
     const [filter, setFilter] = useState<StatusFilter>("ALL")
     const [dialog, setDialog] = useState<DialogState>(null)
     const [dialogInitial, setDialogInitial] = useState<ItemDraft>(EMPTY_DRAFT)
+    const [dialogContext, setDialogContext] = useState<string | null>(null)
     const [notifOpen, setNotifOpen] = useState(false)
     const [calYear, setCalYear] = useState(() => new Date().getFullYear())
     const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1)
@@ -127,6 +128,16 @@ export default function SchedulePage() {
             () => scheduleAPI.updateTask(task.id, { name: task.name, status: to, startDate: task.startDate, endDate: task.endDate, milestoneId: task.milestoneId, color: task.color }), to)
     }
 
+    /** 생성 다이얼로그의 "어디에 만드는지" 안내 문구. */
+    const parentLabel = (projectId: number, milestoneId: number | null): string => {
+        if (milestoneId !== null && tree) {
+            const hit = findMilestone(tree, milestoneId)
+            if (hit) return `「${hit.milestone.name}」 마일스톤 아래에 추가`
+        }
+        const p = tree?.projects.find((x) => x.id === projectId)
+        return p ? `「${p.name}」 프로젝트 아래에 추가` : "추가"
+    }
+
     const openCalendarEntry = (kind: ScheduleItemKind, id: number) => {
         if (!tree) return
         if (kind === "task") {
@@ -137,17 +148,20 @@ export default function SchedulePage() {
         if (kind === "project") {
             const p = tree.projects.find((x) => x.id === id)
             if (!p) return
+            setDialogContext(null)
             setDialogInitial({ name: p.name, status: p.status, startDate: p.startDate, endDate: p.endDate })
             setDialog({ kind: "project", mode: "edit", id: p.id })
             return
         }
         const hit = findMilestone(tree, id)
         if (!hit) return
+        setDialogContext(null)
         setDialogInitial({ name: hit.milestone.name, status: hit.milestone.status, startDate: hit.milestone.startDate, endDate: hit.milestone.endDate })
         setDialog({ kind: "milestone", mode: "edit", projectId: hit.projectId, id })
     }
 
     const openEditTask = (projectId: number, task: ScheduleTask) => {
+        setDialogContext(null)
         setDialogInitial({ name: task.name, status: task.status, startDate: task.startDate, endDate: task.endDate, color: task.color })
         setDialog({ kind: "task", mode: "edit", projectId, id: task.id })
     }
@@ -192,7 +206,7 @@ export default function SchedulePage() {
                         <Bell className="h-4 w-4" />
                         <span className="hidden sm:inline sm:ml-1">알림</span>
                     </Button>
-                    <Button size="sm" onClick={() => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "project", mode: "create" }) }}>
+                    <Button size="sm" onClick={() => { setDialogInitial(EMPTY_DRAFT); setDialogContext("최상위 묶음입니다 — 아래에 마일스톤과 할 일을 담습니다."); setDialog({ kind: "project", mode: "create" }) }}>
                         <Plus className="mr-1 h-4 w-4" />새 프로젝트
                     </Button>
                 </div>
@@ -222,18 +236,21 @@ export default function SchedulePage() {
             ) : filtered && filtered.projects.length > 0 ? (
                 <ScheduleTree
                     tree={filtered}
+                    showEmptyHints={filter === "ALL"}
                     cb={{
                         onCycleProject: (p) => void cycleProject(p),
                         onCycleMilestone: (_projectId, m) => void cycleMilestone(m),
                         onCycleTask: (_projectId, task) => void cycleTask(task),
-                        onAddMilestone: (projectId, parentId) => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "milestone", mode: "create", projectId, parentId }) },
+                        onAddMilestone: (projectId, parentId) => { setDialogInitial(EMPTY_DRAFT); setDialogContext(`${parentLabel(projectId, parentId)} — 할 일을 묶는 단계입니다 (5단계까지 중첩).`); setDialog({ kind: "milestone", mode: "create", projectId, parentId }) },
                         // 할 일 생성은 시작일 기본값이 오늘이다 (SCHEDULE-AC-23) — 입력란에서 바꿀 수 있다
-                        onAddTask: (projectId, milestoneId) => { setDialogInitial({ ...EMPTY_DRAFT, startDate: todayIso() }); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
+                        onAddTask: (projectId, milestoneId) => { setDialogInitial({ ...EMPTY_DRAFT, startDate: todayIso() }); setDialogContext(`${parentLabel(projectId, milestoneId)} — 고유색 막대로 달력에 표시됩니다.`); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
                         onEditProject: (p: FilteredProject) => {
+                            setDialogContext(null)
                             setDialogInitial({ name: p.name, status: p.status, startDate: p.startDate, endDate: p.endDate })
                             setDialog({ kind: "project", mode: "edit", id: p.id })
                         },
                         onEditMilestone: (projectId, m: FilteredMilestone) => {
+                            setDialogContext(null)
                             setDialogInitial({ name: m.name, status: m.status, startDate: m.startDate, endDate: m.endDate })
                             setDialog({ kind: "milestone", mode: "edit", projectId, id: m.id })
                         },
@@ -245,7 +262,9 @@ export default function SchedulePage() {
                 />
             ) : (
                 <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-                    {filter === "ALL" ? "아직 프로젝트가 없습니다. 새 프로젝트로 시작해 보세요." : "이 상태의 항목이 없습니다."}
+                    {filter === "ALL"
+                        ? "아직 프로젝트가 없습니다. 프로젝트 > 마일스톤 > 할 일 구조로 관리합니다 — 새 프로젝트로 시작해 보세요."
+                        : "이 상태의 항목이 없습니다."}
                 </div>
             )}
 
@@ -265,6 +284,7 @@ export default function SchedulePage() {
                 <ScheduleItemDialog
                     open kind={dialog.kind}
                     title={`${dialog.mode === "create" ? "새 " : ""}${dialog.kind === "project" ? "프로젝트" : dialog.kind === "milestone" ? "마일스톤" : "할 일"}${dialog.mode === "edit" ? " 수정" : ""}`}
+                    context={dialogContext ?? undefined}
                     initial={dialogInitial}
                     showColor={dialog.kind === "task" && dialog.mode === "edit"}
                     onSubmit={submit}

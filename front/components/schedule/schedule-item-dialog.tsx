@@ -22,6 +22,8 @@ interface Props {
     open: boolean
     kind: ItemKind
     title: string // "새 프로젝트", "할 일 수정" 등 — 호출부가 정한다
+    /** 생성 시 무엇을 어디에 만드는지 안내 — 예: "「DM」 프로젝트 아래에 추가 — ...". */
+    context?: string
     initial: ItemDraft
     showColor: boolean // task 수정에서만 true (생성 색은 서버가 배정)
     onSubmit: (draft: ItemDraft) => Promise<void>
@@ -30,7 +32,7 @@ interface Props {
 
 const STATUSES: ScheduleStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"]
 
-export default function ScheduleItemDialog({ open, kind, title, initial, showColor, onSubmit, onClose }: Props) {
+export default function ScheduleItemDialog({ open, kind, title, context, initial, showColor, onSubmit, onClose }: Props) {
     const [draft, setDraft] = useState<ItemDraft>(initial)
     const [saving, setSaving] = useState(false)
 
@@ -57,6 +59,7 @@ export default function ScheduleItemDialog({ open, kind, title, initial, showCol
         <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+                {context ? <p className="text-sm text-muted-foreground">{context}</p> : null}
                 <div className="space-y-4">
                     <div className="space-y-2">
                         <Label htmlFor="schedule-name">이름</Label>
