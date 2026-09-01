@@ -5,6 +5,7 @@ import {
     collectTasks,
     filterTree,
     formatDateRange,
+    isValidDateRange,
     isValidHexColor,
     type ScheduleTree,
 } from "./schedule"
@@ -120,5 +121,31 @@ describe("palette", () => {
 
     it("깊이 상한은 서버와 같은 5", () => {
         expect(MAX_MILESTONE_DEPTH).toBe(5)
+    })
+})
+
+describe("isValidDateRange", () => {
+    it("둘 다 없으면 유효하다", () => {
+        expect(isValidDateRange(null, null)).toBe(true)
+    })
+
+    it("시작만 있으면 유효하다", () => {
+        expect(isValidDateRange("2026-08-20", null)).toBe(true)
+    })
+
+    it("종료만 있으면 유효하다", () => {
+        expect(isValidDateRange(null, "2026-08-20")).toBe(true)
+    })
+
+    it("종료가 시작과 같으면 유효하다", () => {
+        expect(isValidDateRange("2026-08-20", "2026-08-20")).toBe(true)
+    })
+
+    it("종료가 시작보다 늦으면 유효하다", () => {
+        expect(isValidDateRange("2026-08-20", "2026-08-21")).toBe(true)
+    })
+
+    it("종료가 시작보다 빠르면 무효하다", () => {
+        expect(isValidDateRange("2026-08-20", "2026-08-19")).toBe(false)
     })
 })

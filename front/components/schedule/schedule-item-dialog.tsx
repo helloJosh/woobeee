@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { SCHEDULE_COLORS, STATUS_LABELS, isValidHexColor, type ScheduleStatus } from "@/lib/schedule"
+import { SCHEDULE_COLORS, STATUS_LABELS, isValidDateRange, isValidHexColor, type ScheduleStatus } from "@/lib/schedule"
 
 export type ItemKind = "project" | "milestone" | "task"
 
@@ -39,7 +39,7 @@ export default function ScheduleItemDialog({ open, kind, title, initial, showCol
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open])
 
-    const invalidRange = Boolean(draft.startDate && draft.endDate && draft.endDate < draft.startDate)
+    const invalidRange = !isValidDateRange(draft.startDate, draft.endDate)
     const invalidColor = showColor && draft.color !== undefined && !isValidHexColor(draft.color)
     const disabled = saving || draft.name.trim() === "" || invalidRange || invalidColor
 

@@ -56,6 +56,12 @@ export function isValidHexColor(value: string): boolean {
     return /^#[0-9a-fA-F]{6}$/.test(value)
 }
 
+/** 둘 다 있을 때만 순서를 본다 — 한쪽이 비면(미정) 항상 유효. */
+export function isValidDateRange(start: string | null, end: string | null): boolean {
+    if (!start || !end) return true
+    return end >= start
+}
+
 export interface FilteredMilestone extends Omit<ScheduleMilestone, "milestones"> {
     dimmed: boolean
     milestones: FilteredMilestone[]
