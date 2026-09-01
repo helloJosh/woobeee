@@ -15,7 +15,8 @@ import { useAuth } from "@/hooks/use-auth"
 import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
-    applyStatus, collectTasks, filterTree, nextStatus, STATUS_LABELS, todayIso,
+    applyStatus, collectCalendarEntries, collectTasks, filterTree, findMilestone, nextStatus,
+    STATUS_LABELS, todayIso,
     type FilteredMilestone, type FilteredProject, type ScheduleItemKind, type ScheduleStatus,
     type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
@@ -73,8 +74,9 @@ export default function SchedulePage() {
     }
 
     const filtered = tree ? filterTree(tree, filter) : null
-    const allTasks = tree ? collectTasks(tree) : []
-    const calendarTasks = filter === "ALL" ? allTasks : allTasks.filter((t) => t.status === filter)
+    // 달력은 프로젝트·마일스톤·할 일 전부 — 상태 필터는 각 막대의 자기 상태로 적용 (SCHEDULE-AC-30)
+    const allEntries = tree ? collectCalendarEntries(tree) : []
+    const calendarEntries = filter === "ALL" ? allEntries : allEntries.filter((e) => e.status === filter)
 
     const findTask = (taskId: number): { projectId: number; task: ScheduleTask } | null => {
         if (!tree) return null
@@ -123,6 +125,26 @@ export default function SchedulePage() {
         const to = nextStatus(task.status)
         return cycleStatus("task", task.id,
             () => scheduleAPI.updateTask(task.id, { name: task.name, status: to, startDate: task.startDate, endDate: task.endDate, milestoneId: task.milestoneId, color: task.color }), to)
+    }
+
+    const openCalendarEntry = (kind: ScheduleItemKind, id: number) => {
+        if (!tree) return
+        if (kind === "task") {
+            const found = findTask(id)
+            if (found) openEditTask(found.projectId, found.task)
+            return
+        }
+        if (kind === "project") {
+            const p = tree.projects.find((x) => x.id === id)
+            if (!p) return
+            setDialogInitial({ name: p.name, status: p.status, startDate: p.startDate, endDate: p.endDate })
+            setDialog({ kind: "project", mode: "edit", id: p.id })
+            return
+        }
+        const hit = findMilestone(tree, id)
+        if (!hit) return
+        setDialogInitial({ name: hit.milestone.name, status: hit.milestone.status, startDate: hit.milestone.startDate, endDate: hit.milestone.endDate })
+        setDialog({ kind: "milestone", mode: "edit", projectId: hit.projectId, id })
     }
 
     const openEditTask = (projectId: number, task: ScheduleTask) => {
@@ -229,14 +251,11 @@ export default function SchedulePage() {
 
             {treeState === "ready" ? (
                 <ScheduleCalendar
-                    tasks={calendarTasks}
+                    entries={calendarEntries}
                     year={calYear}
                     month={calMonth}
                     onMove={(y, m) => { setCalYear(y); setCalMonth(m) }}
-                    onTaskClick={(taskId) => {
-                        const found = findTask(taskId)
-                        if (found) openEditTask(found.projectId, found.task)
-                    }}
+                    onEntryClick={openCalendarEntry}
                 />
             ) : null}
 

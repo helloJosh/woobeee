@@ -3,7 +3,9 @@ import {
     SCHEDULE_COLORS,
     MAX_MILESTONE_DEPTH,
     applyStatus,
+    collectCalendarEntries,
     collectTasks,
+    findMilestone,
     filterTree,
     formatDateRange,
     isValidDateRange,
@@ -104,8 +106,8 @@ describe("formatDateRange", () => {
         expect(formatDateRange(null, "2026-08-31", today)).toBe("~ 08.31")
     })
 
-    it("둘 다 없으면 빈 문자열", () => {
-        expect(formatDateRange(null, null, today)).toBe("")
+    it("둘 다 없으면 '일정 미정'으로 표기한다", () => {
+        expect(formatDateRange(null, null, today)).toBe("일정 미정")
     })
 })
 
@@ -151,6 +153,37 @@ describe("isValidDateRange", () => {
 
     it("종료가 시작보다 빠르면 무효하다", () => {
         expect(isValidDateRange("2026-08-20", "2026-08-19")).toBe(false)
+    })
+})
+
+// SCHEDULE-AC-30 — 달력 평탄화: 트리 순서, 같은 프로젝트 연속, kind/color 구분
+describe("collectCalendarEntries", () => {
+    it("프로젝트 → 직속 할 일 → 마일스톤(재귀) 순서로, 같은 프로젝트가 연속으로 나온다", () => {
+        const entries = collectCalendarEntries(tree)
+        expect(entries.map((e) => `${e.kind}:${e.id}`)).toEqual([
+            "project:1", "task:100", "milestone:10", "task:101", "milestone:11",
+            "project:2",
+        ])
+        expect(entries.every((e, i) => i === 0 || e.projectId >= entries[i - 1].projectId)).toBe(true)
+    })
+
+    it("할 일만 고유색을 가지고 프로젝트/마일스톤은 null 이다", () => {
+        const entries = collectCalendarEntries(tree)
+        expect(entries.find((e) => e.kind === "task" && e.id === 101)?.color).toBe("#3b82f6")
+        expect(entries.find((e) => e.kind === "project")?.color).toBeNull()
+        expect(entries.find((e) => e.kind === "milestone")?.color).toBeNull()
+    })
+})
+
+describe("findMilestone", () => {
+    it("중첩 마일스톤을 프로젝트 id와 함께 찾는다", () => {
+        const hit = findMilestone(tree, 11)
+        expect(hit?.projectId).toBe(1)
+        expect(hit?.milestone.name).toBe("하위")
+    })
+
+    it("없는 id 는 null", () => {
+        expect(findMilestone(tree, 999)).toBeNull()
     })
 })
 

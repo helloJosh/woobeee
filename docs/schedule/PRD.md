@@ -33,7 +33,7 @@
 | SCHEDULE-AC-16 | bean validation 실패(빈 name 등)·깨진 JSON | 400 + `schedule_badRequest` 봉투 |
 | SCHEDULE-AC-17 | `filterTree(tree, status)` | 자기 상태가 일치하는 노드와 그 조상 체인만 남고, 조상은 `dimmed` 표시 |
 | SCHEDULE-AC-18 | `calendarLayout` 월 경계 | 월 밖 구간은 잘리고 `continuesLeft`/`continuesRight`로 이어짐을 표시 |
-| SCHEDULE-AC-19 | `calendarLayout` 종료 미정 할 일 | **오늘 하루만** 표시(`openEnded` 플래그 유지). 오늘이 포함되지 않은 달에서는 표시되지 않는다 |
+| SCHEDULE-AC-19 | `calendarLayout` 종료 미정 항목(세 종류 공통) | **오늘 하루만** 표시(`openEnded` 플래그 유지). 오늘이 포함되지 않은 달에서는 표시되지 않는다 |
 | SCHEDULE-AC-20 | `formatDateRange` | 미정은 `미정`, 올해 날짜는 연도 생략(`08.20`), 다른 해는 `25.12.31` |
 | SCHEDULE-AC-21 | 종료일이 지난(어제 이전) 항목이 있을 때 `GET /tree` | 프로젝트·마일스톤·할 일 모두 조회 전에 상태가 `DONE`으로 자동 갱신되어 반환 |
 | SCHEDULE-AC-22 | 종료일 미정(NULL), 종료일이 오늘 당일, 또는 **마감이 지난 뒤 사용자가 직접 수정한 항목**(updated_at > 종료일 — 상태 배지 클릭 포함) | 자동 완료 대상에서 제외 — 수동 변경이 자동 완료를 이긴다 |
@@ -43,4 +43,5 @@
 | SCHEDULE-AC-26 | 매일 09:00(Asia/Seoul) 다이제스트 | webhook 등록 멤버에게 오늘 마감·오늘 시작·기한 경과(자동 완료 대상 — AC-22 예외 동일 적용) **할 일**을 한 메시지로 발송. 세 목록이 모두 비면 발송하지 않는다 |
 | SCHEDULE-AC-27 | 다이제스트 발송 중 한 멤버의 webhook 호출 실패 | 로그만 남기고 다음 멤버 발송을 계속한다 |
 | SCHEDULE-AC-28 | 다이제스트의 기한 경과 목록 | 목록을 수집한 **뒤** 세 층 자동 완료(`completeOverdueForMember`)를 실행한다 — 알림에는 완료 전 상태로 담긴다 |
-| SCHEDULE-AC-29 | 트리에서 상태 배지 클릭 | `nextStatus`: 시작전→진행중→완료→시작전 순환. 다이얼로그 없이 즉시 저장되고 트리가 갱신된다 |
+| SCHEDULE-AC-29 | 트리에서 상태 배지 클릭 | `nextStatus`: 시작전→진행중→완료→시작전 순환. 해당 노드만 옵티미스틱으로 즉시 반영, 저장 실패 시에만 재조회로 원복 |
+| SCHEDULE-AC-30 | 달력 계층 표시 | 프로젝트·마일스톤도 날짜 범위만큼 막대로 표시(`collectCalendarEntries` — 트리 순서). 같은 프로젝트 항목은 연속 lane 에 붙고(`laneGroupStarts`), 프로젝트 그룹 사이만 간격. 주 높이는 막대 수에 맞춰 동적이며 막대를 숨기지 않는다 |

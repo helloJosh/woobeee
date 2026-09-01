@@ -64,6 +64,66 @@ export function isValidDateRange(start: string | null, end: string | null): bool
 
 export type ScheduleItemKind = "project" | "milestone" | "task"
 
+/** SCHEDULE-AC-30 — 달력 막대 하나. 할 일만 고유색, 프로젝트/마일스톤은 null(중립 톤 렌더). */
+export interface CalendarEntry {
+    kind: ScheduleItemKind
+    id: number
+    /** 그룹 기준 — 같은 프로젝트의 막대는 달력에서 붙는다. */
+    projectId: number
+    name: string
+    status: ScheduleStatus
+    startDate: string | null
+    endDate: string | null
+    color: string | null
+}
+
+/**
+ * SCHEDULE-AC-30 — 달력용 평탄화. 트리 순서 그대로: 프로젝트 → 직속 할 일 →
+ * 마일스톤(재귀: 자신 → 자기 할 일 → 하위 마일스톤). 같은 프로젝트 항목은 연속으로 나온다.
+ */
+export function collectCalendarEntries(tree: ScheduleTree): CalendarEntry[] {
+    const out: CalendarEntry[] = []
+    const taskEntry = (projectId: number, t: ScheduleTask): CalendarEntry => ({
+        kind: "task", id: t.id, projectId, name: t.name, status: t.status,
+        startDate: t.startDate, endDate: t.endDate, color: t.color,
+    })
+    for (const p of tree.projects) {
+        out.push({
+            kind: "project", id: p.id, projectId: p.id, name: p.name, status: p.status,
+            startDate: p.startDate, endDate: p.endDate, color: null,
+        })
+        for (const t of p.tasks) out.push(taskEntry(p.id, t))
+        const walk = (ms: ScheduleMilestone[]) => {
+            for (const m of ms) {
+                out.push({
+                    kind: "milestone", id: m.id, projectId: p.id, name: m.name, status: m.status,
+                    startDate: m.startDate, endDate: m.endDate, color: null,
+                })
+                for (const t of m.tasks) out.push(taskEntry(p.id, t))
+                walk(m.milestones)
+            }
+        }
+        walk(p.milestones)
+    }
+    return out
+}
+
+/** 달력 막대 클릭 → 수정 다이얼로그를 열 때 쓰는 위치 조회. */
+export function findMilestone(
+    tree: ScheduleTree,
+    milestoneId: number,
+): { projectId: number; milestone: ScheduleMilestone } | null {
+    for (const p of tree.projects) {
+        const stack = [...p.milestones]
+        while (stack.length > 0) {
+            const m = stack.shift()!
+            if (m.id === milestoneId) return { projectId: p.id, milestone: m }
+            stack.push(...m.milestones)
+        }
+    }
+    return null
+}
+
 /**
  * SCHEDULE-AC-29 — 옵티미스틱 반영: 트리에서 해당 노드의 상태만 바꾼 새 트리를 돌려준다.
  * 원본은 변형하지 않는다. 저장 실패 시 호출부가 재조회로 원복한다.
@@ -175,14 +235,14 @@ function formatOne(iso: string, todayYear: number): string {
     return Number(y) === todayYear ? `${m}.${d}` : `${y.slice(2)}.${m}.${d}`
 }
 
-/** SCHEDULE-AC-20 — "08.20 ~ 미정" 표기. 올해는 연도 생략, 다른 해는 YY. 접두. */
+/** SCHEDULE-AC-20 — "08.20 ~ 미정" 표기. 올해는 연도 생략, 다른 해는 YY. 접두. 둘 다 없으면 "일정 미정". */
 export function formatDateRange(
     start: string | null,
     end: string | null,
     today: Date = new Date(),
 ): string {
     const year = today.getFullYear()
-    if (!start && !end) return ""
+    if (!start && !end) return "일정 미정"
     if (start && !end) return `${formatOne(start, year)} ~ 미정`
     if (!start && end) return `~ ${formatOne(end, year)}`
     return `${formatOne(start!, year)} ~ ${formatOne(end!, year)}`

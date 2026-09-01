@@ -1,12 +1,14 @@
-// front/lib/schedule-calendar.ts — 월 달력에 할 일 막대를 배치하는 순수 계산.
+// front/lib/schedule-calendar.ts — 월 달력에 일정 막대를 배치하는 순수 계산.
 // 날짜는 전부 "YYYY-MM-DD" 문자열을 로컬 자정 기준으로 다룬다 (UTC 파싱 함정 회피).
-import type { ScheduleTask } from "./schedule"
+import type { CalendarEntry, ScheduleItemKind } from "./schedule"
 
 export interface CalendarSegment {
-    taskId: number
+    kind: ScheduleItemKind
+    id: number
     name: string
-    color: string
-    /** 같은 주 안에서 세로로 쌓이는 줄 번호 (0부터). */
+    /** 할 일 고유색. 프로젝트/마일스톤은 null — 컴포넌트가 중립 톤으로 그린다. */
+    color: string | null
+    /** 같은 주 안에서 세로로 쌓이는 줄 번호 (0부터). 트리 순서를 그대로 따른다. */
     lane: number
     /** 주 안의 시작 칸 (0 = 일요일). */
     startCol: number
@@ -24,6 +26,13 @@ export interface CalendarWeek {
     /** 일~토 7칸. 그 달의 날짜가 아니면 null. */
     days: (number | null)[]
     segments: CalendarSegment[]
+    /** 이 주에 쌓인 줄 수 — 컴포넌트가 주 높이를 동적으로 계산한다 (막대를 숨기지 않는다). */
+    laneCount: number
+    /**
+     * SCHEDULE-AC-30 — lane 별로 "새 프로젝트 그룹의 첫 줄"인지. 컴포넌트는 그룹 시작
+     * lane 앞에만 간격을 주고, 같은 그룹 안의 막대는 붙여 그린다.
+     */
+    laneGroupStarts: boolean[]
 }
 
 function toLocalDate(iso: string): Date {
@@ -35,12 +44,20 @@ function dayDiff(a: Date, b: Date): number {
     return Math.round((b.getTime() - a.getTime()) / 86_400_000)
 }
 
+function addDays(base: Date, days: number): Date {
+    const d = new Date(base)
+    d.setDate(base.getDate() + days)
+    return d
+}
+
 /**
- * month 는 1~12. 일요일 시작 주 단위 그리드에 할 일 막대를 배치한다.
+ * month 는 1~12. 일요일 시작 주 단위 그리드에 막대를 배치한다.
+ * 엔트리 순서(collectCalendarEntries 의 트리 순서)를 그대로 lane 순서로 쓴다 —
+ * 같은 프로젝트의 막대가 연속 lane 에 놓여 서로 붙는다 (SCHEDULE-AC-30).
  * today 는 종료 미정 규칙(SCHEDULE-AC-19)의 기준일 — 테스트가 고정할 수 있게 주입받는다.
  */
 export function calendarLayout(
-    tasks: ScheduleTask[],
+    entries: CalendarEntry[],
     year: number,
     month: number,
     today: Date = new Date(),
@@ -54,65 +71,57 @@ export function calendarLayout(
     for (let w = 0; w < weekCount; w++) {
         const days: (number | null)[] = []
         for (let c = 0; c < 7; c++) {
-            const date = new Date(gridStart)
-            date.setDate(gridStart.getDate() + w * 7 + c)
+            const date = addDays(gridStart, w * 7 + c)
             days.push(date.getMonth() === month - 1 ? date.getDate() : null)
         }
-        weeks.push({ days, segments: [] })
+        weeks.push({ days, segments: [], laneCount: 0, laneGroupStarts: [] })
     }
 
-    // 시작일 순으로 배치해야 lane 배정이 결정적이다
     const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-    const placeable = tasks
-        .filter((t) => t.startDate !== null || t.endDate !== null)
-        .map((t) => {
-            if (t.endDate === null) {
+    const placeable = entries
+        .filter((e) => e.startDate !== null || e.endDate !== null)
+        .map((e) => {
+            if (e.endDate === null) {
                 // 종료 미정 — 시작일과 무관하게 오늘 하루만 (SCHEDULE-AC-19)
-                return { task: t, start: todayMidnight, end: todayMidnight, openEnded: true }
+                return { entry: e, start: todayMidnight, end: todayMidnight, openEnded: true }
             }
-            const start = t.startDate ? toLocalDate(t.startDate) : toLocalDate(t.endDate)
-            const end = toLocalDate(t.endDate)
-            return { task: t, start, end, openEnded: false }
+            const start = e.startDate ? toLocalDate(e.startDate) : toLocalDate(e.endDate)
+            return { entry: e, start, end: toLocalDate(e.endDate), openEnded: false }
         })
         .filter(({ start, end }) => start <= last && end >= first && end >= start)
-        .sort((a, b) => a.start.getTime() - b.start.getTime() || a.task.id - b.task.id)
+    // 정렬하지 않는다 — 트리 순서가 곧 lane 순서다.
 
-    // 주별 lane 점유 현황: lanes[w][lane] = 마지막으로 점유한 col
-    const laneEnds: number[][] = weeks.map(() => [])
+    for (let w = 0; w < weekCount; w++) {
+        const week = weeks[w]
+        const weekStart = addDays(gridStart, w * 7)
+        const weekEnd = addDays(weekStart, 6)
+        let lane = 0
+        let lastGroup: number | null = null
 
-    for (const { task, start, end, openEnded } of placeable) {
-        const clipStart = start < first ? first : start
-        const clipEnd = end > last ? last : end
+        for (const { entry, start, end, openEnded } of placeable) {
+            const clipStart = start < first ? first : start
+            const clipEnd = end > last ? last : end
+            const segStart = clipStart > weekStart ? clipStart : weekStart
+            const segEnd = clipEnd < weekEnd ? clipEnd : weekEnd
+            if (segStart > segEnd) continue
 
-        let cursor = new Date(clipStart)
-        while (cursor <= clipEnd) {
-            const offset = dayDiff(gridStart, cursor)
-            const w = Math.floor(offset / 7)
-            const startCol = offset % 7
-            const weekRemain = 7 - startCol
-            const remainDays = dayDiff(cursor, clipEnd) + 1
-            const span = Math.min(weekRemain, remainDays)
-
-            // first-fit lane: 이 주에서 startCol 이전에 끝난 lane 재사용
-            let lane = 0
-            while (laneEnds[w][lane] !== undefined && laneEnds[w][lane] >= startCol) lane++
-            laneEnds[w][lane] = startCol + span - 1
-
-            weeks[w].segments.push({
-                taskId: task.id,
-                name: task.name,
-                color: task.color,
+            week.laneGroupStarts.push(entry.projectId !== lastGroup)
+            week.segments.push({
+                kind: entry.kind,
+                id: entry.id,
+                name: entry.name,
+                color: entry.color,
                 lane,
-                startCol,
-                span,
-                continuesLeft: dayDiff(start, cursor) > 0,
-                continuesRight: dayDiff(cursor, end) + 1 > span,
+                startCol: dayDiff(weekStart, segStart),
+                span: dayDiff(segStart, segEnd) + 1,
+                continuesLeft: start < segStart,
+                continuesRight: end > segEnd,
                 openEnded,
             })
-
-            cursor = new Date(cursor)
-            cursor.setDate(cursor.getDate() + span)
+            lastGroup = entry.projectId
+            lane++
         }
+        week.laneCount = lane
     }
 
     return weeks

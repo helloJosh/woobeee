@@ -77,7 +77,7 @@ export default function ScheduleItemDialog({ open, kind, title, initial, showCol
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
-                            <Label htmlFor="schedule-start">시작일</Label>
+                            <Label htmlFor="schedule-start">시작일 (비우면 미정)</Label>
                             <Input id="schedule-start" type="date" value={draft.startDate ?? ""}
                                    onChange={(e) => setDraft({ ...draft, startDate: e.target.value || null })} />
                         </div>
