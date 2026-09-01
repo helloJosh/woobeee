@@ -40,21 +40,23 @@ public interface TaskRepository extends JpaRepository<Tasks, Long> {
             """, nativeQuery = true)
     List<Tasks> findStartingTodayForMember(@Param("memberId") Long memberId);
 
-    /** SCHEDULE-AC-26/28 — 다이제스트: 기한이 지났는데 아직 완료가 아닌 할 일 (자동 완료 직전 수집용). */
+    /** SCHEDULE-AC-26/28 — 다이제스트: 기한이 지났는데 아직 완료가 아닌 할 일 — 자동 완료와 같은 규칙(마감 후 수동 수정 제외). */
     @Query(value = """
             SELECT t.* FROM tasks t
             JOIN projects p ON p.id = t.project_id
             WHERE p.member_id = :memberId AND t.end_date < CURRENT_DATE AND t.status <> 'DONE'
+              AND (t.updated_at IS NULL OR t.updated_at < t.end_date + 1)
             ORDER BY t.sort_order, t.id
             """, nativeQuery = true)
     List<Tasks> findOverdueForMember(@Param("memberId") Long memberId);
 
-    /** SCHEDULE-AC-21/22 — 종료일이 지난(어제 이전) 할 일을 완료로. 미정(NULL)·당일은 제외. */
+    /** SCHEDULE-AC-21/22 — 종료일이 지난(어제 이전) 할 일을 완료로. 미정(NULL)·당일, 그리고 마감 후 수동 수정(updated_at > 종료일)은 제외. */
     @Modifying(clearAutomatically = true)
     @Query(value = """
             UPDATE tasks SET status = 'DONE', updated_at = CURRENT_TIMESTAMP
             WHERE project_id IN (SELECT id FROM projects WHERE member_id = :memberId)
               AND end_date < CURRENT_DATE AND status <> 'DONE'
+              AND (updated_at IS NULL OR updated_at < end_date + 1)
             """, nativeQuery = true)
     int completeOverdueForMember(@Param("memberId") Long memberId);
 }

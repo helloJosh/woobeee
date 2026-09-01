@@ -6,6 +6,7 @@ import com.woobeee.mvc.schedule.entity.ScheduleStatus;
 import com.woobeee.mvc.schedule.entity.Tasks;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -38,6 +39,13 @@ class ScheduleRepositoryTest {
     @Autowired ProjectRepository projectRepository;
     @Autowired MilestoneRepository milestoneRepository;
     @Autowired TaskRepository taskRepository;
+    @Autowired JdbcTemplate jdbcTemplate;
+
+    /** 마감 전 마지막 수정처럼 보이게 updated_at 을 종료일 하루 전으로 되돌린다. */
+    private void ageToBeforeDeadline(String table, Long id) {
+        jdbcTemplate.update(
+                "UPDATE " + table + " SET updated_at = (end_date - INTERVAL '1 day') WHERE id = ?", id);
+    }
 
     private Projects project(long memberId) {
         return projectRepository.save(
@@ -119,10 +127,14 @@ class ScheduleRepositoryTest {
                 mine.getId(), null, "due-today", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
         Tasks startingToday = taskRepository.save(Tasks.create(
                 mine.getId(), null, "starting-today", ScheduleStatus.NOT_STARTED, today, null, "#ef4444"));
-        Tasks overdue = taskRepository.save(Tasks.create(
+        Tasks overdue = taskRepository.saveAndFlush(Tasks.create(
                 mine.getId(), null, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        ageToBeforeDeadline("tasks", overdue.getId());
         taskRepository.save(Tasks.create(
                 mine.getId(), null, "overdue-done", ScheduleStatus.DONE, null, yesterday, "#ef4444"));
+        // 마감 후 손댄(updated_at = 지금) 항목은 자동 완료 대상이 아니므로 다이제스트에도 안 담는다
+        taskRepository.save(Tasks.create(
+                mine.getId(), null, "overdue-reopened", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
         Projects others = project(402L);
         taskRepository.save(Tasks.create(
                 others.getId(), null, "not-mine", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
@@ -135,24 +147,36 @@ class ScheduleRepositoryTest {
                 .extracting(Tasks::getId).containsExactly(overdue.getId());
     }
 
-    /** SCHEDULE-AC-21/22 — 기한 경과(어제 이전)는 세 층 모두 완료로, 미정·당일·남의 것은 유지. */
+    /**
+     * SCHEDULE-AC-21/22 — 마감 전 마지막으로 수정된 기한 경과 항목은 세 층 모두 완료로.
+     * 미정·당일·남의 것, 그리고 **마감이 지난 뒤 사용자가 직접 수정한 항목**(updated_at > 종료일,
+     * 배지 클릭 등)은 유지된다 — 수동 변경이 자동 완료를 이긴다.
+     */
     @Test
-    void overdueItemsFlipToDoneWhileOpenEndedDueTodayAndOthersSurvive() {
+    void overdueItemsFlipToDoneWhileOpenEndedDueTodayOthersAndManualOverridesSurvive() {
         LocalDate yesterday = LocalDate.now().minusDays(1);
         LocalDate today = LocalDate.now();
 
-        Projects overdueProject = projectRepository.save(Projects.create(
+        Projects overdueProject = projectRepository.saveAndFlush(Projects.create(
                 301L, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday));
-        Milestones overdueMilestone = milestoneRepository.save(Milestones.create(
+        Milestones overdueMilestone = milestoneRepository.saveAndFlush(Milestones.create(
                 overdueProject.getId(), null, "m", ScheduleStatus.NOT_STARTED, null, yesterday));
-        Tasks overdueTask = taskRepository.save(Tasks.create(
+        Tasks overdueTask = taskRepository.saveAndFlush(Tasks.create(
                 overdueProject.getId(), null, "t", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
-        Tasks openEnded = taskRepository.save(Tasks.create(
+        ageToBeforeDeadline("projects", overdueProject.getId());
+        ageToBeforeDeadline("milestones", overdueMilestone.getId());
+        ageToBeforeDeadline("tasks", overdueTask.getId());
+
+        // 마감이 지난 뒤 손댄 항목 — 방금 저장했으므로 updated_at = 지금(> 종료일)
+        Tasks manuallyReopened = taskRepository.saveAndFlush(Tasks.create(
+                overdueProject.getId(), null, "reopened", ScheduleStatus.NOT_STARTED, null, yesterday, "#ef4444"));
+        Tasks openEnded = taskRepository.saveAndFlush(Tasks.create(
                 overdueProject.getId(), null, "open", ScheduleStatus.IN_PROGRESS, null, null, "#ef4444"));
-        Tasks dueToday = taskRepository.save(Tasks.create(
+        Tasks dueToday = taskRepository.saveAndFlush(Tasks.create(
                 overdueProject.getId(), null, "today", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
-        Projects othersProject = projectRepository.save(Projects.create(
+        Projects othersProject = projectRepository.saveAndFlush(Projects.create(
                 999L, "other", ScheduleStatus.IN_PROGRESS, null, yesterday));
+        ageToBeforeDeadline("projects", othersProject.getId());
 
         projectRepository.completeOverdueForMember(301L);
         milestoneRepository.completeOverdueForMember(301L);
@@ -164,6 +188,8 @@ class ScheduleRepositoryTest {
                 .isEqualTo(ScheduleStatus.DONE);
         assertThat(taskRepository.findById(overdueTask.getId()).orElseThrow().getStatus())
                 .isEqualTo(ScheduleStatus.DONE);
+        assertThat(taskRepository.findById(manuallyReopened.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.NOT_STARTED);
         assertThat(taskRepository.findById(openEnded.getId()).orElseThrow().getStatus())
                 .isEqualTo(ScheduleStatus.IN_PROGRESS);
         assertThat(taskRepository.findById(dueToday.getId()).orElseThrow().getStatus())

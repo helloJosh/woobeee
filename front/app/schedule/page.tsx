@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Bell, Plus } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -44,13 +44,17 @@ export default function SchedulePage() {
     const [calYear, setCalYear] = useState(() => new Date().getFullYear())
     const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1)
 
+    // 첫 로드에만 스켈레톤을 보여준다 — 이후 갱신(배지 클릭·저장·삭제)은 화면을 유지한 채
+    // 조용히 바꿔치기해서 전체가 깜박이지 않게 한다. 갱신 실패는 apiRequest 가 alert 로 알린다.
+    const hasLoadedOnce = useRef(false)
     const fetchTree = useCallback(async () => {
         try {
-            setTreeState("loading")
+            if (!hasLoadedOnce.current) setTreeState("loading")
             setTree(await scheduleAPI.getTree())
+            hasLoadedOnce.current = true
             setTreeState("ready")
         } catch {
-            setTreeState("failed")
+            if (!hasLoadedOnce.current) setTreeState("failed")
         }
     }, [])
 
