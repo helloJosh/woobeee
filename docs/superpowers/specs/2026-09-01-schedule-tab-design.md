@@ -197,7 +197,7 @@ schedule/
   행 끝 `DropdownMenu`(⋯)로 수정/삭제/하위 항목 추가.
 - 달력: 월 그리드 직접 구현 (shadcn `calendar`는 날짜 선택기라 이벤트 표시용이 아님).
   날짜 없는 할 일은 달력에 나오지 않는다. 막대 클릭 → 수정 다이얼로그.
-- 생성/수정: `Dialog` + `Input`, 날짜는 `Popover`+`Calendar`, 색은 12색 스와치 + hex 입력.
+- 생성/수정: `Dialog` + `Input`, 날짜는 네이티브 `<input type=date>`, 색은 12색 스와치 + hex 입력.
 
 ### 로직 배치 — 판단은 전부 `front/lib/schedule.ts` (React-free)
 

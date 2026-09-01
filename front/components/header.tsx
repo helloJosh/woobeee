@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper} from "lucide-react"
+import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper, CalendarDays} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -100,6 +100,14 @@ export default function Header() {
                 <span className="hidden sm:inline">기술블로그</span>
               </Link>
             </Button>
+            {isAuthenticated ? (
+                <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
+                  <Link href="/schedule">
+                    <CalendarDays className="h-4 w-4" />
+                    <span className="hidden sm:inline">일정</span>
+                  </Link>
+                </Button>
+            ) : null}
           </div>
 
           <div className="flex-1 flex items-center justify-end gap-4">
