@@ -1,0 +1,247 @@
+# 일정 관리 탭 설계 (schedule)
+
+- 날짜: 2026-09-01
+- 상태: 설계 확정 대기 (스펙 리뷰 단계)
+- 범위: app-mvc 새 도메인 `schedule` + front 새 탭 `/schedule`
+
+## 1. 목표와 요구사항
+
+로그인한 유저가 **자기 일정만** 보고 관리하는 탭. 브레인스토밍에서 확정한 결정:
+
+| 결정 항목 | 확정 내용 |
+| --- | --- |
+| 공개 범위 | 본인 전용. 다른 유저의 일정은 읽기도 불가 |
+| 계층 구조 | 프로젝트 > 마일스톤(재귀 트리) > 할 일 |
+| 마일스톤 재귀 | `parent_id` 셀프 참조. 최대 깊이 5 (서비스 검증) |
+| 할 일 위치 | 프로젝트 직속 또는 아무 깊이의 마일스톤 아래 (`milestone_id` NULL 허용) |
+| 상태 | `NOT_STARTED`(시작전) / `IN_PROGRESS`(진행중) / `DONE`(완료). **세 층 모두 각자 직접 설정** — 자동 집계 없음 |
+| 날짜 | 세 층 모두 `start_date`/`end_date` 선택적. 종료일 미정(NULL) 허용 |
+| 색 | **할 일마다 고유색**. 생성 시 서버가 12색 팔레트에서 랜덤 배정, 이후 수정 가능(`#RRGGBB`) |
+| 화면 | 한 페이지에 **트리 리스트가 위, 달력(월 뷰)이 바로 아래**. 뷰 전환 토글 없음. 상태 필터 탭(전체/시작전/진행중/완료)은 둘 다에 적용 |
+| FK | **DB FK 제약 없음.** 참조 무결성은 전부 애플리케이션(서비스 계층)에서 검증 |
+| 테이블명 | `projects` / `milestones` / `tasks` — `schedule_` prefix 없음 |
+
+접근안 비교에서 app-mvc 신규 도메인(A안)을 채택했다. 프론트 전용 localStorage(B)는
+기기를 바꾸면 일정이 사라져 "유저마다"라는 요구가 깨지고, app-webflux(C)는 순수 CRUD에
+리액티브 이점이 없고 게임 도메인 경계를 흐린다.
+
+## 2. 데이터 모델 — Flyway `V8__schedule.sql`
+
+FK 제약과 `ON DELETE CASCADE`는 두지 않는다. 컬럼은 raw BIGINT.
+
+```sql
+CREATE TABLE projects (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    member_id  BIGINT       NOT NULL,          -- 소유자. 소유권 검사는 이 한 곳으로 수렴
+    name       VARCHAR(200) NOT NULL,
+    status     VARCHAR(20)  NOT NULL DEFAULT 'NOT_STARTED'
+               CHECK (status IN ('NOT_STARTED', 'IN_PROGRESS', 'DONE')),
+    start_date DATE,
+    end_date   DATE,
+    sort_order INT          NOT NULL DEFAULT 0,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6),
+    CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+);
+CREATE INDEX idx_projects_member_id ON projects (member_id);
+
+CREATE TABLE milestones (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id BIGINT       NOT NULL,
+    parent_id  BIGINT,                         -- NULL = 프로젝트 직속, 셀프 참조로 재귀
+    name       VARCHAR(200) NOT NULL,
+    status     VARCHAR(20)  NOT NULL DEFAULT 'NOT_STARTED'
+               CHECK (status IN ('NOT_STARTED', 'IN_PROGRESS', 'DONE')),
+    start_date DATE,
+    end_date   DATE,
+    sort_order INT          NOT NULL DEFAULT 0,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6),
+    CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+);
+CREATE INDEX idx_milestones_project_id ON milestones (project_id);
+
+CREATE TABLE tasks (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    project_id   BIGINT       NOT NULL,        -- 중복 보유: 달력용 "내 할 일 전부"를 조인 한 번에
+    milestone_id BIGINT,                       -- NULL = 프로젝트 직속
+    name         VARCHAR(200) NOT NULL,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'NOT_STARTED'
+                 CHECK (status IN ('NOT_STARTED', 'IN_PROGRESS', 'DONE')),
+    start_date   DATE,
+    end_date     DATE,
+    color        VARCHAR(7)   NOT NULL,        -- '#RRGGBB'
+    sort_order   INT          NOT NULL DEFAULT 0,
+    created_at   TIMESTAMP(6) NOT NULL,
+    updated_at   TIMESTAMP(6),
+    CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+);
+CREATE INDEX idx_tasks_project_id ON tasks (project_id);
+```
+
+설계 근거:
+
+- **소유권은 `projects.member_id` 한 곳에만.** 마일스톤·할 일의 소유자는 프로젝트를 따라간다.
+  모든 쓰기 검사는 "이 프로젝트가 내 것인가" 하나로 수렴한다.
+- **`tasks.project_id` 중복 보유.** 마일스톤 몇 단 아래에 있든 유저의 전체 할 일(달력)을
+  `tasks JOIN projects ON member_id` 한 번으로 가져온다. 할 일 이동은 같은 프로젝트 안에서만
+  허용하므로 정합성이 깨질 경로가 없다.
+- `status`/`CHECK` 방식은 `members.role`(V4)과 동일한 관례.
+
+JPA 엔티티는 repo 스타일 그대로: 연관관계 어노테이션 없이 raw `Long` FK 필드,
+`@NoArgsConstructor(access = PROTECTED)` + private `@Builder` 생성자 + 정적 `create(...)`
+팩토리(`auth/entity/Member.java` 스타일), 변경은 도메인 메서드. JPA는 `validate` 전용이므로
+`SchemaValidationTest` 통과가 게이트다.
+
+## 3. 백엔드 구조 — `com.woobeee.mvc.schedule`
+
+blog 도메인과 같은 모양:
+
+```
+schedule/
+  controller/   ScheduleController — 단일 컨트롤러 (엔드포인트 10개, 전부 같은 인증·봉투 규칙이라 분리 이득이 없다)
+  service/      ScheduleService + ScheduleServiceImpl
+  repository/   ProjectRepository, MilestoneRepository, TaskRepository
+  entity/       Projects, Milestones, Tasks
+  api/request/  PostProjectRequest, PutTaskRequest, ... (record + @Builder)
+  api/response/ GetScheduleTreeResponse (중첩 record로 트리 표현)
+  exception/    ScheduleErrorCode(enum), Custom*Exception, ScheduleControllerAdvice
+```
+
+- 인증: 기존 `AccessTokenLoginIdHeaderFilter`가 주입하는 `loginId` 헤더 →
+  `AuthMemberResolver.requireByLoginId(loginId)`. ADMIN 불필요이므로 필터 수정 없음.
+- **에러 봉투**: `ScheduleControllerAdvice`(schedule 패키지 스코프)가 `ApiResponse` 봉투의
+  `header.message`에 **에러 코드 키**(예: `SCHEDULE_PROJECT_NOT_FOUND`)를 넣는다.
+  app-mvc의 알려진 결함(영어 문장 vs 프론트 코드 키 불일치)을 새 도메인에서 반복하지 않는다.
+  모양은 app-webflux `GameExceptionHandler`를 따른다.
+- 쿼리 규칙 준수: PK 단건은 파생 메서드, 목록·트리·재귀는 네이티브 SQL
+  (`@Query(nativeQuery = true)`), 배치 IN 조회로 N+1 금지, QueryDSL 금지.
+
+## 4. API — 베이스 `/api/back/schedule`
+
+전 엔드포인트 로그인 필수. rewrites는 `/api/back`이 이미 app-mvc로 가므로 프론트 설정 변경 없음.
+
+| 메서드 | 경로 | 역할 |
+| --- | --- | --- |
+| GET | `/api/back/schedule/tree` | 내 프로젝트+마일스톤+할 일 전체 트리 |
+| POST | `/api/back/schedule/projects` | 프로젝트 생성 (name, status?, startDate?, endDate?) |
+| PUT | `/api/back/schedule/projects/{id}` | 프로젝트 수정 |
+| DELETE | `/api/back/schedule/projects/{id}` | 프로젝트 삭제 (하위 전체 명시적 캐스케이드) |
+| POST | `/api/back/schedule/milestones` | 마일스톤 생성 (projectId, parentId?, name, ...) |
+| PUT | `/api/back/schedule/milestones/{id}` | 마일스톤 수정 (parentId 변경 = 트리 내 이동 포함) |
+| DELETE | `/api/back/schedule/milestones/{id}` | 마일스톤 삭제 (자손 마일스톤·할 일 캐스케이드) |
+| POST | `/api/back/schedule/tasks` | 할 일 생성 (projectId, milestoneId?, name, ...) — 색은 서버가 배정 |
+| PUT | `/api/back/schedule/tasks/{id}` | 할 일 수정 (상태·날짜·색·milestoneId 이동 포함) |
+| DELETE | `/api/back/schedule/tasks/{id}` | 할 일 삭제 |
+
+- **조회는 `/tree` 하나.** 개인 데이터라 작으므로 네이티브 3방(내 projects → id IN으로
+  milestones → tasks)을 서비스에서 트리로 조립. 상태 필터·달력은 프론트 클라이언트 필터링.
+  달력 전용 엔드포인트는 만들지 않는다 (YAGNI).
+- 쓰기 응답은 생성/수정된 리소스 단건. `ApiResponse.createSuccess`/`success`/`deleteSuccess` 관례.
+
+### 애플리케이션 레벨 무결성 검증 (DB FK 부재를 서비스가 대신)
+
+| 검증 | 규칙 | 실패 코드 |
+| --- | --- | --- |
+| 소유권 | 모든 쓰기·트리 조회에서 대상 프로젝트 `member_id = 나` | `SCHEDULE_PROJECT_NOT_FOUND` (404로 위장 — 남의 리소스 존재 여부를 흘리지 않음) |
+| 참조 존재 | `projectId`/`parentId`/`milestoneId`가 실제 존재하는지 | `SCHEDULE_*_NOT_FOUND` |
+| 같은 프로젝트 | `parentId` 마일스톤·`milestoneId`가 요청의 `projectId`와 같은 프로젝트 소속 | `SCHEDULE_CROSS_PROJECT` |
+| 재귀 깊이 | 마일스톤 깊이 ≤ 5 (생성·이동 시 조상 체인 계산) | `SCHEDULE_DEPTH_EXCEEDED` |
+| 순환 금지 | 마일스톤을 자기 자신/자기 자손 아래로 이동 불가 | `SCHEDULE_CYCLE` |
+| 날짜 | `endDate >= startDate` (둘 다 있을 때) | `SCHEDULE_INVALID_DATE_RANGE` |
+| 색 | `#RRGGBB` 형식 | `SCHEDULE_INVALID_COLOR` |
+
+### 명시적 캐스케이드 삭제 (전 과정 `@Transactional`)
+
+- 프로젝트 삭제: `DELETE tasks WHERE project_id` → `DELETE milestones WHERE project_id` → 프로젝트.
+- 마일스톤 삭제: 재귀 CTE 네이티브 쿼리로 자손 마일스톤 id 수집 → 해당 마일스톤들의 tasks
+  일괄 삭제 → 마일스톤들 일괄 삭제.
+
+### 색 팔레트
+
+서버 상수 12색(hex). `POST /tasks` 시 랜덤 배정. 프론트 `lib/schedule.ts`의
+`SCHEDULE_COLORS`와 값이 동일해야 한다 — 백엔드 테스트가 팔레트 크기·형식을 고정하고,
+값 동기화는 스펙(이 문서)이 단일 출처.
+
+## 5. 프론트 — `/schedule`
+
+### 진입
+
+- `front/app/schedule/page.tsx`. 마이페이지와 같은 게이팅: `useAuth()` → 미인증이면
+  `router.replace(buildAuthHref("/login", "/schedule"))`.
+- `components/header.tsx`에 "일정" 탭(CalendarDays 아이콘) 추가 — **`isAuthenticated`일 때만 렌더**.
+
+### 레이아웃 — 한 페이지, 트리 위 + 달력 아래
+
+```
+┌────────────────────────────────────────────────┐
+│ 일정                              [+ 새 프로젝트] │
+│ [전체] [시작전] [진행중] [완료]        ← 상태 필터  │
+├────────────────────────────────────────────────┤
+│ ▾ DM              [진행중]  08.20 ~ 09.04   ⋯  │  트리 섹션
+│   ▾ POC 테스트     [진행중]  08.20 ~ 09.01   ⋯  │
+│     ● spark vs java poc [시작전] 08.26~09.01 ⋯ │  ● = 할 일 고유색 점
+│     ● SQL 피벗 전달  [완료]  08.20 ~ 08.31   ⋯  │  완료는 취소선+흐리게
+├────────────────────────────────────────────────┤
+│  ◀  2026년 8월  ▶                               │  달력 섹션 (월 그리드)
+│  일  월  화  수  목  금  토                       │
+│  ── 할 일 고유색 가로 막대가 기간만큼 ──            │
+│  종료 미정은 막대 끝 → 로 열어 둠                   │
+└────────────────────────────────────────────────┘
+```
+
+- 상태 필터는 **트리와 달력 둘 다**에 적용된다.
+- 트리: `Collapsible` 접기/펼치기, 상태 `Badge`(시작전=회색, 진행중=파랑, 완료=초록),
+  행 끝 `DropdownMenu`(⋯)로 수정/삭제/하위 항목 추가.
+- 달력: 월 그리드 직접 구현 (shadcn `calendar`는 날짜 선택기라 이벤트 표시용이 아님).
+  날짜 없는 할 일은 달력에 나오지 않는다. 막대 클릭 → 수정 다이얼로그.
+- 생성/수정: `Dialog` + `Input`, 날짜는 `Popover`+`Calendar`, 색은 12색 스와치 + hex 입력.
+
+### 로직 배치 — 판단은 전부 `front/lib/schedule.ts` (React-free)
+
+vitest가 node 환경(컴포넌트 무검증)이므로 레포 규칙대로 판단을 `lib/`에 두고
+`lib/schedule.test.ts`로 고정한다:
+
+- `filterTree(tree, status)` — 자기 상태가 일치하는 노드 + 조상 체인 유지(조상은 dim 플래그)
+- `calendarLayout(tasks, yearMonth)` — 주 단위 막대 세그먼트 계산: 월 경계 잘림, 종료 미정
+  (막대를 뷰 끝까지 + open 플래그), 겹치는 막대의 행 배치
+- `formatDateRange(start, end)` — `08.20 ~ 미정` 형식, 같은 해 연도 생략 규칙
+- `SCHEDULE_COLORS` 12색 상수, `isValidHexColor`
+- 상태 배지 매핑, `MAX_MILESTONE_DEPTH = 5` (서버와 동일 값)
+
+### API 클라이언트·에러
+
+- `lib/api.ts`에 `scheduleAPI` 그룹 (`postsAPI` 패턴): `getTree`, `createProject`,
+  `updateProject`, `deleteProject`, `createMilestone`, ..., `updateTask`, `deleteTask`.
+- `lib/errors/error-messages.ts` **ko/en 양쪽**에 위 표의 `SCHEDULE_*` 코드 키 추가.
+
+## 6. 테스트 계획
+
+레포 규칙 "테스트는 PRD의 인수 기준에서 도출한다"를 새 도메인에서 처음부터 지킨다:
+
+1. `docs/schedule/PRD.md`를 만들고 **`## 인수 기준 (Acceptance Criteria)` 표부터 작성**.
+   테스트 메서드가 `SCHEDULE-AC-nn`을 참조한다.
+2. 우선순위 AC (구현 계획에서 전체 표 확정):
+   - **소유권**: 남의 프로젝트에 대한 조회 제외·쓰기 거부 (404 위장) — 최우선
+   - **명시적 캐스케이드**: 프로젝트/마일스톤 삭제 시 자손·할 일이 남지 않는다
+   - 재귀 깊이 초과·순환 이동 거부
+   - cross-project 참조 거부
+   - 색 자동 배정(팔레트 소속) 및 수정
+   - 트리 조회가 쿼리 3방으로 끝난다 (N+1 없음)
+3. `SchemaValidationTest` 통과 (V8 ↔ 엔티티 정합).
+4. front: `lib/schedule.test.ts`가 `filterTree`/`calendarLayout`/`formatDateRange` 경계를
+   고정 (월 경계 잘림, 종료 미정, 빈 날짜, 필터 시 조상 유지).
+5. `ScheduleErrorCode` ↔ `error-messages.ts` 대조는 `GameErrorCodeTest` 모양의 테스트로 고정.
+
+## 7. 문서 갱신
+
+- `docs/api/README.md`에 `/api/back/schedule/*` 엔드포인트·권한(로그인) 표 추가.
+- `docs/schedule/PRD.md` 신설 (AC 표 포함).
+- `docs/ARCHITECTURE.md`에 schedule 도메인 한 절 추가.
+
+## 8. 범위 밖 (YAGNI)
+
+- 일정 공유·팀 뷰, ADMIN의 타인 일정 관리
+- 상태 자동 집계 (각 층 수동 설정으로 확정)
+- 달력 전용 API, 알림/리마인더, 반복 일정, 드래그로 일정 이동
+- 정렬 커스터마이즈 UI (`sort_order` 컬럼은 두되 초기 구현은 생성순)
