@@ -109,10 +109,16 @@ public class ScheduleServiceImpl implements ScheduleService {
 
     /* ===== 트리 조회 ===== */
 
+    // readOnly 가 아닌 이유: 조회 직전 자동 완료 갱신(SCHEDULE-AC-21)을 같은 트랜잭션에서 실행한다.
     @Override
-    @Transactional(readOnly = true)
     public GetScheduleTreeResponse getTree(String loginId) {
         Long memberId = memberResolver.requireMemberId(loginId);
+
+        // 종료일이 지난 항목을 세 층 모두 완료로 — 미정(NULL)·당일은 SQL 조건이 제외한다 (AC-22).
+        projectRepository.completeOverdueForMember(memberId);
+        milestoneRepository.completeOverdueForMember(memberId);
+        taskRepository.completeOverdueForMember(memberId);
+
         List<Projects> projects = projectRepository.findAllForMember(memberId);
         if (projects.isEmpty()) {
             return new GetScheduleTreeResponse(List.of());

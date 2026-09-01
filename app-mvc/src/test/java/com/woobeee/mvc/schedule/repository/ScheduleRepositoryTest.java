@@ -13,6 +13,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,5 +106,42 @@ class ScheduleRepositoryTest {
 
         assertThat(taskRepository.findAllForProjects(List.of(p.getId()))).isEmpty();
         assertThat(milestoneRepository.findAllForProject(p.getId())).isEmpty();
+    }
+
+    /** SCHEDULE-AC-21/22 — 기한 경과(어제 이전)는 세 층 모두 완료로, 미정·당일·남의 것은 유지. */
+    @Test
+    void overdueItemsFlipToDoneWhileOpenEndedDueTodayAndOthersSurvive() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate today = LocalDate.now();
+
+        Projects overdueProject = projectRepository.save(Projects.create(
+                301L, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday));
+        Milestones overdueMilestone = milestoneRepository.save(Milestones.create(
+                overdueProject.getId(), null, "m", ScheduleStatus.NOT_STARTED, null, yesterday));
+        Tasks overdueTask = taskRepository.save(Tasks.create(
+                overdueProject.getId(), null, "t", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        Tasks openEnded = taskRepository.save(Tasks.create(
+                overdueProject.getId(), null, "open", ScheduleStatus.IN_PROGRESS, null, null, "#ef4444"));
+        Tasks dueToday = taskRepository.save(Tasks.create(
+                overdueProject.getId(), null, "today", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
+        Projects othersProject = projectRepository.save(Projects.create(
+                999L, "other", ScheduleStatus.IN_PROGRESS, null, yesterday));
+
+        projectRepository.completeOverdueForMember(301L);
+        milestoneRepository.completeOverdueForMember(301L);
+        taskRepository.completeOverdueForMember(301L);
+
+        assertThat(projectRepository.findById(overdueProject.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.DONE);
+        assertThat(milestoneRepository.findById(overdueMilestone.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.DONE);
+        assertThat(taskRepository.findById(overdueTask.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.DONE);
+        assertThat(taskRepository.findById(openEnded.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.IN_PROGRESS);
+        assertThat(taskRepository.findById(dueToday.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.IN_PROGRESS);
+        assertThat(projectRepository.findById(othersProject.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.IN_PROGRESS);
     }
 }

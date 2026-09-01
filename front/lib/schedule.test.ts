@@ -7,6 +7,7 @@ import {
     formatDateRange,
     isValidDateRange,
     isValidHexColor,
+    todayIso,
     type ScheduleTree,
 } from "./schedule"
 
@@ -147,5 +148,16 @@ describe("isValidDateRange", () => {
 
     it("종료가 시작보다 빠르면 무효하다", () => {
         expect(isValidDateRange("2026-08-20", "2026-08-19")).toBe(false)
+    })
+})
+
+// SCHEDULE-AC-23
+describe("todayIso", () => {
+    it("로컬 기준 YYYY-MM-DD 로 만든다", () => {
+        expect(todayIso(new Date(2026, 8, 1))).toBe("2026-09-01")
+    })
+
+    it("한 자리 월·일은 0 을 채운다", () => {
+        expect(todayIso(new Date(2026, 0, 5))).toBe("2026-01-05")
     })
 })

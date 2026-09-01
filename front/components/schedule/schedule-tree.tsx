@@ -34,9 +34,9 @@ function TaskRow({ projectId, task, cb }: { projectId: number; task: ScheduleTas
     const done = task.status === "DONE"
     return (
         <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50">
+            <StatusBadge status={task.status} />
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: task.color }} />
             <span className={`flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}>{task.name}</span>
-            <StatusBadge status={task.status} />
             <span className="hidden text-xs text-muted-foreground sm:inline">{formatDateRange(task.startDate, task.endDate)}</span>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -61,8 +61,8 @@ function MilestoneRow({ projectId, milestone, cb }: {
                 <button type="button" onClick={() => setOpen(!open)} className="text-muted-foreground">
                     {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 </button>
-                <span className="flex-1 truncate text-sm font-medium">{milestone.name}</span>
                 <StatusBadge status={milestone.status} />
+                <span className="flex-1 truncate text-sm font-medium">{milestone.name}</span>
                 <span className="hidden text-xs text-muted-foreground sm:inline">{formatDateRange(milestone.startDate, milestone.endDate)}</span>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -94,8 +94,8 @@ export default function ScheduleTree({ tree, cb }: { tree: FilteredTree; cb: Tre
             {tree.projects.map((p) => (
                 <li key={p.id} className={`rounded-lg border p-3 ${p.dimmed ? "opacity-50" : ""}`}>
                     <div className="flex items-center gap-2">
-                        <span className="flex-1 truncate font-semibold">{p.name}</span>
                         <StatusBadge status={p.status} />
+                        <span className="flex-1 truncate font-semibold">{p.name}</span>
                         <span className="hidden text-xs text-muted-foreground sm:inline">{formatDateRange(p.startDate, p.endDate)}</span>
                         <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="항목 추가"
                                 onClick={() => cb.onAddTask(p.id, null)}>

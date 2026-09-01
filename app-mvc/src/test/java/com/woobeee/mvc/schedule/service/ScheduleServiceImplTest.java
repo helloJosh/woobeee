@@ -336,4 +336,19 @@ class ScheduleServiceImplTest {
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.DEPTH_EXCEEDED));
     }
+
+    /** SCHEDULE-AC-21 — 트리 조회는 읽기 전에 세 층의 기한 경과 항목을 완료로 갱신한다. */
+    @Test
+    void getTreeCompletesOverdueItemsBeforeReading() {
+        loggedIn();
+        when(projectRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of());
+
+        service.getTree(LOGIN);
+
+        InOrder order = inOrder(projectRepository, milestoneRepository, taskRepository);
+        order.verify(projectRepository).completeOverdueForMember(MEMBER_ID);
+        order.verify(milestoneRepository).completeOverdueForMember(MEMBER_ID);
+        order.verify(taskRepository).completeOverdueForMember(MEMBER_ID);
+        order.verify(projectRepository).findAllForMember(MEMBER_ID);
+    }
 }

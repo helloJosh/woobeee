@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
-    collectTasks, filterTree, STATUS_LABELS,
+    collectTasks, filterTree, STATUS_LABELS, todayIso,
     type FilteredMilestone, type FilteredProject, type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
 
@@ -157,7 +157,8 @@ export default function SchedulePage() {
                     tree={filtered}
                     cb={{
                         onAddMilestone: (projectId, parentId) => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "milestone", mode: "create", projectId, parentId }) },
-                        onAddTask: (projectId, milestoneId) => { setDialogInitial(EMPTY_DRAFT); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
+                        // 할 일 생성은 시작일 기본값이 오늘이다 (SCHEDULE-AC-23) — 입력란에서 바꿀 수 있다
+                        onAddTask: (projectId, milestoneId) => { setDialogInitial({ ...EMPTY_DRAFT, startDate: todayIso() }); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
                         onEditProject: (p: FilteredProject) => {
                             setDialogInitial({ name: p.name, status: p.status, startDate: p.startDate, endDate: p.endDate })
                             setDialog({ kind: "project", mode: "edit", id: p.id })

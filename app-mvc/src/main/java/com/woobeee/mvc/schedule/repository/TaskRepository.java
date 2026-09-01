@@ -21,4 +21,13 @@ public interface TaskRepository extends JpaRepository<Tasks, Long> {
     @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM tasks WHERE milestone_id IN (:milestoneIds)", nativeQuery = true)
     void deleteAllForMilestones(@Param("milestoneIds") List<Long> milestoneIds);
+
+    /** SCHEDULE-AC-21/22 — 종료일이 지난(어제 이전) 할 일을 완료로. 미정(NULL)·당일은 제외. */
+    @Modifying(clearAutomatically = true)
+    @Query(value = """
+            UPDATE tasks SET status = 'DONE', updated_at = CURRENT_TIMESTAMP
+            WHERE project_id IN (SELECT id FROM projects WHERE member_id = :memberId)
+              AND end_date < CURRENT_DATE AND status <> 'DONE'
+            """, nativeQuery = true)
+    int completeOverdueForMember(@Param("memberId") Long memberId);
 }

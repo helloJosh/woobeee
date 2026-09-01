@@ -50,11 +50,21 @@ describe("calendarLayout (2026-08)", () => {
         expect(last).toMatchObject({ startCol: 0, span: 2, continuesRight: true })
     })
 
-    // SCHEDULE-AC-19 — 종료 미정
-    it("종료 미정은 시작일부터 월 말까지 깔리고 openEnded 다", () => {
-        const weeks = calendarLayout([task({ id: 1, startDate: "2026-08-30", endDate: null })], 2026, 8)
-        const last = weeks[5].segments[0]
-        expect(last).toMatchObject({ startCol: 0, span: 2, openEnded: true })
+    // SCHEDULE-AC-19 — 종료 미정은 오늘 하루만
+    it("종료 미정은 오늘 하루만 표시되고 openEnded 다", () => {
+        // 오늘 = 2026-08-15(토) → 셋째 주(w2) col 6, 시작일과 무관하게 오늘 한 칸
+        const today = new Date(2026, 7, 15)
+        const weeks = calendarLayout([task({ id: 1, startDate: "2026-08-01", endDate: null })], 2026, 8, today)
+        const all = weeks.flatMap((w) => w.segments)
+        expect(all).toHaveLength(1)
+        expect(weeks[2].segments[0]).toMatchObject({ startCol: 6, span: 1, openEnded: true })
+    })
+
+    // SCHEDULE-AC-19 — 오늘이 없는 달에서는 안 나온다
+    it("종료 미정은 오늘이 포함되지 않은 달에서는 표시되지 않는다", () => {
+        const today = new Date(2026, 8, 10) // 2026-09-10
+        const weeks = calendarLayout([task({ id: 1, startDate: "2026-08-01", endDate: null })], 2026, 8, today)
+        expect(weeks.every((w) => w.segments.length === 0)).toBe(true)
     })
 
     it("시작 없이 종료만 있으면 종료일 하루짜리다", () => {

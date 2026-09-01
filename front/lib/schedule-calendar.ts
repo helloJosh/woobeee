@@ -16,7 +16,7 @@ export interface CalendarSegment {
     continuesLeft: boolean
     /** 이 주 이후(오른쪽)로 이어진다. */
     continuesRight: boolean
-    /** 종료일 미정 — 월 말에서 화살표로 열어 둔다. */
+    /** 종료일 미정 — 오늘 하루만 표시되고 화살표(→)로 미정임을 알린다. */
     openEnded: boolean
 }
 
@@ -35,8 +35,16 @@ function dayDiff(a: Date, b: Date): number {
     return Math.round((b.getTime() - a.getTime()) / 86_400_000)
 }
 
-/** month 는 1~12. 일요일 시작 주 단위 그리드에 할 일 막대를 배치한다. */
-export function calendarLayout(tasks: ScheduleTask[], year: number, month: number): CalendarWeek[] {
+/**
+ * month 는 1~12. 일요일 시작 주 단위 그리드에 할 일 막대를 배치한다.
+ * today 는 종료 미정 규칙(SCHEDULE-AC-19)의 기준일 — 테스트가 고정할 수 있게 주입받는다.
+ */
+export function calendarLayout(
+    tasks: ScheduleTask[],
+    year: number,
+    month: number,
+    today: Date = new Date(),
+): CalendarWeek[] {
     const first = new Date(year, month - 1, 1)
     const last = new Date(year, month, 0)
     const gridStart = new Date(year, month - 1, 1 - first.getDay())
@@ -54,12 +62,17 @@ export function calendarLayout(tasks: ScheduleTask[], year: number, month: numbe
     }
 
     // 시작일 순으로 배치해야 lane 배정이 결정적이다
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
     const placeable = tasks
         .filter((t) => t.startDate !== null || t.endDate !== null)
         .map((t) => {
-            const start = t.startDate ? toLocalDate(t.startDate) : toLocalDate(t.endDate!)
-            const end = t.endDate ? toLocalDate(t.endDate) : last
-            return { task: t, start, end, openEnded: t.endDate === null && t.startDate !== null }
+            if (t.endDate === null) {
+                // 종료 미정 — 시작일과 무관하게 오늘 하루만 (SCHEDULE-AC-19)
+                return { task: t, start: todayMidnight, end: todayMidnight, openEnded: true }
+            }
+            const start = t.startDate ? toLocalDate(t.startDate) : toLocalDate(t.endDate)
+            const end = toLocalDate(t.endDate)
+            return { task: t, start, end, openEnded: false }
         })
         .filter(({ start, end }) => start <= last && end >= first && end >= start)
         .sort((a, b) => a.start.getTime() - b.start.getTime() || a.task.id - b.task.id)

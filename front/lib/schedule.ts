@@ -62,6 +62,14 @@ export function isValidDateRange(start: string | null, end: string | null): bool
     return end >= start
 }
 
+/** 로컬 기준 오늘을 "YYYY-MM-DD"로 — 할 일 생성 시작일 기본값 (SCHEDULE-AC-23). */
+export function todayIso(now: Date = new Date()): string {
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, "0")
+    const d = String(now.getDate()).padStart(2, "0")
+    return `${y}-${m}-${d}`
+}
+
 export interface FilteredMilestone extends Omit<ScheduleMilestone, "milestones"> {
     dimmed: boolean
     milestones: FilteredMilestone[]
