@@ -80,8 +80,9 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                     <div key={wi} className="relative grid grid-cols-7 border-b last:border-b-0"
                          style={{ minHeight: `${minHeight}px` }}>
                         {week.days.map((day, di) => (
-                            <div key={di} className="border-r p-1 text-xs text-muted-foreground last:border-r-0">
-                                {day ?? ""}
+                            <div key={di}
+                                 className={`border-r p-1 text-xs last:border-r-0 ${day.inMonth ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
+                                {day.date}
                             </div>
                         ))}
                         {week.segments.map((seg, si) => (

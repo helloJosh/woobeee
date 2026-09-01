@@ -13,11 +13,15 @@ function entry(partial: Partial<CalendarEntry> & { id: number }): CalendarEntry 
 
 // 2026년 8월: 1일 = 토요일, 31일 = 월요일 → 6주 그리드
 describe("calendarLayout (2026-08)", () => {
-    it("그리드는 일요일 시작이고 달 밖 칸은 null 이다", () => {
+    it("그리드는 일요일 시작이고 앞뒤 달 날짜는 inMonth=false 로 채운다", () => {
         const weeks = calendarLayout([], 2026, 8)
         expect(weeks).toHaveLength(6)
-        expect(weeks[0].days).toEqual([null, null, null, null, null, null, 1])
-        expect(weeks[5].days).toEqual([30, 31, null, null, null, null, null])
+        // 첫 주: 7/26(일)~7/31(금) + 8/1(토)
+        expect(weeks[0].days.map((d) => d.date)).toEqual([26, 27, 28, 29, 30, 31, 1])
+        expect(weeks[0].days.map((d) => d.inMonth)).toEqual([false, false, false, false, false, false, true])
+        // 마지막 주: 8/30, 8/31 + 9/1~9/5
+        expect(weeks[5].days.map((d) => d.date)).toEqual([30, 31, 1, 2, 3, 4, 5])
+        expect(weeks[5].days.map((d) => d.inMonth)).toEqual([true, true, false, false, false, false, false])
     })
 
     it("주 안에 완전히 들어가는 항목은 한 세그먼트다", () => {

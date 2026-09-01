@@ -22,9 +22,16 @@ export interface CalendarSegment {
     openEnded: boolean
 }
 
+export interface CalendarDay {
+    /** 그 칸의 일(day of month) — 앞뒤 달 날짜도 채운다. */
+    date: number
+    /** 이 달 소속 여부 — 앞뒤 달 칸은 흐리게 그린다. */
+    inMonth: boolean
+}
+
 export interface CalendarWeek {
-    /** 일~토 7칸. 그 달의 날짜가 아니면 null. */
-    days: (number | null)[]
+    /** 일~토 7칸. 앞뒤 달 날짜도 포함한다. */
+    days: CalendarDay[]
     segments: CalendarSegment[]
     /** 이 주에 쌓인 줄 수 — 컴포넌트가 주 높이를 동적으로 계산한다 (막대를 숨기지 않는다). */
     laneCount: number
@@ -69,10 +76,10 @@ export function calendarLayout(
 
     const weeks: CalendarWeek[] = []
     for (let w = 0; w < weekCount; w++) {
-        const days: (number | null)[] = []
+        const days: CalendarDay[] = []
         for (let c = 0; c < 7; c++) {
             const date = addDays(gridStart, w * 7 + c)
-            days.push(date.getMonth() === month - 1 ? date.getDate() : null)
+            days.push({ date: date.getDate(), inMonth: date.getMonth() === month - 1 })
         }
         weeks.push({ days, segments: [], laneCount: 0, laneGroupStarts: [] })
     }
