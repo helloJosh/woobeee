@@ -133,6 +133,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | --- | --- | --- | --- |
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용 |
+| app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일 — 전부 로그인 필수, 본인 것만 |
 | app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
 ## 안전 수칙

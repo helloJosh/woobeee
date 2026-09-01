@@ -2,7 +2,7 @@
 
 > **2026-07-31 재구성:** 단일 모듈 모놀리스(`art-market-place`)에서 Maven 멀티모듈
 > (`woobeee`)로 전환했다. product/cart는 폐기했고 game(WebFlux)을 추가했다. 아래 모듈 구조가
-> 우선하며, 이후 절의 도메인 설명은 auth/blog에 대해서만 유효하다.
+> 우선하며, 이후 절의 도메인 설명은 auth/blog/schedule에 대해서만 유효하다.
 
 ## 모듈 구조
 
@@ -30,7 +30,7 @@
 | 모듈 | 스택 | 책임 | 의존 |
 | --- | --- | --- | --- |
 | `core` | 순수 라이브러리 (웹 스택 무의존) | `ApiResponse`, 토큰 계약(`AuthTokenType`/`TokenMetadata`), `RedisTokenStore` | — |
-| `app-mvc` | Boot + `starter-webmvc` + JPA | auth(토큰 발급·로그인·OAuth) + blog, Flyway 소유 | core |
+| `app-mvc` | Boot + `starter-webmvc` + JPA | auth(토큰 발급·로그인·OAuth) + blog + schedule, Flyway 소유 | core |
 | `app-webflux` | Boot + `starter-webflux` + R2DBC | game(방·오목·장애물피하기·기보), Redis 토큰 **검증만** | core |
 | `front` | Next.js 14 | rewrites로 두 백엔드 프록시. 화면 전체(블로그·게임·마이페이지) | — |
 
@@ -108,6 +108,26 @@ art-market-place
 
 > `product`/`cart` 도메인은 멀티모듈 전환 때 폐기했다(위 `## 모듈 구조` 참고). 전신
 > `art-market-place`에만 남아 있고 이 레포에는 코드도 문서도 없다.
+
+### `schedule`
+
+프로젝트/마일스톤/할 일로 구성된 일정 트리를 담당한다. 컨트롤러 하나로 트리 조회와
+프로젝트/마일스톤/할 일의 생성·수정·삭제를 받는다.
+
+- Controller: `ScheduleController` 단일 진입점 (`/api/back/schedule/**`)
+- Package: `com.woobeee.mvc.schedule` — `controller`/`service`/`repository`/`entity`/`api`/`exception`
+- Entity: `Project`, `Milestone`, `Task` (`projects`/`milestones`/`tasks`, V8)
+- 무결성은 FK 가 아니라 서비스 계층에서 강제한다: 소유권 검증(본인이 아니면 404 로 위장해
+  존재 자체를 숨긴다), 프로젝트를 넘나드는 이동 금지, 깊이 5단계 제한, 순환 참조 방지, 날짜
+  범위, `#RRGGBB` 색상 형식.
+- 삭제는 명시적 캐스케이드다: 프로젝트 삭제가 하위 마일스톤·할 일을, 마일스톤 삭제가 하위
+  할 일을 서비스 코드에서 함께 지운다(DB 레벨 `ON DELETE CASCADE` 없음).
+- 조회는 `/tree` 하나뿐이다 — 프로젝트/마일스톤/할 일을 배치 쿼리 3회로 모아 N+1 없이 트리를
+  구성한다.
+- 오류: `ScheduleControllerAdvice` 가 `schedule_*` 코드 키로 `ApiResponse` 봉투에 담는다. 코드
+  집합은 `front/lib/errors/error-messages.ts`(ko/en) 와 짝을 이루고 `ScheduleErrorCodeTest` 가
+  양쪽의 지도 불일치를 잡는다.
+- 인수 기준: `docs/schedule/PRD.md` 의 SCHEDULE-AC-01~20.
 
 ### `_common`
 

@@ -61,6 +61,25 @@ ADMIN 게이트는 `AccessTokenLoginIdHeaderFilter` 가 경로·메서드 매트
 근거 테스트: `AccessTokenLoginIdHeaderFilterTest` (BLOG-AC-07~10, 12), `PostServiceImplTest` (BLOG-AC-11).
 access token TTL 은 role 로 갈린다 — `ROLE_ADMIN` 1일, 그 외 15분 (AUTH-AC-17, `TokenServiceTest`).
 
+### schedule — `/api/back/schedule`
+
+| 메서드 | 경로 | 설명 | 권한 |
+| --- | --- | --- | --- |
+| GET | `/api/back/schedule/tree` | 프로젝트/마일스톤/할 일 트리 조회 (배치 쿼리 3회) | 로그인 |
+| POST | `/api/back/schedule/projects` | 프로젝트 생성 | 로그인 |
+| PUT | `/api/back/schedule/projects/{projectId}` | 프로젝트 수정 | 로그인 + 본인 |
+| DELETE | `/api/back/schedule/projects/{projectId}` | 프로젝트 삭제 (하위 마일스톤·할 일 캐스케이드) | 로그인 + 본인 |
+| POST | `/api/back/schedule/milestones` | 마일스톤 생성 | 로그인 |
+| PUT | `/api/back/schedule/milestones/{milestoneId}` | 마일스톤 수정 | 로그인 + 본인 |
+| DELETE | `/api/back/schedule/milestones/{milestoneId}` | 마일스톤 삭제 (하위 할 일 캐스케이드) | 로그인 + 본인 |
+| POST | `/api/back/schedule/tasks` | 할 일 생성 | 로그인 |
+| PUT | `/api/back/schedule/tasks/{taskId}` | 할 일 수정 | 로그인 + 본인 |
+| DELETE | `/api/back/schedule/tasks/{taskId}` | 할 일 삭제 | 로그인 + 본인 |
+
+ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아니라 서비스 계층에서 이뤄지며,
+본인 소유가 아니거나 존재하지 않는 리소스는 구분 없이 404 로 응답한다. FK 제약은 두지 않고
+같은 계층에서 프로젝트 간 이동 금지·깊이 제한·순환 참조·날짜 범위·색상 형식을 검증한다.
+
 ## app-webflux (:8001)
 
 ### game — `/api/game`
@@ -86,4 +105,5 @@ access token TTL 은 role 로 갈린다 — `ROLE_ADMIN` 1일, 그 외 15분 (AU
 - 실패 응답은 두 앱 모두 `ApiResponse` 봉투를 지향하나 app-mvc 는 아직 auth 도메인
   advice 만 있어 일부가 봉투 밖으로 나간다(`CLAUDE.md` 후속 과제 참조).
 - 게임 도메인의 상세 인수 기준은 `docs/game/PRD.md`, blog/auth 는 각각
-  `docs/blog/PRD.md` · `docs/auth/PRD.md` 의 AC 표를 본다.
+  `docs/blog/PRD.md` · `docs/auth/PRD.md` 의 AC 표를 본다. schedule 은 `docs/schedule/PRD.md`
+  의 SCHEDULE-AC-01~20.
