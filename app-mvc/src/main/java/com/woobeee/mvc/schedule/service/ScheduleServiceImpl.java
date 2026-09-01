@@ -17,8 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Transactional
@@ -90,9 +92,17 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     private static int heightWalk(Long id, Map<Long, List<Long>> children) {
+        return heightWalk(id, children, new HashSet<>());
+    }
+
+    private static int heightWalk(Long id, Map<Long, List<Long>> children, Set<Long> visited) {
+        if (!visited.add(id)) {
+            // 데이터가 이미 망가져 순환이면 무한 재귀 대신 실패시킨다
+            throw ScheduleErrorCode.CYCLE.asException();
+        }
         int max = 0;
         for (Long child : children.getOrDefault(id, List.of())) {
-            max = Math.max(max, heightWalk(child, children));
+            max = Math.max(max, heightWalk(child, children, visited));
         }
         return max + 1;
     }
@@ -100,6 +110,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     /* ===== 트리 조회 ===== */
 
     @Override
+    @Transactional(readOnly = true)
     public GetScheduleTreeResponse getTree(String loginId) {
         Long memberId = memberResolver.requireMemberId(loginId);
         List<Projects> projects = projectRepository.findAllForMember(memberId);
@@ -114,10 +125,17 @@ public class ScheduleServiceImpl implements ScheduleService {
         List<Milestones> allMilestones = milestoneRepository.findAllForProjects(projectIds);
         List<Tasks> allTasks = taskRepository.findAllForProjects(projectIds);
 
+        // 동시 쓰기로 부모/마일스톤이 지워지면 고아가 생길 수 있다 — 조용히 누락시키지 않고
+        // 프로젝트 루트로 재부착해 무결성 구멍을 눈에 보이게 한다.
+        Set<Long> milestoneIds = new HashSet<>();
+        for (Milestones m : allMilestones) {
+            milestoneIds.add(m.getId());
+        }
+
         Map<Long, List<Milestones>> rootMilestonesByProject = new HashMap<>();
         Map<Long, List<Milestones>> childMilestonesByParent = new HashMap<>();
         for (Milestones m : allMilestones) {
-            if (m.getParentId() == null) {
+            if (m.getParentId() == null || !milestoneIds.contains(m.getParentId())) {
                 rootMilestonesByProject.computeIfAbsent(m.getProjectId(), k -> new ArrayList<>()).add(m);
             } else {
                 childMilestonesByParent.computeIfAbsent(m.getParentId(), k -> new ArrayList<>()).add(m);
@@ -127,7 +145,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         Map<Long, List<Tasks>> rootTasksByProject = new HashMap<>();
         Map<Long, List<Tasks>> tasksByMilestone = new HashMap<>();
         for (Tasks t : allTasks) {
-            if (t.getMilestoneId() == null) {
+            if (t.getMilestoneId() == null || !milestoneIds.contains(t.getMilestoneId())) {
                 rootTasksByProject.computeIfAbsent(t.getProjectId(), k -> new ArrayList<>()).add(t);
             } else {
                 tasksByMilestone.computeIfAbsent(t.getMilestoneId(), k -> new ArrayList<>()).add(t);
@@ -242,11 +260,17 @@ public class ScheduleServiceImpl implements ScheduleService {
             Map<Long, Long> parents = parentIndex(project.getId());
 
             Long cursor = newParent;
+            int steps = 0;
             while (cursor != null) {
                 if (cursor.equals(id)) {
                     throw ScheduleErrorCode.CYCLE.asException();
                 }
                 cursor = parents.get(cursor);
+                steps++;
+                if (steps > parents.size() + 1) {
+                    // 데이터가 이미 망가져 순환이면 무한 루프 대신 실패시킨다
+                    throw ScheduleErrorCode.CYCLE.asException();
+                }
             }
 
             int newDepth = depthOf(newParent, parents) + heightOf(id, parents);

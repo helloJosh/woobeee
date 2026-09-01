@@ -116,7 +116,7 @@ art-market-place
 
 - Controller: `ScheduleController` 단일 진입점 (`/api/back/schedule/**`)
 - Package: `com.woobeee.mvc.schedule` — `controller`/`service`/`repository`/`entity`/`api`/`exception`
-- Entity: `Project`, `Milestone`, `Task` (`projects`/`milestones`/`tasks`, V8)
+- Entity: `Projects`, `Milestones`, `Tasks` (`projects`/`milestones`/`tasks`, V8)
 - 무결성은 FK 가 아니라 서비스 계층에서 강제한다: 소유권 검증(본인이 아니면 404 로 위장해
   존재 자체를 숨긴다), 프로젝트를 넘나드는 이동 금지, 깊이 5단계 제한, 순환 참조 방지, 날짜
   범위, `#RRGGBB` 색상 형식.

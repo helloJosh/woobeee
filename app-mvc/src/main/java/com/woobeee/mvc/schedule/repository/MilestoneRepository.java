@@ -22,7 +22,7 @@ public interface MilestoneRepository extends JpaRepository<Milestones, Long> {
     @Query(value = """
             WITH RECURSIVE descendants AS (
                 SELECT id FROM milestones WHERE id = :milestoneId
-                UNION ALL
+                UNION
                 SELECT m.id FROM milestones m JOIN descendants d ON m.parent_id = d.id
             )
             SELECT id FROM descendants

@@ -39,6 +39,8 @@ export default function SchedulePage() {
     const [filter, setFilter] = useState<StatusFilter>("ALL")
     const [dialog, setDialog] = useState<DialogState>(null)
     const [dialogInitial, setDialogInitial] = useState<ItemDraft>(EMPTY_DRAFT)
+    const [calYear, setCalYear] = useState(() => new Date().getFullYear())
+    const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1)
 
     const fetchTree = useCallback(async () => {
         try {
@@ -179,6 +181,9 @@ export default function SchedulePage() {
             {treeState === "ready" ? (
                 <ScheduleCalendar
                     tasks={calendarTasks}
+                    year={calYear}
+                    month={calMonth}
+                    onMove={(y, m) => { setCalYear(y); setCalMonth(m) }}
                     onTaskClick={(taskId) => {
                         const found = findTask(taskId)
                         if (found) openEditTask(found.projectId, found.task)

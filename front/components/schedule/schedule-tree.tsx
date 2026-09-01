@@ -51,8 +51,8 @@ function TaskRow({ projectId, task, cb }: { projectId: number; task: ScheduleTas
     )
 }
 
-function MilestoneRow({ projectId, milestone, depth, cb }: {
-    projectId: number; milestone: FilteredMilestone; depth: number; cb: TreeCallbacks
+function MilestoneRow({ projectId, milestone, cb }: {
+    projectId: number; milestone: FilteredMilestone; cb: TreeCallbacks
 }) {
     const [open, setOpen] = useState(true)
     return (
@@ -80,7 +80,7 @@ function MilestoneRow({ projectId, milestone, depth, cb }: {
                 <ul className="ml-5 border-l pl-2">
                     {milestone.tasks.map((t) => <TaskRow key={t.id} projectId={projectId} task={t} cb={cb} />)}
                     {milestone.milestones.map((m) => (
-                        <MilestoneRow key={m.id} projectId={projectId} milestone={m} depth={depth + 1} cb={cb} />
+                        <MilestoneRow key={m.id} projectId={projectId} milestone={m} cb={cb} />
                     ))}
                 </ul>
             ) : null}
@@ -115,7 +115,7 @@ export default function ScheduleTree({ tree, cb }: { tree: FilteredTree; cb: Tre
                     <ul className="mt-2 space-y-0.5">
                         {p.tasks.map((t) => <TaskRow key={t.id} projectId={p.id} task={t} cb={cb} />)}
                         {p.milestones.map((m) => (
-                            <MilestoneRow key={m.id} projectId={p.id} milestone={m} depth={1} cb={cb} />
+                            <MilestoneRow key={m.id} projectId={p.id} milestone={m} cb={cb} />
                         ))}
                     </ul>
                 </li>

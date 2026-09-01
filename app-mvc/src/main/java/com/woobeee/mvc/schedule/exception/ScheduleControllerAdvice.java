@@ -4,9 +4,11 @@ import com.woobeee.core.api.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.time.LocalDateTime;
 
@@ -25,8 +27,9 @@ public class ScheduleControllerAdvice {
         return envelope(ex.errorCode());
     }
 
-    /** bean validation 실패와 깨진 JSON — 상태는 400, 코드는 폴백. */
-    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    /** bean validation 실패, 깨진 JSON, 타입이 안 맞는 경로변수/파라미터, 지원하지 않는 메서드 — 상태는 400, 코드는 폴백. */
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class, HttpRequestMethodNotSupportedException.class})
     public ResponseEntity<ApiResponse<LocalDateTime>> handleBadRequest(Exception ex) {
         log.debug("schedule api rejected a malformed request: {}", ex.getMessage());
         return envelope(ScheduleErrorCode.BAD_REQUEST);

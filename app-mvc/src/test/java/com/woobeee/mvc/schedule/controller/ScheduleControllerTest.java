@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -80,5 +81,16 @@ class ScheduleControllerTest {
         mockMvc.perform(get("/api/back/schedule/tree").header("loginId", "me@example.com"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.header.message").value("schedule_projectNotFound"));
+    }
+
+    /** 경로변수 타입 불일치(MethodArgumentTypeMismatchException) 도 schedule_badRequest 봉투로 나간다. */
+    @Test
+    void aNonNumericPathVariableBecomesTheBadRequestEnvelope() throws Exception {
+        mockMvc.perform(put("/api/back/schedule/tasks/abc")
+                        .header("loginId", "me@example.com")
+                        .contentType("application/json")
+                        .content("{\"name\":\"t\",\"status\":\"NOT_STARTED\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.header.message").value("schedule_badRequest"));
     }
 }

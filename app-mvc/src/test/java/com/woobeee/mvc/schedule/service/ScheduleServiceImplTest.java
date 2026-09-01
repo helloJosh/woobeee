@@ -269,4 +269,71 @@ class ScheduleServiceImplTest {
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.CROSS_PROJECT));
     }
+
+    /**
+     * Fix 1 회귀 — 동시 PUT 이 이미 부모 순환(A.parent=B, B.parent=A)을 만든 뒤라도,
+     * 그 체인을 타는 이동 검증은 무한 루프에 빠지지 않고 CYCLE 로 즉시 실패해야 한다.
+     */
+    @Test
+    void movingATargetUnderAnAlreadyCyclicPairFailsPromptlyInsteadOfHanging() {
+        loggedIn();
+        Milestones a = milestone(1L, 10L, 2L); // A.parent = B
+        Milestones b = milestone(2L, 10L, 1L); // B.parent = A
+        Milestones c = milestone(3L, 10L, null);
+        when(milestoneRepository.findById(3L)).thenReturn(Optional.of(c));
+        when(projectRepository.findById(10L)).thenReturn(Optional.of(ownedProject(10L)));
+        when(milestoneRepository.findById(1L)).thenReturn(Optional.of(a));
+        when(milestoneRepository.findAllForProject(10L)).thenReturn(List.of(a, b, c));
+
+        assertThatThrownBy(() -> service.updateMilestone(LOGIN, 3L,
+                new PutMilestoneRequest(1L, "c", ScheduleStatus.NOT_STARTED, null, null)))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.CYCLE));
+    }
+
+    /** Fix 2 — 부모/마일스톤이 지워져 고아가 된 노드는 조용히 사라지지 않고 프로젝트 루트로 재부착된다. */
+    @Test
+    void orphanedMilestonesAndTasksReattachAtTheProjectRoot() {
+        loggedIn();
+        Projects p = ownedProject(10L);
+        when(projectRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of(p));
+        Milestones orphanMilestone = milestone(5L, 10L, 77L); // parentId=77 — fetch 결과에 없다
+        when(milestoneRepository.findAllForProjects(List.of(10L))).thenReturn(List.of(orphanMilestone));
+        Tasks orphanTask = Tasks.create(10L, 99L, "orphan-task", null, null, null, "#ef4444"); // milestoneId=99 도 없다
+        ReflectionTestUtils.setField(orphanTask, "id", 200L);
+        when(taskRepository.findAllForProjects(List.of(10L))).thenReturn(List.of(orphanTask));
+
+        GetScheduleTreeResponse tree = service.getTree(LOGIN);
+
+        var projectNode = tree.projects().get(0);
+        assertThat(projectNode.milestones()).extracting(GetScheduleTreeResponse.MilestoneNode::id)
+                .containsExactly(5L);
+        assertThat(projectNode.tasks()).extracting(GetScheduleTreeResponse.TaskNode::name)
+                .containsExactly("orphan-task");
+    }
+
+    /**
+     * Fix 6 (SCHEDULE-AC-07 이동 케이스) — 깊이 1~4 체인(m1~m4) 밑에 S(자신 1단 + 자식 1단, 높이 2)를
+     * 옮기면 4(부모 깊이) + 2(옮기는 subtree 높이) = 6 > 5 로 거부돼야 한다.
+     */
+    @Test
+    void movingASubtreeThatWouldPushTheDeepestDescendantPastFiveIsRejected() {
+        loggedIn();
+        Milestones m1 = milestone(1L, 10L, null);
+        Milestones m2 = milestone(2L, 10L, 1L);
+        Milestones m3 = milestone(3L, 10L, 2L);
+        Milestones m4 = milestone(4L, 10L, 3L);
+        Milestones s = milestone(5L, 10L, null); // 현재는 루트
+        Milestones sChild = milestone(6L, 10L, 5L); // S 의 자식 — S 의 높이를 2로 만든다
+        when(milestoneRepository.findById(5L)).thenReturn(Optional.of(s));
+        when(projectRepository.findById(10L)).thenReturn(Optional.of(ownedProject(10L)));
+        when(milestoneRepository.findById(4L)).thenReturn(Optional.of(m4));
+        when(milestoneRepository.findAllForProject(10L))
+                .thenReturn(List.of(m1, m2, m3, m4, s, sChild));
+
+        assertThatThrownBy(() -> service.updateMilestone(LOGIN, 5L,
+                new PutMilestoneRequest(4L, "s", ScheduleStatus.NOT_STARTED, null, null)))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.DEPTH_EXCEEDED));
+    }
 }

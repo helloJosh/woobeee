@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 /**
  * 할 일 고유색. 값 목록은 front/lib/schedule.ts 의 SCHEDULE_COLORS 와 동일해야 한다
- * (스펙 2026-07-31 §4 가 단일 출처). tailwind 500 계열 12색.
+ * (스펙 2026-09-01 §4 가 단일 출처). tailwind 500 계열 12색.
  */
 public final class ScheduleColors {
     public static final List<String> PALETTE = List.of(

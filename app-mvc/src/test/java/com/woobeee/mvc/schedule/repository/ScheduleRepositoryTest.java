@@ -1,6 +1,5 @@
 package com.woobeee.mvc.schedule.repository;
 
-import com.woobeee.mvc._common.config.QuerydslConfig;
 import com.woobeee.mvc.schedule.entity.Milestones;
 import com.woobeee.mvc.schedule.entity.Projects;
 import com.woobeee.mvc.schedule.entity.ScheduleStatus;
@@ -9,7 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
-import org.springframework.context.annotation.Import;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
@@ -23,7 +21,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @EnableAutoConfiguration
 @EntityScan(basePackages = "com.woobeee.mvc")
 @EnableJpaRepositories(basePackages = "com.woobeee.mvc.schedule.repository")
-@Import(QuerydslConfig.class)
 @Transactional
 @TestPropertySource(properties = {
         "spring.datasource.url=jdbc:postgresql://localhost:9432/market",

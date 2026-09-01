@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { calendarLayout } from "@/lib/schedule-calendar"
@@ -10,20 +9,18 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
 const LANE_HEIGHT = 22
 const MAX_VISIBLE_LANES = 4
 
-export default function ScheduleCalendar({ tasks, onTaskClick }: {
+export default function ScheduleCalendar({ tasks, year, month, onMove, onTaskClick }: {
     tasks: ScheduleTask[]
+    year: number
+    month: number // 1~12
+    onMove: (nextYear: number, nextMonth: number) => void
     onTaskClick: (taskId: number) => void
 }) {
-    const now = new Date()
-    const [year, setYear] = useState(now.getFullYear())
-    const [month, setMonth] = useState(now.getMonth() + 1) // 1~12
-
     const weeks = calendarLayout(tasks, year, month)
 
     const move = (delta: number) => {
         const d = new Date(year, month - 1 + delta, 1)
-        setYear(d.getFullYear())
-        setMonth(d.getMonth() + 1)
+        onMove(d.getFullYear(), d.getMonth() + 1)
     }
 
     return (
