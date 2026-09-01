@@ -18,8 +18,10 @@ export interface CalendarSegment {
     continuesLeft: boolean
     /** 이 주 이후(오른쪽)로 이어진다. */
     continuesRight: boolean
-    /** 종료일 미정 — 오늘 하루만 표시되고 화살표(→)로 미정임을 알린다. */
+    /** 종료일 미정 — 시작일 하루만 표시되고 화살표(→)로 미정임을 알린다. */
     openEnded: boolean
+    /** 완료 항목 — 트리처럼 취소선으로 그린다. */
+    done: boolean
 }
 
 export interface CalendarDay {
@@ -75,13 +77,11 @@ export function orderedRange(a: string, b: string): { start: string; end: string
  * 그룹(프로젝트) 순서는 트리 순서 그대로이고, 그룹 안에서는 가로로 겹치지 않는 막대가
  * 같은 lane 을 재사용한다(first-fit) — 빈 자리가 있으면 위로 붙는다 (SCHEDULE-AC-30).
  * 막대는 이번 달 밖이라도 그리드에 보이는 앞뒤 달 칸까지 이어 그린다.
- * today 는 종료 미정 규칙(SCHEDULE-AC-19)의 기준일 — 테스트가 고정할 수 있게 주입받는다.
  */
 export function calendarLayout(
     entries: CalendarEntry[],
     year: number,
     month: number,
-    today: Date = new Date(),
 ): CalendarWeek[] {
     const first = new Date(year, month - 1, 1)
     const last = new Date(year, month, 0)
@@ -98,14 +98,14 @@ export function calendarLayout(
         weeks.push({ days, segments: [], laneCount: 0, laneGroupStarts: [] })
     }
 
-    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
     const gridEnd = addDays(gridStart, weekCount * 7 - 1)
     const placeable = entries
         .filter((e) => e.startDate !== null || e.endDate !== null)
         .map((e) => {
             if (e.endDate === null) {
-                // 종료 미정 — 시작일과 무관하게 오늘 하루만 (SCHEDULE-AC-19)
-                return { entry: e, start: todayMidnight, end: todayMidnight, openEnded: true }
+                // 종료 미정 — 시작일 하루만 (SCHEDULE-AC-19)
+                const start = toLocalDate(e.startDate!)
+                return { entry: e, start, end: start, openEnded: true }
             }
             const start = e.startDate ? toLocalDate(e.startDate) : toLocalDate(e.endDate)
             return { entry: e, start, end: toLocalDate(e.endDate), openEnded: false }
@@ -164,6 +164,7 @@ export function calendarLayout(
                     continuesLeft: start < segStartDate,
                     continuesRight: end > segEndDate,
                     openEnded,
+                    done: entry.status === "DONE",
                 })
             }
             for (let l = 0; l < laneEnds.length; l++) {

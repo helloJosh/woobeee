@@ -61,20 +61,29 @@ describe("calendarLayout (2026-08)", () => {
         expect(weeks[5].segments[0]).toMatchObject({ startCol: 2, span: 3, continuesLeft: false, continuesRight: false })
     })
 
-    // SCHEDULE-AC-19 — 종료 미정은 오늘 하루만 (세 종류 공통)
-    it("종료 미정은 오늘 하루만 표시되고 openEnded 다", () => {
-        // 오늘 = 2026-08-15(토) → 셋째 주(w2) col 6
-        const today = new Date(2026, 7, 15)
-        const weeks = calendarLayout([entry({ id: 1, kind: "project", startDate: "2026-08-01", endDate: null, color: null })], 2026, 8, today)
+    // SCHEDULE-AC-19 — 종료 미정은 시작일 하루만 (세 종류 공통)
+    it("종료 미정은 시작일 하루만 표시되고 openEnded 다", () => {
+        // 8/1 = 토 → 첫 주 col 6
+        const weeks = calendarLayout([entry({ id: 1, kind: "project", startDate: "2026-08-01", endDate: null, color: null })], 2026, 8)
         const all = weeks.flatMap((w) => w.segments)
         expect(all).toHaveLength(1)
-        expect(weeks[2].segments[0]).toMatchObject({ startCol: 6, span: 1, openEnded: true })
+        expect(weeks[0].segments[0]).toMatchObject({ startCol: 6, span: 1, openEnded: true })
     })
 
-    it("종료 미정은 오늘이 포함되지 않은 달에서는 표시되지 않는다", () => {
-        const today = new Date(2026, 8, 10) // 2026-09-10
-        const weeks = calendarLayout([entry({ id: 1, startDate: "2026-08-01", endDate: null })], 2026, 8, today)
+    it("종료 미정은 시작일이 그리드 밖이면 표시되지 않는다", () => {
+        const weeks = calendarLayout([entry({ id: 1, startDate: "2026-06-10", endDate: null })], 2026, 8)
         expect(weeks.every((w) => w.segments.length === 0)).toBe(true)
+    })
+
+    // 완료 항목은 달력 막대도 취소선 대상이다
+    it("완료 항목의 세그먼트는 done 플래그를 가진다", () => {
+        const weeks = calendarLayout([
+            entry({ id: 1, status: "DONE", startDate: "2026-08-03", endDate: "2026-08-04" }),
+            entry({ id: 2, status: "IN_PROGRESS", startDate: "2026-08-05", endDate: "2026-08-06" }),
+        ], 2026, 8)
+        const byId = new Map(weeks[1].segments.map((s) => [s.id, s.done]))
+        expect(byId.get(1)).toBe(true)
+        expect(byId.get(2)).toBe(false)
     })
 
     it("시작 없이 종료만 있으면 종료일 하루짜리다", () => {

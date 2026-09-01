@@ -33,7 +33,7 @@
 | SCHEDULE-AC-16 | bean validation 실패(빈 name 등)·깨진 JSON | 400 + `schedule_badRequest` 봉투 |
 | SCHEDULE-AC-17 | `filterTree(tree, status)` | 자기 상태가 일치하는 노드와 그 조상 체인만 남고, 조상은 `dimmed` 표시 |
 | SCHEDULE-AC-18 | `calendarLayout` 월 경계 | 월 밖 구간은 잘리고 `continuesLeft`/`continuesRight`로 이어짐을 표시 |
-| SCHEDULE-AC-19 | `calendarLayout` 종료 미정 항목(세 종류 공통) | **오늘 하루만** 표시(`openEnded` 플래그 유지). 오늘이 포함되지 않은 달에서는 표시되지 않는다 |
+| SCHEDULE-AC-19 | `calendarLayout` 종료 미정 항목(세 종류 공통) | **시작일 하루만** 표시(`openEnded` — → 표식). 시작일이 그리드 밖인 달에서는 표시되지 않는다. 완료 항목의 막대는 취소선 |
 | SCHEDULE-AC-20 | `formatDateRange` | 미정은 `미정`, 올해 날짜는 연도 생략(`08.20`), 다른 해는 `25.12.31` |
 | SCHEDULE-AC-21 | 종료일이 지난(어제 이전) 항목이 있을 때 `GET /tree` | 프로젝트·마일스톤·할 일 모두 조회 전에 상태가 `DONE`으로 자동 갱신되어 반환 |
 | SCHEDULE-AC-22 | 종료일 미정(NULL), 종료일이 오늘 당일, 또는 **마감이 지난 뒤 사용자가 직접 수정한 항목**(updated_at > 종료일 — 상태 배지 클릭 포함) | 자동 완료 대상에서 제외 — 수동 변경이 자동 완료를 이긴다 |

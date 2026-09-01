@@ -212,7 +212,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 }}
                                 title={seg.name}
                             >
-                                <span className="truncate">[{KIND_LABEL[seg.kind]}] {seg.name}{seg.openEnded && !seg.continuesRight ? " →" : ""}</span>
+                                <span className={`truncate ${seg.done ? "line-through opacity-60" : ""}`}>[{KIND_LABEL[seg.kind]}] {seg.name}{seg.openEnded && !seg.continuesRight ? " →" : ""}</span>
                             </button>
                         ))}
                     </div>
