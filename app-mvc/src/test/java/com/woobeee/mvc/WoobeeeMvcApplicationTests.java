@@ -9,6 +9,9 @@ import com.woobeee.mvc.blog.repository.CategoryRepository;
 import com.woobeee.mvc.blog.repository.CommentRepository;
 import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
+import com.woobeee.mvc.schedule.repository.MilestoneRepository;
+import com.woobeee.mvc.schedule.repository.ProjectRepository;
+import com.woobeee.mvc.schedule.repository.TaskRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
@@ -48,6 +51,15 @@ class WoobeeeMvcApplicationTests {
 
     @MockitoBean
     private JPAQueryFactory jpaQueryFactory;
+
+    @MockitoBean
+    private ProjectRepository projectRepository;
+
+    @MockitoBean
+    private MilestoneRepository milestoneRepository;
+
+    @MockitoBean
+    private TaskRepository taskRepository;
 
     @Test
     void contextLoads() {
