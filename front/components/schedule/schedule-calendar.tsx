@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { calendarLayout, orderedRange, type CalendarWeek } from "@/lib/schedule-calendar"
 import QuickTaskPopover from "@/components/schedule/quick-task-popover"
-import type { CalendarEntry, ScheduleItemKind } from "@/lib/schedule"
+import { todayIso, type CalendarEntry, type ScheduleItemKind } from "@/lib/schedule"
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
 /** 모든 막대 공통 높이 — 종류 구분은 색·라벨·글씨로 한다. */
@@ -72,6 +72,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
     onQuickCreate: (name: string, startIso: string, endIso: string, projectId: number | null) => Promise<void>
 }) {
     const weeks = calendarLayout(entries, year, month)
+    const today = todayIso()
     const [drag, setDrag] = useState<DragState | null>(null)
     const dragRef = useRef<DragState | null>(null)
     dragRef.current = drag
@@ -175,7 +176,13 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                      dragRange && day.iso >= dragRange.start && day.iso <= dragRange.end
                                          ? "bg-accent/60" : ""
                                  } ${day.inMonth ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
-                                {day.date}
+                                {day.iso === today ? (
+                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
+                                        {day.date}
+                                    </span>
+                                ) : (
+                                    day.date
+                                )}
                             </div>
                         ))}
                         {week.segments.map((seg, si) => (

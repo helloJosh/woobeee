@@ -47,11 +47,18 @@ describe("calendarLayout (2026-08)", () => {
         expect(weeks[2].segments[0]).toMatchObject({ startCol: 0, span: 3, continuesLeft: true, continuesRight: false })
     })
 
-    // SCHEDULE-AC-18 — 월 경계 잘림
-    it("월 밖 구간은 잘리고 continuesLeft/Right 로 표시된다", () => {
-        const weeks = calendarLayout([entry({ id: 1, startDate: "2026-07-25", endDate: "2026-09-05" })], 2026, 8)
-        expect(weeks[0].segments[0]).toMatchObject({ startCol: 6, span: 1, continuesLeft: true })
-        expect(weeks[5].segments[0]).toMatchObject({ startCol: 0, span: 2, continuesRight: true })
+    // SCHEDULE-AC-18 — 그리드 경계 잘림: 보이는 앞뒤 달 칸까지는 이어 그린다
+    it("그리드에 보이는 앞뒤 달 칸까지 이어지고, 그리드 밖만 잘려 continues 로 표시된다", () => {
+        // 8월 그리드는 7/26 ~ 9/5
+        const weeks = calendarLayout([entry({ id: 1, startDate: "2026-07-20", endDate: "2026-09-09" })], 2026, 8)
+        expect(weeks[0].segments[0]).toMatchObject({ startCol: 0, span: 7, continuesLeft: true })
+        expect(weeks[5].segments[0]).toMatchObject({ startCol: 0, span: 7, continuesRight: true })
+    })
+
+    it("앞뒤 달 채운 칸 범위의 항목도 그려진다", () => {
+        // 9/1(화) ~ 9/3(목) — 8월 뷰 마지막 주 col 2~4
+        const weeks = calendarLayout([entry({ id: 1, kind: "milestone", projectId: 1, startDate: "2026-09-01", endDate: "2026-09-03", color: null })], 2026, 8)
+        expect(weeks[5].segments[0]).toMatchObject({ startCol: 2, span: 3, continuesLeft: false, continuesRight: false })
     })
 
     // SCHEDULE-AC-19 — 종료 미정은 오늘 하루만 (세 종류 공통)
@@ -80,9 +87,21 @@ describe("calendarLayout (2026-08)", () => {
         expect(weeks.every((w) => w.segments.length === 0)).toBe(true)
     })
 
-    it("월 범위와 무관한 항목은 나오지 않는다", () => {
-        const weeks = calendarLayout([entry({ id: 1, startDate: "2026-07-01", endDate: "2026-07-31" })], 2026, 8)
+    it("그리드 범위(7/26~9/5)와 무관한 항목은 나오지 않는다", () => {
+        const weeks = calendarLayout([entry({ id: 1, startDate: "2026-06-01", endDate: "2026-06-30" })], 2026, 8)
         expect(weeks.every((w) => w.segments.length === 0)).toBe(true)
+    })
+
+    // 사용자 보고 재현 — 겹치지 않는 두 할 일이 줄을 낭비하지 않는다
+    it("같은 그룹에서 가로로 겹치지 않으면 같은 lane 을 재사용한다", () => {
+        const weeks = calendarLayout([
+            entry({ id: 1, startDate: "2026-08-03", endDate: "2026-08-04" }),
+            entry({ id: 2, startDate: "2026-08-05", endDate: "2026-08-06" }),
+        ], 2026, 8)
+        const lanes = new Map(weeks[1].segments.map((s) => [s.id, s.lane]))
+        expect(lanes.get(1)).toBe(0)
+        expect(lanes.get(2)).toBe(0)
+        expect(weeks[1].laneCount).toBe(1)
     })
 
     // SCHEDULE-AC-30 — 그룹 lane: 트리 순서 그대로, 같은 프로젝트는 붙고 그룹 사이만 간격 표시

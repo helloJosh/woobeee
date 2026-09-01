@@ -8,7 +8,7 @@ export interface CalendarSegment {
     name: string
     /** 할 일 고유색. 프로젝트/마일스톤은 null — 컴포넌트가 중립 톤으로 그린다. */
     color: string | null
-    /** 같은 주 안에서 세로로 쌓이는 줄 번호 (0부터). 트리 순서를 그대로 따른다. */
+    /** 같은 주 안에서 세로로 쌓이는 줄 번호 (0부터). 같은 그룹 안에서 겹치지 않으면 줄을 재사용한다. */
     lane: number
     /** 주 안의 시작 칸 (0 = 일요일). */
     startCol: number
@@ -72,8 +72,9 @@ export function orderedRange(a: string, b: string): { start: string; end: string
 
 /**
  * month 는 1~12. 일요일 시작 주 단위 그리드에 막대를 배치한다.
- * 엔트리 순서(collectCalendarEntries 의 트리 순서)를 그대로 lane 순서로 쓴다 —
- * 같은 프로젝트의 막대가 연속 lane 에 놓여 서로 붙는다 (SCHEDULE-AC-30).
+ * 그룹(프로젝트) 순서는 트리 순서 그대로이고, 그룹 안에서는 가로로 겹치지 않는 막대가
+ * 같은 lane 을 재사용한다(first-fit) — 빈 자리가 있으면 위로 붙는다 (SCHEDULE-AC-30).
+ * 막대는 이번 달 밖이라도 그리드에 보이는 앞뒤 달 칸까지 이어 그린다.
  * today 는 종료 미정 규칙(SCHEDULE-AC-19)의 기준일 — 테스트가 고정할 수 있게 주입받는다.
  */
 export function calendarLayout(
@@ -98,6 +99,7 @@ export function calendarLayout(
     }
 
     const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    const gridEnd = addDays(gridStart, weekCount * 7 - 1)
     const placeable = entries
         .filter((e) => e.startDate !== null || e.endDate !== null)
         .map((e) => {
@@ -108,41 +110,68 @@ export function calendarLayout(
             const start = e.startDate ? toLocalDate(e.startDate) : toLocalDate(e.endDate)
             return { entry: e, start, end: toLocalDate(e.endDate), openEnded: false }
         })
-        .filter(({ start, end }) => start <= last && end >= first && end >= start)
-    // 정렬하지 않는다 — 트리 순서가 곧 lane 순서다.
+        // 그리드에 보이는 앞뒤 달 구간까지 배치 대상이다
+        .filter(({ start, end }) => start <= gridEnd && end >= gridStart && end >= start)
+
+    // 트리 순서 그대로 연속 구간을 그룹으로 묶는다 (같은 프로젝트는 연속으로 온다)
+    type Placed = (typeof placeable)[number]
+    const groups: Placed[][] = []
+    let lastGroup: number | null | undefined = undefined
+    for (const item of placeable) {
+        if (groups.length === 0 || item.entry.projectId !== lastGroup) {
+            groups.push([])
+        }
+        groups[groups.length - 1].push(item)
+        lastGroup = item.entry.projectId
+    }
 
     for (let w = 0; w < weekCount; w++) {
         const week = weeks[w]
         const weekStart = addDays(gridStart, w * 7)
         const weekEnd = addDays(weekStart, 6)
-        let lane = 0
-        // 무소속 그룹(projectId null)과 구분하기 위해 초기값은 undefined
-        let lastGroup: number | null | undefined = undefined
+        let laneOffset = 0
 
-        for (const { entry, start, end, openEnded } of placeable) {
-            const clipStart = start < first ? first : start
-            const clipEnd = end > last ? last : end
-            const segStart = clipStart > weekStart ? clipStart : weekStart
-            const segEnd = clipEnd < weekEnd ? clipEnd : weekEnd
-            if (segStart > segEnd) continue
+        for (const group of groups) {
+            // 이 주에 걸치는 세그먼트만 추려 시작 칸 순으로 first-fit 패킹한다
+            const weekSegs: { item: Placed; startCol: number; endCol: number }[] = []
+            for (const item of group) {
+                const clipStart = item.start < gridStart ? gridStart : item.start
+                const clipEnd = item.end > gridEnd ? gridEnd : item.end
+                const segStart = clipStart > weekStart ? clipStart : weekStart
+                const segEnd = clipEnd < weekEnd ? clipEnd : weekEnd
+                if (segStart > segEnd) continue
+                weekSegs.push({ item, startCol: dayDiff(weekStart, segStart), endCol: dayDiff(weekStart, segEnd) })
+            }
+            if (weekSegs.length === 0) continue
 
-            week.laneGroupStarts.push(entry.projectId !== lastGroup)
-            week.segments.push({
-                kind: entry.kind,
-                id: entry.id,
-                name: entry.name,
-                color: entry.color,
-                lane,
-                startCol: dayDiff(weekStart, segStart),
-                span: dayDiff(segStart, segEnd) + 1,
-                continuesLeft: start < segStart,
-                continuesRight: end > segEnd,
-                openEnded,
-            })
-            lastGroup = entry.projectId
-            lane++
+            weekSegs.sort((a, b) => a.startCol - b.startCol)
+            const laneEnds: number[] = []
+            for (const seg of weekSegs) {
+                let lane = 0
+                while (laneEnds[lane] !== undefined && laneEnds[lane] >= seg.startCol) lane++
+                laneEnds[lane] = seg.endCol
+                const { entry, start, end, openEnded } = seg.item
+                const segStartDate = addDays(weekStart, seg.startCol)
+                const segEndDate = addDays(weekStart, seg.endCol)
+                week.segments.push({
+                    kind: entry.kind,
+                    id: entry.id,
+                    name: entry.name,
+                    color: entry.color,
+                    lane: laneOffset + lane,
+                    startCol: seg.startCol,
+                    span: seg.endCol - seg.startCol + 1,
+                    continuesLeft: start < segStartDate,
+                    continuesRight: end > segEndDate,
+                    openEnded,
+                })
+            }
+            for (let l = 0; l < laneEnds.length; l++) {
+                week.laneGroupStarts.push(l === 0)
+            }
+            laneOffset += laneEnds.length
         }
-        week.laneCount = lane
+        week.laneCount = laneOffset
     }
 
     return weeks
