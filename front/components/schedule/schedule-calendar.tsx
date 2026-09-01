@@ -6,29 +6,42 @@ import { calendarLayout, type CalendarWeek } from "@/lib/schedule-calendar"
 import type { CalendarEntry, ScheduleItemKind } from "@/lib/schedule"
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
-const BAR_HEIGHT = 20
+/** 할 일 막대 높이. 프로젝트/마일스톤은 얇게 그린다. */
+const TASK_BAR = 20
+const THIN_BAR = 14
 /** 같은 프로젝트 그룹 안에서는 살짝 붙인다. */
 const ATTACH_GAP = 1
 /** 프로젝트 그룹 사이 간격. */
 const GROUP_GAP = 8
 const WEEK_HEADER = 24
 const WEEK_PAD = 6
+/** 막대가 없어도 주 칸은 예전 크기를 유지한다. */
+const MIN_WEEK_HEIGHT = 116
 
-/** lane → 세로 위치. 그룹 시작 lane 앞에만 GROUP_GAP, 나머지는 붙인다 (SCHEDULE-AC-30). */
-function laneTops(week: CalendarWeek): number[] {
+/** lane → 세로 위치·높이. 그룹 시작 lane 앞에만 GROUP_GAP, 나머지는 붙인다 (SCHEDULE-AC-30). */
+function laneMetrics(week: CalendarWeek): { tops: number[]; heights: number[]; contentBottom: number } {
     const tops: number[] = []
+    const heights: number[] = []
     let y = WEEK_HEADER
-    for (let i = 0; i < week.laneCount; i++) {
-        if (i > 0) y += week.laneGroupStarts[i] ? GROUP_GAP : ATTACH_GAP
+    for (const seg of week.segments) {
+        if (seg.lane > 0) y += week.laneGroupStarts[seg.lane] ? GROUP_GAP : ATTACH_GAP
         tops.push(y)
-        y += BAR_HEIGHT
+        const h = seg.kind === "task" ? TASK_BAR : THIN_BAR
+        heights.push(h)
+        y += h
     }
-    return tops
+    return { tops, heights, contentBottom: y }
 }
 
 const NEUTRAL_KIND_CLASS: Record<Exclude<ScheduleItemKind, "task">, string> = {
     project: "bg-slate-600 text-white font-semibold",
     milestone: "bg-slate-400 text-slate-950",
+}
+
+const KIND_LABEL: Record<ScheduleItemKind, string> = {
+    project: "프로젝트",
+    milestone: "마일스톤",
+    task: "할일",
 }
 
 export default function ScheduleCalendar({ entries, year, month, onMove, onEntryClick }: {
@@ -62,8 +75,8 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                 {WEEKDAYS.map((d) => <div key={d} className="py-1">{d}</div>)}
             </div>
             {weeks.map((week, wi) => {
-                const tops = laneTops(week)
-                const minHeight = (week.laneCount > 0 ? tops[week.laneCount - 1] + BAR_HEIGHT : WEEK_HEADER) + WEEK_PAD
+                const { tops, heights, contentBottom } = laneMetrics(week)
+                const minHeight = Math.max(MIN_WEEK_HEIGHT, contentBottom + WEEK_PAD)
                 return (
                     <div key={wi} className="relative grid grid-cols-7 border-b last:border-b-0"
                          style={{ minHeight: `${minHeight}px` }}>
@@ -72,19 +85,19 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 {day ?? ""}
                             </div>
                         ))}
-                        {week.segments.map((seg) => (
+                        {week.segments.map((seg, si) => (
                             <button
                                 key={`${seg.kind}-${seg.id}-${seg.startCol}`}
                                 type="button"
                                 onClick={() => onEntryClick(seg.kind, seg.id)}
-                                className={`absolute flex items-center truncate rounded px-1.5 text-xs ${
-                                    seg.kind === "task" ? "text-white" : NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]
+                                className={`absolute flex items-center truncate rounded px-1.5 ${
+                                    seg.kind === "task" ? "text-xs text-white" : `text-[10px] ${NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]}`
                                 }`}
                                 style={{
-                                    top: `${tops[seg.lane]}px`,
+                                    top: `${tops[si]}px`,
                                     left: `calc(${(seg.startCol / 7) * 100}% + 2px)`,
                                     width: `calc(${(seg.span / 7) * 100}% - 4px)`,
-                                    height: `${BAR_HEIGHT - 2}px`,
+                                    height: `${heights[si] - 2}px`,
                                     ...(seg.kind === "task" && seg.color ? { backgroundColor: seg.color } : {}),
                                     borderTopLeftRadius: seg.continuesLeft ? 0 : undefined,
                                     borderBottomLeftRadius: seg.continuesLeft ? 0 : undefined,
@@ -93,7 +106,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 }}
                                 title={seg.name}
                             >
-                                <span className="truncate">{seg.name}{seg.openEnded && !seg.continuesRight ? " →" : ""}</span>
+                                <span className="truncate">[{KIND_LABEL[seg.kind]}] {seg.name}{seg.openEnded && !seg.continuesRight ? " →" : ""}</span>
                             </button>
                         ))}
                     </div>
