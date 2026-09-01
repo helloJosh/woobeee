@@ -43,6 +43,20 @@ export const errorMessageMap = {
         "game_notFound": "요청한 정보를 찾을 수 없습니다.",
         "game_conflict": "지금은 요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         "game_unexpected": "서버에서 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+
+        // 일정 (app-mvc schedule) — 코드 목록은 ScheduleErrorCode.java 와 1:1 이다.
+        "schedule_unauthorized": "로그인이 필요합니다.",
+        "schedule_memberNotFound": "회원 정보를 찾을 수 없습니다. 다시 로그인해 주세요.",
+        "schedule_projectNotFound": "프로젝트를 찾을 수 없습니다.",
+        "schedule_milestoneNotFound": "마일스톤을 찾을 수 없습니다.",
+        "schedule_taskNotFound": "할 일을 찾을 수 없습니다.",
+        "schedule_crossProject": "다른 프로젝트의 항목은 참조할 수 없습니다.",
+        "schedule_depthExceeded": "마일스톤은 5단계까지만 만들 수 있습니다.",
+        "schedule_cycle": "마일스톤을 자기 자신이나 하위 마일스톤 아래로 옮길 수 없습니다.",
+        "schedule_invalidDateRange": "종료일은 시작일보다 빠를 수 없습니다.",
+        "schedule_invalidColor": "색상은 #RRGGBB 형식이어야 합니다.",
+        "schedule_badRequest": "요청 내용을 다시 확인해 주세요.",
+        "schedule_unexpected": "서버에서 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
     },
     en: {
         "comment_needAuthentication": "You must be logged in to post or delete a comment.",
@@ -86,5 +100,19 @@ export const errorMessageMap = {
         "game_notFound": "The requested resource was not found.",
         "game_conflict": "That request cannot be handled right now. Please try again shortly.",
         "game_unexpected": "Something went wrong on the server. Please try again shortly.",
+
+        // Schedule (app-mvc) — mirrors ScheduleErrorCode.java one-for-one.
+        "schedule_unauthorized": "Please log in.",
+        "schedule_memberNotFound": "Member not found. Please sign in again.",
+        "schedule_projectNotFound": "Project not found.",
+        "schedule_milestoneNotFound": "Milestone not found.",
+        "schedule_taskNotFound": "Task not found.",
+        "schedule_crossProject": "You cannot reference an item from another project.",
+        "schedule_depthExceeded": "Milestones can be nested at most 5 levels deep.",
+        "schedule_cycle": "A milestone cannot be moved under itself or its descendant.",
+        "schedule_invalidDateRange": "The end date cannot be before the start date.",
+        "schedule_invalidColor": "Color must be in #RRGGBB format.",
+        "schedule_badRequest": "Please check your request and try again.",
+        "schedule_unexpected": "Something went wrong on the server. Please try again shortly.",
     },
 } as const
