@@ -24,6 +24,7 @@ import {
     RoomSummary,
     TokenResponse
 } from "./types"
+import type { ScheduleStatus, ScheduleTree } from "@/lib/schedule"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
 import {describeHttpFailure} from "@/lib/errors/http-failure";
 
@@ -734,6 +735,63 @@ export const postsAPI = {
             throw new Error(json.header.message || "글 삭제에 실패했습니다.")
         }
     },
+}
+
+export interface ProjectBody {
+    name: string
+    status?: ScheduleStatus
+    startDate?: string | null
+    endDate?: string | null
+}
+
+export interface MilestoneBody extends ProjectBody {
+    projectId?: number
+    parentId?: number | null
+}
+
+export interface TaskBody extends ProjectBody {
+    projectId?: number
+    milestoneId?: number | null
+    color?: string
+}
+
+async function scheduleRequest<T>(endpoint: string, method: string, body?: unknown): Promise<T> {
+    const response = await apiRequest(endpoint, {
+        method,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
+
+    const json: ApiResponse<T> = await response.json()
+    if (!isApiSuccessful(json)) {
+        throw new Error(json.header?.message || "일정 요청에 실패했습니다.")
+    }
+    return json.data
+}
+
+export const scheduleAPI = {
+    getTree: (): Promise<ScheduleTree> =>
+        scheduleRequest("/api/back/schedule/tree", "GET"),
+
+    createProject: (body: ProjectBody) =>
+        scheduleRequest("/api/back/schedule/projects", "POST", body),
+    updateProject: (projectId: number, body: ProjectBody) =>
+        scheduleRequest(`/api/back/schedule/projects/${projectId}`, "PUT", body),
+    deleteProject: (projectId: number) =>
+        scheduleRequest(`/api/back/schedule/projects/${projectId}`, "DELETE"),
+
+    createMilestone: (body: MilestoneBody) =>
+        scheduleRequest("/api/back/schedule/milestones", "POST", body),
+    updateMilestone: (milestoneId: number, body: MilestoneBody) =>
+        scheduleRequest(`/api/back/schedule/milestones/${milestoneId}`, "PUT", body),
+    deleteMilestone: (milestoneId: number) =>
+        scheduleRequest(`/api/back/schedule/milestones/${milestoneId}`, "DELETE"),
+
+    createTask: (body: TaskBody) =>
+        scheduleRequest("/api/back/schedule/tasks", "POST", body),
+    updateTask: (taskId: number, body: TaskBody) =>
+        scheduleRequest(`/api/back/schedule/tasks/${taskId}`, "PUT", body),
+    deleteTask: (taskId: number) =>
+        scheduleRequest(`/api/back/schedule/tasks/${taskId}`, "DELETE"),
 }
 
 export const productAPI = {
