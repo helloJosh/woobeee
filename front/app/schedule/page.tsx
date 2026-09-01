@@ -149,26 +149,17 @@ export default function SchedulePage() {
         await fetchTree()
     }
 
-    const openCalendarEntry = (kind: ScheduleItemKind, id: number) => {
-        if (!tree) return
-        if (kind === "task") {
-            const found = findTask(id)
-            if (found) openEditTask(found.projectId, found.task)
-            return
-        }
+    // 달력 막대 수정 팝오버의 저장 — 종류별로 기존 소속(parentId/milestoneId/색)을 보존한다
+    const saveCalendarEntry = async (kind: ScheduleItemKind, id: number, draft: { name: string; status: ScheduleStatus; startDate: string | null; endDate: string | null }) => {
         if (kind === "project") {
-            const p = tree.projects.find((x) => x.id === id)
-            if (!p) return
-            setDialogContext(null)
-            setDialogInitial({ name: p.name, status: p.status, startDate: p.startDate, endDate: p.endDate })
-            setDialog({ kind: "project", mode: "edit", id: p.id })
-            return
+            await scheduleAPI.updateProject(id, draft)
+        } else if (kind === "milestone") {
+            await scheduleAPI.updateMilestone(id, { ...draft, parentId: findMilestoneParentId(id) })
+        } else {
+            const found = findTask(id)
+            await scheduleAPI.updateTask(id, { ...draft, milestoneId: found?.task.milestoneId ?? null, color: found?.task.color })
         }
-        const hit = findMilestone(tree, id)
-        if (!hit) return
-        setDialogContext(null)
-        setDialogInitial({ name: hit.milestone.name, status: hit.milestone.status, startDate: hit.milestone.startDate, endDate: hit.milestone.endDate })
-        setDialog({ kind: "milestone", mode: "edit", projectId: hit.projectId, id })
+        await fetchTree()
     }
 
     const openEditTask = (projectId: number | null, task: ScheduleTask) => {
@@ -285,7 +276,8 @@ export default function SchedulePage() {
                     year={calYear}
                     month={calMonth}
                     onMove={(y, m) => { setCalYear(y); setCalMonth(m) }}
-                    onEntryClick={openCalendarEntry}
+                    onEntrySave={saveCalendarEntry}
+                    onEntryDelete={(kind, id) => void remove(kind, id)}
                     onQuickCreate={quickCreateTask}
                 />
             ) : null}

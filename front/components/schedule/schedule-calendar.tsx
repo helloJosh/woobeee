@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { calendarLayout, orderedRange, type CalendarWeek } from "@/lib/schedule-calendar"
+import EntryEditPopover, { type EntryDraft } from "@/components/schedule/entry-edit-popover"
 import QuickTaskPopover from "@/components/schedule/quick-task-popover"
 import { todayIso, type CalendarEntry, type ScheduleItemKind } from "@/lib/schedule"
 
@@ -62,12 +63,21 @@ interface QuickCreateState {
     y: number
 }
 
-export default function ScheduleCalendar({ entries, year, month, onMove, onEntryClick, onQuickCreate }: {
+interface EditState {
+    kind: ScheduleItemKind
+    id: number
+    x: number
+    y: number
+}
+
+export default function ScheduleCalendar({ entries, year, month, onMove, onEntrySave, onEntryDelete, onQuickCreate }: {
     entries: CalendarEntry[]
     year: number
     month: number // 1~12
     onMove: (year: number, month: number) => void
-    onEntryClick: (kind: ScheduleItemKind, id: number) => void
+    /** 막대 수정 팝오버 저장/삭제 — 페이지가 API 호출과 갱신을 담당한다. */
+    onEntrySave: (kind: ScheduleItemKind, id: number, draft: EntryDraft) => Promise<void>
+    onEntryDelete: (kind: ScheduleItemKind, id: number) => void
     /** SCHEDULE-AC-32 — 팝오버에서 저장 시 호출. projectId null = 무소속. */
     onQuickCreate: (name: string, startIso: string, endIso: string, projectId: number | null) => Promise<void>
 }) {
@@ -78,6 +88,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
     dragRef.current = drag
     const suppressClickRef = useRef(false)
     const [quickCreate, setQuickCreate] = useState<QuickCreateState | null>(null)
+    const [edit, setEdit] = useState<EditState | null>(null)
     const sectionRef = useRef<HTMLElement>(null)
 
     // 마우스를 달력 밖에서 놓아도 드래그를 끝낸다 — 놓은 지점 옆에 빠른 생성 팝오버를 연다
@@ -110,7 +121,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
 
     const beginDrag = (e: React.MouseEvent<HTMLDivElement>, week: CalendarWeek) => {
         if (e.button !== 0) return
-        if (quickCreate) return // 팝오버가 열려 있으면 바깥 클릭은 닫기가 처리한다
+        if (quickCreate || edit) return // 팝오버가 열려 있으면 바깥 클릭은 닫기가 처리한다
         const bar = (e.target as HTMLElement).closest<HTMLElement>("[data-bar-kind]")
         const iso = isoAt(e, week)
         if (bar) {
@@ -191,10 +202,15 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 type="button"
                                 data-bar-kind={seg.kind}
                                 data-bar-id={seg.id}
-                                onClick={() => {
+                                onClick={(e) => {
                                     // 프로젝트 막대 드래그 직후의 클릭은 생성이 이미 처리했다
                                     if (suppressClickRef.current) { suppressClickRef.current = false; return }
-                                    onEntryClick(seg.kind, seg.id)
+                                    if (quickCreate || edit) return
+                                    const rect = sectionRef.current?.getBoundingClientRect()
+                                    const POPOVER_WIDTH = 288
+                                    const x = rect ? Math.min(Math.max(e.clientX - rect.left + 8, 8), rect.width - POPOVER_WIDTH - 8) : 8
+                                    const y = rect ? Math.max(e.clientY - rect.top + 8, 8) : 8
+                                    setEdit({ kind: seg.kind, id: seg.id, x, y })
                                 }}
                                 className={`absolute flex items-center truncate rounded px-1.5 text-[10px] ${
                                     seg.kind === "task" ? "text-white" : NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]
@@ -218,6 +234,27 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                     </div>
                 )
             })}
+            {edit ? (() => {
+                const target = entries.find((en) => en.kind === edit.kind && en.id === edit.id)
+                if (!target) return null
+                return (
+                    <EntryEditPopover
+                        x={edit.x}
+                        y={edit.y}
+                        kind={edit.kind}
+                        initial={{ name: target.name, status: target.status, startDate: target.startDate, endDate: target.endDate }}
+                        onSubmit={async (draft) => {
+                            await onEntrySave(edit.kind, edit.id, draft)
+                            setEdit(null)
+                        }}
+                        onDelete={() => {
+                            setEdit(null)
+                            onEntryDelete(edit.kind, edit.id)
+                        }}
+                        onClose={() => setEdit(null)}
+                    />
+                )
+            })() : null}
             {quickCreate ? (
                 <QuickTaskPopover
                     x={quickCreate.x}
