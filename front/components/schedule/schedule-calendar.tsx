@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { calendarLayout, orderedRange, type CalendarWeek } from "@/lib/schedule-calendar"
+import QuickTaskPopover from "@/components/schedule/quick-task-popover"
 import type { CalendarEntry, ScheduleItemKind } from "@/lib/schedule"
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
@@ -53,24 +54,34 @@ interface DragState {
     startedOnBar: boolean
 }
 
-export default function ScheduleCalendar({ entries, year, month, onMove, onEntryClick, onCreateRange }: {
+interface QuickCreateState {
+    startIso: string
+    endIso: string
+    projectId: number | null
+    x: number
+    y: number
+}
+
+export default function ScheduleCalendar({ entries, year, month, onMove, onEntryClick, onQuickCreate }: {
     entries: CalendarEntry[]
     year: number
     month: number // 1~12
     onMove: (year: number, month: number) => void
     onEntryClick: (kind: ScheduleItemKind, id: number) => void
-    /** SCHEDULE-AC-32 — 클릭/드래그로 할 일 생성. projectId null = 무소속. */
-    onCreateRange: (startIso: string, endIso: string, projectId: number | null) => void
+    /** SCHEDULE-AC-32 — 팝오버에서 저장 시 호출. projectId null = 무소속. */
+    onQuickCreate: (name: string, startIso: string, endIso: string, projectId: number | null) => Promise<void>
 }) {
     const weeks = calendarLayout(entries, year, month)
     const [drag, setDrag] = useState<DragState | null>(null)
     const dragRef = useRef<DragState | null>(null)
     dragRef.current = drag
     const suppressClickRef = useRef(false)
+    const [quickCreate, setQuickCreate] = useState<QuickCreateState | null>(null)
+    const sectionRef = useRef<HTMLElement>(null)
 
-    // 마우스를 달력 밖에서 놓아도 드래그를 끝낸다
+    // 마우스를 달력 밖에서 놓아도 드래그를 끝낸다 — 놓은 지점 옆에 빠른 생성 팝오버를 연다
     useEffect(() => {
-        const finish = () => {
+        const finish = (e: MouseEvent) => {
             const d = dragRef.current
             if (!d) return
             setDrag(null)
@@ -79,12 +90,15 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
             // 막대 위에서 움직임 없이 놓으면 클릭(수정)으로 넘긴다
             if (d.startedOnBar && !moved) return
             const { start, end } = orderedRange(d.anchor, d.current)
-            onCreateRange(start, end, d.projectId)
+            const rect = sectionRef.current?.getBoundingClientRect()
+            const POPOVER_WIDTH = 288 // w-72
+            const x = rect ? Math.min(Math.max(e.clientX - rect.left + 8, 8), rect.width - POPOVER_WIDTH - 8) : 8
+            const y = rect ? Math.max(e.clientY - rect.top + 8, 8) : 8
+            setQuickCreate({ startIso: start, endIso: end, projectId: d.projectId, x, y })
         }
         window.addEventListener("mouseup", finish)
         return () => window.removeEventListener("mouseup", finish)
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [onCreateRange])
+    }, [])
 
     /** 주 컨테이너 내부 x 좌표 → 그 칸의 실제 날짜. */
     const isoAt = (e: React.MouseEvent<HTMLDivElement>, week: CalendarWeek): string => {
@@ -95,6 +109,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
 
     const beginDrag = (e: React.MouseEvent<HTMLDivElement>, week: CalendarWeek) => {
         if (e.button !== 0) return
+        if (quickCreate) return // 팝오버가 열려 있으면 바깥 클릭은 닫기가 처리한다
         const bar = (e.target as HTMLElement).closest<HTMLElement>("[data-bar-kind]")
         const iso = isoAt(e, week)
         if (bar) {
@@ -115,7 +130,15 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
         }
     }
 
-    const dragRange = drag ? orderedRange(drag.anchor, drag.current) : null
+    const dragRange = drag
+        ? orderedRange(drag.anchor, drag.current)
+        : quickCreate
+            ? { start: quickCreate.startIso, end: quickCreate.endIso }
+            : null
+
+    const quickCreateParentLabel = quickCreate?.projectId != null
+        ? `「${entries.find((en) => en.kind === "project" && en.id === quickCreate.projectId)?.name ?? "?"}」 프로젝트 소속`
+        : "어느 프로젝트에도 속하지 않는 바로 할 일"
 
     const move = (delta: number) => {
         const d = new Date(year, month - 1 + delta, 1)
@@ -123,7 +146,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
     }
 
     return (
-        <section className="rounded-lg border">
+        <section ref={sectionRef} className="relative rounded-lg border">
             <div className="flex items-center justify-between border-b px-3 py-2">
                 <h2 className="text-sm font-semibold">{year}년 {month}월</h2>
                 <div className="flex gap-1">
@@ -188,6 +211,20 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                     </div>
                 )
             })}
+            {quickCreate ? (
+                <QuickTaskPopover
+                    x={quickCreate.x}
+                    y={quickCreate.y}
+                    startIso={quickCreate.startIso}
+                    endIso={quickCreate.endIso}
+                    parentLabel={quickCreateParentLabel}
+                    onSubmit={async (name) => {
+                        await onQuickCreate(name, quickCreate.startIso, quickCreate.endIso, quickCreate.projectId)
+                        setQuickCreate(null)
+                    }}
+                    onClose={() => setQuickCreate(null)}
+                />
+            ) : null}
         </section>
     )
 }

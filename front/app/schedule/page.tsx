@@ -140,11 +140,13 @@ export default function SchedulePage() {
         return p ? `「${p.name}」 프로젝트 아래에 추가` : "추가"
     }
 
-    // SCHEDULE-AC-32 — 달력 클릭/드래그: 날짜가 채워진 할 일 생성 (빈 칸=무소속, 프로젝트 막대=소속)
-    const openCreateFromCalendar = (startIso: string, endIso: string, projectId: number | null) => {
-        setDialogInitial({ ...EMPTY_DRAFT, startDate: startIso, endDate: endIso })
-        setDialogContext(`${parentLabel(projectId, null)} — 고유색 막대로 달력에 표시됩니다.`)
-        setDialog({ kind: "task", mode: "create", projectId, milestoneId: null })
+    // SCHEDULE-AC-32 — 달력 클릭/드래그의 빠른 생성 팝오버가 저장을 눌렀을 때
+    const quickCreateTask = async (name: string, startIso: string, endIso: string, projectId: number | null) => {
+        await scheduleAPI.createTask({
+            name, status: "NOT_STARTED", startDate: startIso, endDate: endIso,
+            ...(projectId !== null ? { projectId } : {}), milestoneId: null,
+        })
+        await fetchTree()
     }
 
     const openCalendarEntry = (kind: ScheduleItemKind, id: number) => {
@@ -284,7 +286,7 @@ export default function SchedulePage() {
                     month={calMonth}
                     onMove={(y, m) => { setCalYear(y); setCalMonth(m) }}
                     onEntryClick={openCalendarEntry}
-                    onCreateRange={openCreateFromCalendar}
+                    onQuickCreate={quickCreateTask}
                 />
             ) : null}
 
