@@ -6,9 +6,8 @@ import { calendarLayout, type CalendarWeek } from "@/lib/schedule-calendar"
 import type { CalendarEntry, ScheduleItemKind } from "@/lib/schedule"
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
-/** 할 일 막대 높이. 프로젝트/마일스톤은 얇게 그린다. */
-const TASK_BAR = 20
-const THIN_BAR = 14
+/** 모든 막대 공통 높이 — 종류 구분은 색·라벨·글씨로 한다. */
+const BAR_HEIGHT = 14
 /** 같은 프로젝트 그룹 안에서는 살짝 붙인다. */
 const ATTACH_GAP = 1
 /** 프로젝트 그룹 사이 간격. */
@@ -26,7 +25,7 @@ function laneMetrics(week: CalendarWeek): { tops: number[]; heights: number[]; c
     for (const seg of week.segments) {
         if (seg.lane > 0) y += week.laneGroupStarts[seg.lane] ? GROUP_GAP : ATTACH_GAP
         tops.push(y)
-        const h = seg.kind === "task" ? TASK_BAR : THIN_BAR
+        const h = BAR_HEIGHT
         heights.push(h)
         y += h
     }
@@ -90,8 +89,8 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 key={`${seg.kind}-${seg.id}-${seg.startCol}`}
                                 type="button"
                                 onClick={() => onEntryClick(seg.kind, seg.id)}
-                                className={`absolute flex items-center truncate rounded px-1.5 ${
-                                    seg.kind === "task" ? "text-xs text-white" : `text-[10px] ${NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]}`
+                                className={`absolute flex items-center truncate rounded px-1.5 text-[10px] ${
+                                    seg.kind === "task" ? "text-white" : NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]
                                 }`}
                                 style={{
                                     top: `${tops[si]}px`,
