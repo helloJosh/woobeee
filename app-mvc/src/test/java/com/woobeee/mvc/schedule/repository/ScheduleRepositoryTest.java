@@ -116,6 +116,36 @@ class ScheduleRepositoryTest {
         assertThat(milestoneRepository.findAllForProject(p.getId())).isEmpty();
     }
 
+    /**
+     * SCHEDULE-AC-22/29 회귀 — 사용자가 프로덕션에서 밟은 왕복 그대로:
+     * 기한 경과 항목이 자동 완료로 DONE 이 된 뒤, 배지 클릭(수동 수정)으로 시작전으로 되돌리면
+     * 다음 트리 조회의 자동 완료가 다시 DONE 으로 덮어쓰지 않아야 한다.
+     */
+    @Test
+    void aBadgeClickAfterAutoCompleteSurvivesTheNextAutoCompleteSweep() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        Projects p = project(501L);
+        Tasks task = taskRepository.saveAndFlush(Tasks.create(
+                p.getId(), null, "지난 일", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        ageToBeforeDeadline("tasks", task.getId());
+
+        // 첫 조회: 자동 완료가 DONE 으로
+        taskRepository.completeOverdueForMember(501L);
+        Tasks afterSweep = taskRepository.findById(task.getId()).orElseThrow();
+        assertThat(afterSweep.getStatus()).isEqualTo(ScheduleStatus.DONE);
+
+        // 배지 클릭: 서비스의 PUT 과 같은 경로 — 엔티티 수정 + 플러시 (@UpdateTimestamp 가 지금으로 갱신)
+        afterSweep.update(afterSweep.getMilestoneId(), afterSweep.getName(), ScheduleStatus.NOT_STARTED,
+                afterSweep.getStartDate(), afterSweep.getEndDate(), afterSweep.getColor());
+        taskRepository.saveAndFlush(afterSweep);
+
+        // 직후 재조회의 자동 완료 — 마감 후 수동 수정이므로 건드리면 안 된다
+        taskRepository.completeOverdueForMember(501L);
+
+        assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.NOT_STARTED);
+    }
+
     /** SCHEDULE-AC-26 — 다이제스트 조회는 오늘 마감/오늘 시작/기한 경과(미완료)를 소유자 기준으로 가른다. */
     @Test
     void digestQueriesPickTheRightTasksForTheRightMember() {

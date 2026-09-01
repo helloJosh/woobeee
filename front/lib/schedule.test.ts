@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
     SCHEDULE_COLORS,
     MAX_MILESTONE_DEPTH,
+    applyStatus,
     collectTasks,
     filterTree,
     formatDateRange,
@@ -150,6 +151,40 @@ describe("isValidDateRange", () => {
 
     it("종료가 시작보다 빠르면 무효하다", () => {
         expect(isValidDateRange("2026-08-20", "2026-08-19")).toBe(false)
+    })
+})
+
+// SCHEDULE-AC-29 — 옵티미스틱 반영: 해당 노드의 상태만 바뀌고 나머지는 그대로
+describe("applyStatus", () => {
+    it("프로젝트 상태만 바꾼다", () => {
+        const next = applyStatus(tree, "project", 2, "IN_PROGRESS")
+        expect(next.projects[1].status).toBe("IN_PROGRESS")
+        // 나머지는 값이 그대로다
+        expect(next.projects[0].status).toBe(tree.projects[0].status)
+        expect(next.projects[0].milestones[0].tasks[0].status).toBe("IN_PROGRESS")
+    })
+
+    it("중첩 마일스톤 상태만 바꾼다", () => {
+        const next = applyStatus(tree, "milestone", 11, "DONE")
+        expect(next.projects[0].milestones[0].milestones[0].status).toBe("DONE")
+        expect(next.projects[0].milestones[0].status).toBe("IN_PROGRESS")
+    })
+
+    it("중첩 할 일 상태만 바꾼다", () => {
+        const next = applyStatus(tree, "task", 101, "DONE")
+        expect(next.projects[0].milestones[0].tasks[0].status).toBe("DONE")
+        expect(next.projects[0].tasks[0].status).toBe(tree.projects[0].tasks[0].status)
+    })
+
+    it("없는 id 는 아무것도 바꾸지 않는다", () => {
+        const next = applyStatus(tree, "task", 999, "DONE")
+        expect(next).toEqual(tree)
+    })
+
+    it("원본 트리는 변형되지 않는다", () => {
+        const before = JSON.stringify(tree)
+        applyStatus(tree, "project", 1, "DONE")
+        expect(JSON.stringify(tree)).toBe(before)
     })
 })
 

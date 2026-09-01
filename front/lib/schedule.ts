@@ -62,6 +62,36 @@ export function isValidDateRange(start: string | null, end: string | null): bool
     return end >= start
 }
 
+export type ScheduleItemKind = "project" | "milestone" | "task"
+
+/**
+ * SCHEDULE-AC-29 — 옵티미스틱 반영: 트리에서 해당 노드의 상태만 바꾼 새 트리를 돌려준다.
+ * 원본은 변형하지 않는다. 저장 실패 시 호출부가 재조회로 원복한다.
+ */
+export function applyStatus(
+    tree: ScheduleTree,
+    kind: ScheduleItemKind,
+    id: number,
+    status: ScheduleStatus,
+): ScheduleTree {
+    const mapTask = (t: ScheduleTask): ScheduleTask =>
+        kind === "task" && t.id === id ? { ...t, status } : t
+    const mapMilestone = (m: ScheduleMilestone): ScheduleMilestone => ({
+        ...m,
+        status: kind === "milestone" && m.id === id ? status : m.status,
+        tasks: m.tasks.map(mapTask),
+        milestones: m.milestones.map(mapMilestone),
+    })
+    return {
+        projects: tree.projects.map((p) => ({
+            ...p,
+            status: kind === "project" && p.id === id ? status : p.status,
+            tasks: p.tasks.map(mapTask),
+            milestones: p.milestones.map(mapMilestone),
+        })),
+    }
+}
+
 /** SCHEDULE-AC-29 — 배지 클릭 순환: 시작전 → 진행중 → 완료 → 시작전. */
 export function nextStatus(status: ScheduleStatus): ScheduleStatus {
     if (status === "NOT_STARTED") return "IN_PROGRESS"

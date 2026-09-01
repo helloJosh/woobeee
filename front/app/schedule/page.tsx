@@ -15,8 +15,9 @@ import { useAuth } from "@/hooks/use-auth"
 import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
-    collectTasks, filterTree, nextStatus, STATUS_LABELS, todayIso,
-    type FilteredMilestone, type FilteredProject, type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
+    applyStatus, collectTasks, filterTree, nextStatus, STATUS_LABELS, todayIso,
+    type FilteredMilestone, type FilteredProject, type ScheduleItemKind, type ScheduleStatus,
+    type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
 
 const SCHEDULE_PATH = "/schedule"
@@ -98,18 +99,30 @@ export default function SchedulePage() {
         return null
     }
 
-    // SCHEDULE-AC-29 — 배지 클릭: 상태만 다음 값으로 바꿔 즉시 저장한다
-    const cycleProject = async (p: FilteredProject) => {
-        await scheduleAPI.updateProject(p.id, { name: p.name, status: nextStatus(p.status), startDate: p.startDate, endDate: p.endDate })
-        await fetchTree()
+    // SCHEDULE-AC-29 — 배지 클릭: 해당 노드의 상태만 옵티미스틱으로 즉시 바꾸고(재조회 없음 →
+    // 나머지는 다시 그리지 않는다), 저장은 백그라운드로. 실패했을 때만 재조회로 원복한다.
+    const cycleStatus = async (kind: ScheduleItemKind, id: number, save: () => Promise<unknown>, to: ScheduleStatus) => {
+        setTree((prev) => (prev ? applyStatus(prev, kind, id, to) : prev))
+        try {
+            await save()
+        } catch {
+            await fetchTree()
+        }
     }
-    const cycleMilestone = async (m: FilteredMilestone) => {
-        await scheduleAPI.updateMilestone(m.id, { name: m.name, status: nextStatus(m.status), startDate: m.startDate, endDate: m.endDate, parentId: findMilestoneParentId(m.id) })
-        await fetchTree()
+    const cycleProject = (p: FilteredProject) => {
+        const to = nextStatus(p.status)
+        return cycleStatus("project", p.id,
+            () => scheduleAPI.updateProject(p.id, { name: p.name, status: to, startDate: p.startDate, endDate: p.endDate }), to)
     }
-    const cycleTask = async (task: ScheduleTask) => {
-        await scheduleAPI.updateTask(task.id, { name: task.name, status: nextStatus(task.status), startDate: task.startDate, endDate: task.endDate, milestoneId: task.milestoneId, color: task.color })
-        await fetchTree()
+    const cycleMilestone = (m: FilteredMilestone) => {
+        const to = nextStatus(m.status)
+        return cycleStatus("milestone", m.id,
+            () => scheduleAPI.updateMilestone(m.id, { name: m.name, status: to, startDate: m.startDate, endDate: m.endDate, parentId: findMilestoneParentId(m.id) }), to)
+    }
+    const cycleTask = (task: ScheduleTask) => {
+        const to = nextStatus(task.status)
+        return cycleStatus("task", task.id,
+            () => scheduleAPI.updateTask(task.id, { name: task.name, status: to, startDate: task.startDate, endDate: task.endDate, milestoneId: task.milestoneId, color: task.color }), to)
     }
 
     const openEditTask = (projectId: number, task: ScheduleTask) => {
