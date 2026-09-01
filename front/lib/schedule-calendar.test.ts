@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { calendarLayout } from "./schedule-calendar"
+import { calendarLayout, orderedRange } from "./schedule-calendar"
 import type { CalendarEntry, ScheduleItemKind } from "./schedule"
 
 function entry(partial: Partial<CalendarEntry> & { id: number }): CalendarEntry {
@@ -22,6 +22,10 @@ describe("calendarLayout (2026-08)", () => {
         // 마지막 주: 8/30, 8/31 + 9/1~9/5
         expect(weeks[5].days.map((d) => d.date)).toEqual([30, 31, 1, 2, 3, 4, 5])
         expect(weeks[5].days.map((d) => d.inMonth)).toEqual([true, true, false, false, false, false, false])
+        // 칸의 실제 날짜 — 앞뒤 달도 진짜 날짜다 (SCHEDULE-AC-32)
+        expect(weeks[0].days[0].iso).toBe("2026-07-26")
+        expect(weeks[0].days[6].iso).toBe("2026-08-01")
+        expect(weeks[5].days[6].iso).toBe("2026-09-05")
     })
 
     it("주 안에 완전히 들어가는 항목은 한 세그먼트다", () => {
@@ -121,5 +125,25 @@ describe("calendarLayout (2026-08)", () => {
         const [p, t] = weeks[1].segments
         expect(p).toMatchObject({ kind: "project", color: null })
         expect(t).toMatchObject({ kind: "task", color: "#3b82f6" })
+    })
+
+    // SCHEDULE-AC-31 — 무소속(projectId null) 막대는 자기 그룹으로 묶인다
+    it("무소속 그룹은 별도 그룹으로 시작 플래그를 받는다", () => {
+        const weeks = calendarLayout([
+            entry({ id: 1, kind: "project", projectId: 1, startDate: "2026-08-03", endDate: "2026-08-05", color: null }),
+            entry({ id: 200, projectId: null, startDate: "2026-08-03", endDate: "2026-08-04" }),
+            entry({ id: 201, projectId: null, startDate: "2026-08-04", endDate: "2026-08-05" }),
+        ], 2026, 8)
+        const week = weeks[1]
+        expect(week.laneGroupStarts).toEqual([true, true, false])
+    })
+})
+
+// SCHEDULE-AC-32 — 드래그 방향과 무관하게 정렬된 범위
+describe("orderedRange", () => {
+    it("정방향은 그대로, 역방향은 뒤집는다", () => {
+        expect(orderedRange("2026-08-03", "2026-08-07")).toEqual({ start: "2026-08-03", end: "2026-08-07" })
+        expect(orderedRange("2026-08-07", "2026-08-03")).toEqual({ start: "2026-08-03", end: "2026-08-07" })
+        expect(orderedRange("2026-08-05", "2026-08-05")).toEqual({ start: "2026-08-05", end: "2026-08-05" })
     })
 })

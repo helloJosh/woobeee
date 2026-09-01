@@ -10,9 +10,10 @@ import java.util.List;
 
 public interface TaskRepository extends JpaRepository<Tasks, Long> {
 
-    @Query(value = "SELECT * FROM tasks WHERE project_id IN (:projectIds) ORDER BY sort_order, id",
+    /** 무소속 포함 내 할 일 전부 — 트리·달력의 단일 조회 (SCHEDULE-AC-31). */
+    @Query(value = "SELECT * FROM tasks WHERE member_id = :memberId ORDER BY sort_order, id",
             nativeQuery = true)
-    List<Tasks> findAllForProjects(@Param("projectIds") List<Long> projectIds);
+    List<Tasks> findAllForMember(@Param("memberId") Long memberId);
 
     @Modifying(clearAutomatically = true)
     @Query(value = "DELETE FROM tasks WHERE project_id = :projectId", nativeQuery = true)
@@ -22,31 +23,28 @@ public interface TaskRepository extends JpaRepository<Tasks, Long> {
     @Query(value = "DELETE FROM tasks WHERE milestone_id IN (:milestoneIds)", nativeQuery = true)
     void deleteAllForMilestones(@Param("milestoneIds") List<Long> milestoneIds);
 
-    /** SCHEDULE-AC-26 — 다이제스트: 오늘 마감인 할 일. */
+    /** SCHEDULE-AC-26 — 다이제스트: 오늘 마감인 할 일 (무소속 포함). */
     @Query(value = """
-            SELECT t.* FROM tasks t
-            JOIN projects p ON p.id = t.project_id
-            WHERE p.member_id = :memberId AND t.end_date = CURRENT_DATE
-            ORDER BY t.sort_order, t.id
+            SELECT * FROM tasks
+            WHERE member_id = :memberId AND end_date = CURRENT_DATE
+            ORDER BY sort_order, id
             """, nativeQuery = true)
     List<Tasks> findDueTodayForMember(@Param("memberId") Long memberId);
 
-    /** SCHEDULE-AC-26 — 다이제스트: 오늘 시작하는 할 일. */
+    /** SCHEDULE-AC-26 — 다이제스트: 오늘 시작하는 할 일 (무소속 포함). */
     @Query(value = """
-            SELECT t.* FROM tasks t
-            JOIN projects p ON p.id = t.project_id
-            WHERE p.member_id = :memberId AND t.start_date = CURRENT_DATE
-            ORDER BY t.sort_order, t.id
+            SELECT * FROM tasks
+            WHERE member_id = :memberId AND start_date = CURRENT_DATE
+            ORDER BY sort_order, id
             """, nativeQuery = true)
     List<Tasks> findStartingTodayForMember(@Param("memberId") Long memberId);
 
     /** SCHEDULE-AC-26/28 — 다이제스트: 기한이 지났는데 아직 완료가 아닌 할 일 — 자동 완료와 같은 규칙(마감 후 수동 수정 제외). */
     @Query(value = """
-            SELECT t.* FROM tasks t
-            JOIN projects p ON p.id = t.project_id
-            WHERE p.member_id = :memberId AND t.end_date < CURRENT_DATE AND t.status <> 'DONE'
-              AND (t.updated_at IS NULL OR t.updated_at < t.end_date + 1)
-            ORDER BY t.sort_order, t.id
+            SELECT * FROM tasks
+            WHERE member_id = :memberId AND end_date < CURRENT_DATE AND status <> 'DONE'
+              AND (updated_at IS NULL OR updated_at < end_date + 1)
+            ORDER BY sort_order, id
             """, nativeQuery = true)
     List<Tasks> findOverdueForMember(@Param("memberId") Long memberId);
 
@@ -54,7 +52,7 @@ public interface TaskRepository extends JpaRepository<Tasks, Long> {
     @Modifying(clearAutomatically = true)
     @Query(value = """
             UPDATE tasks SET status = 'DONE', updated_at = CURRENT_TIMESTAMP
-            WHERE project_id IN (SELECT id FROM projects WHERE member_id = :memberId)
+            WHERE member_id = :memberId
               AND end_date < CURRENT_DATE AND status <> 'DONE'
               AND (updated_at IS NULL OR updated_at < end_date + 1)
             """, nativeQuery = true)

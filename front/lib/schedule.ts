@@ -36,6 +36,8 @@ export interface ScheduleProject {
 
 export interface ScheduleTree {
     projects: ScheduleProject[]
+    /** 어느 프로젝트에도 속하지 않은 무소속 할 일 (SCHEDULE-AC-31). */
+    tasks: ScheduleTask[]
 }
 
 // 서버 ScheduleColors.PALETTE 와 동일해야 한다 (스펙 §4 가 단일 출처).
@@ -68,8 +70,8 @@ export type ScheduleItemKind = "project" | "milestone" | "task"
 export interface CalendarEntry {
     kind: ScheduleItemKind
     id: number
-    /** 그룹 기준 — 같은 프로젝트의 막대는 달력에서 붙는다. */
-    projectId: number
+    /** 그룹 기준 — 같은 프로젝트의 막대는 달력에서 붙는다. null = 무소속 그룹. */
+    projectId: number | null
     name: string
     status: ScheduleStatus
     startDate: string | null
@@ -104,6 +106,13 @@ export function collectCalendarEntries(tree: ScheduleTree): CalendarEntry[] {
             }
         }
         walk(p.milestones)
+    }
+    // 무소속 할 일은 트리와 같은 순서로 맨 아래 그룹 (SCHEDULE-AC-31)
+    for (const t of tree.tasks) {
+        out.push({
+            kind: "task", id: t.id, projectId: null, name: t.name, status: t.status,
+            startDate: t.startDate, endDate: t.endDate, color: t.color,
+        })
     }
     return out
 }
@@ -149,6 +158,7 @@ export function applyStatus(
             tasks: p.tasks.map(mapTask),
             milestones: p.milestones.map(mapMilestone),
         })),
+        tasks: tree.tasks.map(mapTask),
     }
 }
 
@@ -184,6 +194,8 @@ export interface FilteredProject extends Omit<ScheduleProject, "milestones"> {
 
 export interface FilteredTree {
     projects: FilteredProject[]
+    /** 상태 필터가 적용된 무소속 할 일. */
+    tasks: ScheduleTask[]
 }
 
 function filterMilestone(m: ScheduleMilestone, filter: StatusFilter): FilteredMilestone | null {
@@ -211,7 +223,8 @@ export function filterTree(tree: ScheduleTree, filter: StatusFilter): FilteredTr
             return { ...p, milestones, tasks, dimmed: !selfMatches }
         })
         .filter((p): p is FilteredProject => p !== null)
-    return { projects }
+    const tasks = filter === "ALL" ? tree.tasks : tree.tasks.filter((t) => t.status === filter)
+    return { projects, tasks }
 }
 
 /** 달력용 평탄화 — 직속·중첩 가리지 않고 모든 할 일. */
@@ -227,6 +240,7 @@ export function collectTasks(tree: ScheduleTree): ScheduleTask[] {
         out.push(...p.tasks)
         walk(p.milestones)
     }
+    out.push(...tree.tasks)
     return out
 }
 

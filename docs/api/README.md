@@ -65,14 +65,14 @@ access token TTL 은 role 로 갈린다 — `ROLE_ADMIN` 1일, 그 외 15분 (AU
 
 | 메서드 | 경로 | 설명 | 권한 |
 | --- | --- | --- | --- |
-| GET | `/api/back/schedule/tree` | 프로젝트/마일스톤/할 일 트리 조회 (배치 쿼리 3회). 조회 직전에 종료일이 지난(어제 이전) 항목을 세 층 모두 자동으로 완료 처리한다 — 종료일 미정(NULL)·당일, 마감 후 직접 수정한 항목(updated_at > 종료일)은 제외 | 로그인 |
+| GET | `/api/back/schedule/tree` | 프로젝트/마일스톤/할 일 트리 조회 (배치 쿼리 3회). 최상위 `tasks` 는 무소속 할 일. 조회 직전에 종료일이 지난(어제 이전) 항목을 세 층 모두 자동으로 완료 처리한다 — 종료일 미정(NULL)·당일, 마감 후 직접 수정한 항목(updated_at > 종료일)은 제외 | 로그인 |
 | POST | `/api/back/schedule/projects` | 프로젝트 생성 | 로그인 |
 | PUT | `/api/back/schedule/projects/{projectId}` | 프로젝트 수정 | 로그인 + 본인 |
 | DELETE | `/api/back/schedule/projects/{projectId}` | 프로젝트 삭제 (하위 마일스톤·할 일 캐스케이드) | 로그인 + 본인 |
 | POST | `/api/back/schedule/milestones` | 마일스톤 생성 | 로그인 |
 | PUT | `/api/back/schedule/milestones/{milestoneId}` | 마일스톤 수정 | 로그인 + 본인 |
 | DELETE | `/api/back/schedule/milestones/{milestoneId}` | 마일스톤 삭제 (하위 할 일 캐스케이드) | 로그인 + 본인 |
-| POST | `/api/back/schedule/tasks` | 할 일 생성 | 로그인 |
+| POST | `/api/back/schedule/tasks` | 할 일 생성 — `projectId` 생략 시 무소속 | 로그인 |
 | PUT | `/api/back/schedule/tasks/{taskId}` | 할 일 수정 | 로그인 + 본인 |
 | DELETE | `/api/back/schedule/tasks/{taskId}` | 할 일 삭제 | 로그인 + 본인 |
 | GET | `/api/back/schedule/notification` | Slack 알림 설정 조회 (`webhookUrl`, null = 미사용) | 로그인 |

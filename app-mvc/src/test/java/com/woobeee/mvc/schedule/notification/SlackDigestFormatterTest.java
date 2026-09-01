@@ -16,7 +16,11 @@ class SlackDigestFormatterTest {
     private static final Map<Long, String> NAMES = Map.of(10L, "DM", 20L, "POSCO");
 
     private Tasks task(long projectId, String name) {
-        return Tasks.create(projectId, null, name, null, null, null, "#ef4444");
+        return Tasks.create(7L, projectId, null, name, null, null, null, "#ef4444");
+    }
+
+    private Tasks standaloneTask(String name) {
+        return Tasks.create(7L, null, null, name, null, null, null, "#ef4444");
     }
 
     /** SCHEDULE-AC-26 — 세 목록이 모두 비면 보낼 것이 없다. */
@@ -56,6 +60,16 @@ class SlackDigestFormatterTest {
 
         assertThat(digest).contains("✅ 기한 경과 — 자동 완료 처리 (1)");
         assertThat(digest).contains("• [DM] 밀린 일");
+    }
+
+    /** SCHEDULE-AC-31 — 무소속 할 일은 프로젝트 접두 없이 나온다. */
+    @Test
+    void aStandaloneTaskHasNoProjectPrefix() {
+        String digest = SlackDigestFormatter.build(
+                TODAY, List.of(standaloneTask("장보기")), List.of(), List.of(), NAMES).orElseThrow();
+
+        assertThat(digest).contains("\n• 장보기");
+        assertThat(digest).doesNotContain("[?] 장보기");
     }
 
     @Test

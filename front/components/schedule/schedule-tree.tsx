@@ -12,12 +12,13 @@ import { formatDateRange, STATUS_LABELS, type FilteredMilestone, type FilteredPr
 export interface TreeCallbacks {
     onCycleProject: (project: FilteredProject) => void
     onCycleMilestone: (projectId: number, milestone: FilteredMilestone) => void
-    onCycleTask: (projectId: number, task: ScheduleTask) => void
+    onCycleTask: (projectId: number | null, task: ScheduleTask) => void
     onAddMilestone: (projectId: number, parentId: number | null) => void
-    onAddTask: (projectId: number, milestoneId: number | null) => void
+    /** projectId null = 무소속 할 일 (SCHEDULE-AC-31). */
+    onAddTask: (projectId: number | null, milestoneId: number | null) => void
     onEditProject: (project: FilteredProject) => void
     onEditMilestone: (projectId: number, milestone: FilteredMilestone) => void
-    onEditTask: (projectId: number, task: ScheduleTask) => void
+    onEditTask: (projectId: number | null, task: ScheduleTask) => void
     onDeleteProject: (projectId: number) => void
     onDeleteMilestone: (milestoneId: number) => void
     onDeleteTask: (taskId: number) => void
@@ -69,7 +70,7 @@ function AddMenu({ onAddTask, onAddMilestone, milestoneLabel }: {
     )
 }
 
-function TaskRow({ projectId, task, cb }: { projectId: number; task: ScheduleTask; cb: TreeCallbacks }) {
+function TaskRow({ projectId, task, cb }: { projectId: number | null; task: ScheduleTask; cb: TreeCallbacks }) {
     const done = task.status === "DONE"
     return (
         <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50">
@@ -180,6 +181,24 @@ export default function ScheduleTree({ tree, cb, showEmptyHints }: {
                     ) : null}
                 </li>
             ))}
+            <li className="rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                    <span className="flex-1 truncate font-semibold">바로 할 일</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="바로 할 일 추가"
+                            onClick={() => cb.onAddTask(null, null)}>
+                        <Plus className="h-4 w-4" />
+                    </Button>
+                </div>
+                {tree.tasks.length > 0 ? (
+                    <ul className="mt-2 space-y-0.5">
+                        {tree.tasks.map((t) => <TaskRow key={t.id} projectId={null} task={t} cb={cb} />)}
+                    </ul>
+                ) : showEmptyHints ? (
+                    <p className="mt-1 px-2 py-1 text-sm text-muted-foreground">
+                        어느 프로젝트에도 속하지 않는 할 일을 여기에 담습니다 — 달력의 빈 날짜를 클릭하거나 드래그해도 만들어집니다.
+                    </p>
+                ) : null}
+            </li>
         </ul>
     )
 }

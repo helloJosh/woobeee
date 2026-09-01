@@ -30,8 +30,8 @@ type DialogState =
     | { kind: "project"; mode: "edit"; id: number }
     | { kind: "milestone"; mode: "create"; projectId: number; parentId: number | null }
     | { kind: "milestone"; mode: "edit"; projectId: number; id: number }
-    | { kind: "task"; mode: "create"; projectId: number; milestoneId: number | null }
-    | { kind: "task"; mode: "edit"; projectId: number; id: number }
+    | { kind: "task"; mode: "create"; projectId: number | null; milestoneId: number | null }
+    | { kind: "task"; mode: "edit"; projectId: number | null; id: number }
     | null
 
 export default function SchedulePage() {
@@ -79,13 +79,14 @@ export default function SchedulePage() {
     const allEntries = tree ? collectCalendarEntries(tree) : []
     const calendarEntries = filter === "ALL" ? allEntries : allEntries.filter((e) => e.status === filter)
 
-    const findTask = (taskId: number): { projectId: number; task: ScheduleTask } | null => {
+    const findTask = (taskId: number): { projectId: number | null; task: ScheduleTask } | null => {
         if (!tree) return null
         for (const p of tree.projects) {
-            const hit = collectTasks({ projects: [p] }).find((t) => t.id === taskId)
+            const hit = collectTasks({ projects: [p], tasks: [] }).find((t) => t.id === taskId)
             if (hit) return { projectId: p.id, task: hit }
         }
-        return null
+        const standalone = tree.tasks.find((t) => t.id === taskId)
+        return standalone ? { projectId: null, task: standalone } : null
     }
 
     const findMilestoneParentId = (milestoneId: number): number | null => {
@@ -129,13 +130,21 @@ export default function SchedulePage() {
     }
 
     /** 생성 다이얼로그의 "어디에 만드는지" 안내 문구. */
-    const parentLabel = (projectId: number, milestoneId: number | null): string => {
+    const parentLabel = (projectId: number | null, milestoneId: number | null): string => {
+        if (projectId === null) return "어느 프로젝트에도 속하지 않는 바로 할 일"
         if (milestoneId !== null && tree) {
             const hit = findMilestone(tree, milestoneId)
             if (hit) return `「${hit.milestone.name}」 마일스톤 아래에 추가`
         }
         const p = tree?.projects.find((x) => x.id === projectId)
         return p ? `「${p.name}」 프로젝트 아래에 추가` : "추가"
+    }
+
+    // SCHEDULE-AC-32 — 달력 클릭/드래그: 날짜가 채워진 할 일 생성 (빈 칸=무소속, 프로젝트 막대=소속)
+    const openCreateFromCalendar = (startIso: string, endIso: string, projectId: number | null) => {
+        setDialogInitial({ ...EMPTY_DRAFT, startDate: startIso, endDate: endIso })
+        setDialogContext(`${parentLabel(projectId, null)} — 고유색 막대로 달력에 표시됩니다.`)
+        setDialog({ kind: "task", mode: "create", projectId, milestoneId: null })
     }
 
     const openCalendarEntry = (kind: ScheduleItemKind, id: number) => {
@@ -160,7 +169,7 @@ export default function SchedulePage() {
         setDialog({ kind: "milestone", mode: "edit", projectId: hit.projectId, id })
     }
 
-    const openEditTask = (projectId: number, task: ScheduleTask) => {
+    const openEditTask = (projectId: number | null, task: ScheduleTask) => {
         setDialogContext(null)
         setDialogInitial({ name: task.name, status: task.status, startDate: task.startDate, endDate: task.endDate, color: task.color })
         setDialog({ kind: "task", mode: "edit", projectId, id: task.id })
@@ -178,7 +187,7 @@ export default function SchedulePage() {
                 await scheduleAPI.updateMilestone(dialog.id, { ...base, parentId: findMilestoneParentId(dialog.id) })
             }
         } else {
-            if (dialog.mode === "create") await scheduleAPI.createTask({ ...base, projectId: dialog.projectId, milestoneId: dialog.milestoneId })
+            if (dialog.mode === "create") await scheduleAPI.createTask({ ...base, ...(dialog.projectId !== null ? { projectId: dialog.projectId } : {}), milestoneId: dialog.milestoneId })
             else {
                 const found = findTask(dialog.id)
                 await scheduleAPI.updateTask(dialog.id, { ...base, milestoneId: found?.task.milestoneId ?? null, color: draft.color })
@@ -275,6 +284,7 @@ export default function SchedulePage() {
                     month={calMonth}
                     onMove={(y, m) => { setCalYear(y); setCalMonth(m) }}
                     onEntryClick={openCalendarEntry}
+                    onCreateRange={openCreateFromCalendar}
                 />
             ) : null}
 

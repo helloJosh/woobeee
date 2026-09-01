@@ -18,9 +18,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,7 +46,7 @@ class ScheduleDigestServiceTest {
         when(taskRepository.findDueTodayForMember(MEMBER_ID)).thenReturn(List.of());
         when(taskRepository.findStartingTodayForMember(MEMBER_ID)).thenReturn(List.of());
         when(taskRepository.findOverdueForMember(MEMBER_ID)).thenReturn(List.of(
-                Tasks.create(10L, null, "밀린 일", ScheduleStatus.IN_PROGRESS, null, null, "#ef4444")));
+                Tasks.create(MEMBER_ID, 10L, null, "밀린 일", ScheduleStatus.IN_PROGRESS, null, null, "#ef4444")));
 
         Optional<String> digest = digestService.buildAndSettleDigest(MEMBER_ID);
 
@@ -61,14 +59,19 @@ class ScheduleDigestServiceTest {
         order.verify(taskRepository).completeOverdueForMember(MEMBER_ID);
     }
 
-    /** 프로젝트가 없으면 조회도 정산도 하지 않는다. */
+    /** SCHEDULE-AC-31 — 프로젝트가 없어도 무소속 할 일이 있을 수 있어 조회·정산은 수행한다. */
     @Test
-    void aMemberWithoutProjectsProducesNothing() {
+    void aMemberWithoutProjectsStillDigestsStandaloneTasks() {
         when(projectRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of());
+        when(taskRepository.findDueTodayForMember(MEMBER_ID)).thenReturn(List.of(
+                Tasks.create(MEMBER_ID, null, null, "장보기", ScheduleStatus.NOT_STARTED, null, null, "#ef4444")));
+        when(taskRepository.findStartingTodayForMember(MEMBER_ID)).thenReturn(List.of());
+        when(taskRepository.findOverdueForMember(MEMBER_ID)).thenReturn(List.of());
 
-        assertThat(digestService.buildAndSettleDigest(MEMBER_ID)).isEmpty();
+        Optional<String> digest = digestService.buildAndSettleDigest(MEMBER_ID);
 
-        verify(taskRepository, never()).findDueTodayForMember(anyLong());
-        verify(projectRepository, never()).completeOverdueForMember(anyLong());
+        assertThat(digest).isPresent();
+        assertThat(digest.get()).contains("• 장보기");
+        verify(taskRepository).completeOverdueForMember(MEMBER_ID);
     }
 }

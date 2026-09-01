@@ -43,7 +43,7 @@ class ScheduleControllerTest {
     @Test
     void treeIsWrappedInTheEnvelope() throws Exception {
         when(scheduleService.getTree("me@example.com"))
-                .thenReturn(new GetScheduleTreeResponse(List.of()));
+                .thenReturn(new GetScheduleTreeResponse(List.of(), List.of()));
 
         mockMvc.perform(get("/api/back/schedule/tree").header("loginId", "me@example.com"))
                 .andExpect(status().isOk())

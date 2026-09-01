@@ -27,6 +27,8 @@ export interface CalendarDay {
     date: number
     /** 이 달 소속 여부 — 앞뒤 달 칸은 흐리게 그린다. */
     inMonth: boolean
+    /** 그 칸의 실제 날짜 "YYYY-MM-DD" — 클릭/드래그 생성이 쓴다 (SCHEDULE-AC-32). */
+    iso: string
 }
 
 export interface CalendarWeek {
@@ -57,6 +59,17 @@ function addDays(base: Date, days: number): Date {
     return d
 }
 
+function toIso(d: Date): string {
+    const m = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${d.getFullYear()}-${m}-${day}`
+}
+
+/** 드래그 범위 — 어느 방향으로 끌든 [시작, 끝]으로 정렬한다 (SCHEDULE-AC-32). */
+export function orderedRange(a: string, b: string): { start: string; end: string } {
+    return a <= b ? { start: a, end: b } : { start: b, end: a }
+}
+
 /**
  * month 는 1~12. 일요일 시작 주 단위 그리드에 막대를 배치한다.
  * 엔트리 순서(collectCalendarEntries 의 트리 순서)를 그대로 lane 순서로 쓴다 —
@@ -79,7 +92,7 @@ export function calendarLayout(
         const days: CalendarDay[] = []
         for (let c = 0; c < 7; c++) {
             const date = addDays(gridStart, w * 7 + c)
-            days.push({ date: date.getDate(), inMonth: date.getMonth() === month - 1 })
+            days.push({ date: date.getDate(), inMonth: date.getMonth() === month - 1, iso: toIso(date) })
         }
         weeks.push({ days, segments: [], laneCount: 0, laneGroupStarts: [] })
     }
@@ -103,7 +116,8 @@ export function calendarLayout(
         const weekStart = addDays(gridStart, w * 7)
         const weekEnd = addDays(weekStart, 6)
         let lane = 0
-        let lastGroup: number | null = null
+        // 무소속 그룹(projectId null)과 구분하기 위해 초기값은 undefined
+        let lastGroup: number | null | undefined = undefined
 
         for (const { entry, start, end, openEnded } of placeable) {
             const clipStart = start < first ? first : start

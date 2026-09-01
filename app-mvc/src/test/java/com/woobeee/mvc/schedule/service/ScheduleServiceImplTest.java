@@ -174,10 +174,9 @@ class ScheduleServiceImplTest {
     @Test
     void anInvalidHexColorIsRejected() {
         loggedIn();
-        Tasks task = Tasks.create(10L, null, "t", null, null, null, "#ef4444");
+        Tasks task = Tasks.create(MEMBER_ID, 10L, null, "t", null, null, null, "#ef4444");
         ReflectionTestUtils.setField(task, "id", 3L);
         when(taskRepository.findById(3L)).thenReturn(Optional.of(task));
-        when(projectRepository.findById(10L)).thenReturn(Optional.of(ownedProject(10L)));
 
         assertThatThrownBy(() -> service.updateTask(LOGIN, 3L,
                 new PutTaskRequest(null, "t", ScheduleStatus.DONE, null, null, "red")))
@@ -225,11 +224,13 @@ class ScheduleServiceImplTest {
         Milestones root = milestone(1L, 10L, null);
         Milestones child = milestone(2L, 10L, 1L);
         when(milestoneRepository.findAllForProjects(List.of(10L))).thenReturn(List.of(root, child));
-        Tasks direct = Tasks.create(10L, null, "direct", null, null, null, "#ef4444");
+        Tasks direct = Tasks.create(MEMBER_ID, 10L, null, "direct", null, null, null, "#ef4444");
         ReflectionTestUtils.setField(direct, "id", 100L);
-        Tasks nested = Tasks.create(10L, 2L, "nested", null, null, null, "#3b82f6");
+        Tasks nested = Tasks.create(MEMBER_ID, 10L, 2L, "nested", null, null, null, "#3b82f6");
         ReflectionTestUtils.setField(nested, "id", 101L);
-        when(taskRepository.findAllForProjects(List.of(10L))).thenReturn(List.of(direct, nested));
+        Tasks standalone = Tasks.create(MEMBER_ID, null, null, "standalone", null, null, null, "#f97316");
+        ReflectionTestUtils.setField(standalone, "id", 102L);
+        when(taskRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of(direct, nested, standalone));
 
         GetScheduleTreeResponse tree = service.getTree(LOGIN);
 
@@ -242,6 +243,9 @@ class ScheduleServiceImplTest {
         assertThat(rootNode.milestones()).hasSize(1);
         assertThat(rootNode.milestones().get(0).tasks())
                 .extracting(GetScheduleTreeResponse.TaskNode::name).containsExactly("nested");
+        // 무소속 할 일은 최상위 tasks 로 (SCHEDULE-AC-31)
+        assertThat(tree.tasks()).extracting(GetScheduleTreeResponse.TaskNode::name)
+                .containsExactly("standalone");
         // 루프 내 단건 조회 금지 — findById 는 트리 조립에 쓰이지 않는다
         verify(milestoneRepository, never()).findById(any());
         verify(taskRepository, never()).findById(any());
@@ -301,9 +305,9 @@ class ScheduleServiceImplTest {
         when(projectRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of(p));
         Milestones orphanMilestone = milestone(5L, 10L, 77L); // parentId=77 — fetch 결과에 없다
         when(milestoneRepository.findAllForProjects(List.of(10L))).thenReturn(List.of(orphanMilestone));
-        Tasks orphanTask = Tasks.create(10L, 99L, "orphan-task", null, null, null, "#ef4444"); // milestoneId=99 도 없다
+        Tasks orphanTask = Tasks.create(MEMBER_ID, 10L, 99L, "orphan-task", null, null, null, "#ef4444"); // milestoneId=99 도 없다
         ReflectionTestUtils.setField(orphanTask, "id", 200L);
-        when(taskRepository.findAllForProjects(List.of(10L))).thenReturn(List.of(orphanTask));
+        when(taskRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of(orphanTask));
 
         GetScheduleTreeResponse tree = service.getTree(LOGIN);
 
@@ -375,6 +379,7 @@ class ScheduleServiceImplTest {
     void getTreeCompletesOverdueItemsBeforeReading() {
         loggedIn();
         when(projectRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of());
+        when(taskRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of());
 
         service.getTree(LOGIN);
 
@@ -383,5 +388,43 @@ class ScheduleServiceImplTest {
         order.verify(milestoneRepository).completeOverdueForMember(MEMBER_ID);
         order.verify(taskRepository).completeOverdueForMember(MEMBER_ID);
         order.verify(projectRepository).findAllForMember(MEMBER_ID);
+    }
+
+    /** SCHEDULE-AC-31 — projectId 없이 만들면 무소속 할 일로 저장된다. */
+    @Test
+    void aTaskWithoutAProjectIsCreatedStandalone() {
+        loggedIn();
+        when(taskRepository.save(any(Tasks.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.createTask(LOGIN,
+                new PostTaskRequest(null, null, "장보기", null, null, null));
+
+        assertThat(response.projectId()).isNull();
+        assertThat(response.milestoneId()).isNull();
+        assertThat(ScheduleColors.PALETTE).contains(response.color());
+    }
+
+    /** SCHEDULE-AC-31 — 무소속 할 일은 마일스톤에 붙을 수 없다. */
+    @Test
+    void aStandaloneTaskCannotJoinAMilestone() {
+        loggedIn();
+
+        assertThatThrownBy(() -> service.createTask(LOGIN,
+                new PostTaskRequest(null, 5L, "장보기", null, null, null)))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.CROSS_PROJECT));
+    }
+
+    /** SCHEDULE-AC-31 — 남의 할 일은 없는 할 일과 같은 얼굴을 한다 (memberId 직접 판별). */
+    @Test
+    void anotherMembersTaskLooksLikeNotFound() {
+        loggedIn();
+        Tasks foreign = Tasks.create(999L, null, null, "남의 것", null, null, null, "#ef4444");
+        ReflectionTestUtils.setField(foreign, "id", 8L);
+        when(taskRepository.findById(8L)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.deleteTask(LOGIN, 8L))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.TASK_NOT_FOUND));
     }
 }

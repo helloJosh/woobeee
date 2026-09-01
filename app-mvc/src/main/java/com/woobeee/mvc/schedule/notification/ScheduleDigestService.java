@@ -30,10 +30,8 @@ public class ScheduleDigestService {
 
     /** 보낼 것이 없으면 empty. SCHEDULE-AC-28: 기한 경과 목록을 수집한 뒤에 자동 완료를 실행한다. */
     public Optional<String> buildAndSettleDigest(Long memberId) {
+        // 프로젝트가 없어도 무소속 할 일이 있을 수 있다 (SCHEDULE-AC-31) — 조기 반환하지 않는다.
         List<Projects> projects = projectRepository.findAllForMember(memberId);
-        if (projects.isEmpty()) {
-            return Optional.empty();
-        }
         Map<Long, String> projectNames = new HashMap<>();
         for (Projects p : projects) {
             projectNames.put(p.getId(), p.getName());

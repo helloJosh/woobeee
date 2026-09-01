@@ -39,8 +39,13 @@ public final class SlackDigestFormatter {
         }
         sb.append("\n\n").append(title).append(" (").append(tasks.size()).append(")");
         for (Tasks t : tasks) {
-            sb.append("\n• [").append(projectNames.getOrDefault(t.getProjectId(), "?"))
-                    .append("] ").append(t.getName());
+            if (t.getProjectId() == null) {
+                // 무소속 할 일은 프로젝트 접두 없이 (SCHEDULE-AC-31)
+                sb.append("\n• ").append(t.getName());
+            } else {
+                sb.append("\n• [").append(projectNames.getOrDefault(t.getProjectId(), "?"))
+                        .append("] ").append(t.getName());
+            }
         }
     }
 }

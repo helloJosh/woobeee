@@ -1,8 +1,10 @@
 "use client"
 
+import type React from "react"
+import { useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { calendarLayout, type CalendarWeek } from "@/lib/schedule-calendar"
+import { calendarLayout, orderedRange, type CalendarWeek } from "@/lib/schedule-calendar"
 import type { CalendarEntry, ScheduleItemKind } from "@/lib/schedule"
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"]
@@ -43,14 +45,77 @@ const KIND_LABEL: Record<ScheduleItemKind, string> = {
     task: "할일",
 }
 
-export default function ScheduleCalendar({ entries, year, month, onMove, onEntryClick }: {
+interface DragState {
+    anchor: string
+    current: string
+    /** 프로젝트 막대에서 시작한 드래그면 그 프로젝트, 빈 칸이면 null(무소속). */
+    projectId: number | null
+    startedOnBar: boolean
+}
+
+export default function ScheduleCalendar({ entries, year, month, onMove, onEntryClick, onCreateRange }: {
     entries: CalendarEntry[]
     year: number
     month: number // 1~12
     onMove: (year: number, month: number) => void
     onEntryClick: (kind: ScheduleItemKind, id: number) => void
+    /** SCHEDULE-AC-32 — 클릭/드래그로 할 일 생성. projectId null = 무소속. */
+    onCreateRange: (startIso: string, endIso: string, projectId: number | null) => void
 }) {
     const weeks = calendarLayout(entries, year, month)
+    const [drag, setDrag] = useState<DragState | null>(null)
+    const dragRef = useRef<DragState | null>(null)
+    dragRef.current = drag
+    const suppressClickRef = useRef(false)
+
+    // 마우스를 달력 밖에서 놓아도 드래그를 끝낸다
+    useEffect(() => {
+        const finish = () => {
+            const d = dragRef.current
+            if (!d) return
+            setDrag(null)
+            const moved = d.anchor !== d.current
+            suppressClickRef.current = d.startedOnBar && moved
+            // 막대 위에서 움직임 없이 놓으면 클릭(수정)으로 넘긴다
+            if (d.startedOnBar && !moved) return
+            const { start, end } = orderedRange(d.anchor, d.current)
+            onCreateRange(start, end, d.projectId)
+        }
+        window.addEventListener("mouseup", finish)
+        return () => window.removeEventListener("mouseup", finish)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [onCreateRange])
+
+    /** 주 컨테이너 내부 x 좌표 → 그 칸의 실제 날짜. */
+    const isoAt = (e: React.MouseEvent<HTMLDivElement>, week: CalendarWeek): string => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const col = Math.min(6, Math.max(0, Math.floor(((e.clientX - rect.left) / rect.width) * 7)))
+        return week.days[col].iso
+    }
+
+    const beginDrag = (e: React.MouseEvent<HTMLDivElement>, week: CalendarWeek) => {
+        if (e.button !== 0) return
+        const bar = (e.target as HTMLElement).closest<HTMLElement>("[data-bar-kind]")
+        const iso = isoAt(e, week)
+        if (bar) {
+            // 프로젝트 막대에서 시작하면 그 프로젝트 소속으로 생성, 다른 막대는 드래그 없음
+            if (bar.dataset.barKind !== "project") return
+            setDrag({ anchor: iso, current: iso, projectId: Number(bar.dataset.barId), startedOnBar: true })
+        } else {
+            e.preventDefault() // 텍스트 선택 방지
+            setDrag({ anchor: iso, current: iso, projectId: null, startedOnBar: false })
+        }
+    }
+
+    const updateDrag = (e: React.MouseEvent<HTMLDivElement>, week: CalendarWeek) => {
+        if (!dragRef.current) return
+        const iso = isoAt(e, week)
+        if (iso !== dragRef.current.current) {
+            setDrag({ ...dragRef.current, current: iso })
+        }
+    }
+
+    const dragRange = drag ? orderedRange(drag.anchor, drag.current) : null
 
     const move = (delta: number) => {
         const d = new Date(year, month - 1 + delta, 1)
@@ -77,11 +142,16 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                 const { tops, heights, contentBottom } = laneMetrics(week)
                 const minHeight = Math.max(MIN_WEEK_HEIGHT, contentBottom + WEEK_PAD)
                 return (
-                    <div key={wi} className="relative grid grid-cols-7 border-b last:border-b-0"
-                         style={{ minHeight: `${minHeight}px` }}>
+                    <div key={wi} className="relative grid select-none grid-cols-7 border-b last:border-b-0"
+                         style={{ minHeight: `${minHeight}px` }}
+                         onMouseDown={(e) => beginDrag(e, week)}
+                         onMouseMove={(e) => updateDrag(e, week)}>
                         {week.days.map((day, di) => (
                             <div key={di}
-                                 className={`border-r p-1 text-xs last:border-r-0 ${day.inMonth ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
+                                 className={`border-r p-1 text-xs last:border-r-0 ${
+                                     dragRange && day.iso >= dragRange.start && day.iso <= dragRange.end
+                                         ? "bg-accent/60" : ""
+                                 } ${day.inMonth ? "text-muted-foreground" : "text-muted-foreground/40"}`}>
                                 {day.date}
                             </div>
                         ))}
@@ -89,7 +159,13 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                             <button
                                 key={`${seg.kind}-${seg.id}-${seg.startCol}`}
                                 type="button"
-                                onClick={() => onEntryClick(seg.kind, seg.id)}
+                                data-bar-kind={seg.kind}
+                                data-bar-id={seg.id}
+                                onClick={() => {
+                                    // 프로젝트 막대 드래그 직후의 클릭은 생성이 이미 처리했다
+                                    if (suppressClickRef.current) { suppressClickRef.current = false; return }
+                                    onEntryClick(seg.kind, seg.id)
+                                }}
                                 className={`absolute flex items-center truncate rounded px-1.5 text-[10px] ${
                                     seg.kind === "task" ? "text-white" : NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]
                                 }`}

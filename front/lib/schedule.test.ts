@@ -43,6 +43,9 @@ const tree: ScheduleTree = {
             tasks: [], milestones: [],
         },
     ],
+    tasks: [
+        { id: 200, milestoneId: null, name: "무소속 진행중", status: "IN_PROGRESS", startDate: null, endDate: null, color: "#f97316" },
+    ],
 }
 
 describe("filterTree", () => {
@@ -50,6 +53,7 @@ describe("filterTree", () => {
         const filtered = filterTree(tree, "ALL")
         expect(filtered.projects).toHaveLength(2)
         expect(filtered.projects[0].dimmed).toBe(false)
+        expect(filtered.tasks.map((t) => t.id)).toEqual([200])
     })
 
     // SCHEDULE-AC-17
@@ -67,6 +71,8 @@ describe("filterTree", () => {
         expect(dm.milestones).toHaveLength(1)
         expect(dm.milestones[0].milestones).toHaveLength(0)
         expect(dm.milestones[0].tasks.map((t) => t.id)).toEqual([101])
+        // 무소속도 자기 상태로 필터된다 (SCHEDULE-AC-31)
+        expect(filtered.tasks.map((t) => t.id)).toEqual([200])
     })
 
     it("자신은 불일치지만 일치하는 자손이 있으면 dimmed 로 남는다", () => {
@@ -81,8 +87,8 @@ describe("filterTree", () => {
 })
 
 describe("collectTasks", () => {
-    it("직속과 중첩 마일스톤의 할 일을 전부 평탄화한다", () => {
-        expect(collectTasks(tree).map((t) => t.id).sort()).toEqual([100, 101])
+    it("직속·중첩·무소속 할 일을 전부 평탄화한다", () => {
+        expect(collectTasks(tree).map((t) => t.id).sort()).toEqual([100, 101, 200])
     })
 })
 
@@ -162,9 +168,10 @@ describe("collectCalendarEntries", () => {
         const entries = collectCalendarEntries(tree)
         expect(entries.map((e) => `${e.kind}:${e.id}`)).toEqual([
             "project:1", "task:100", "milestone:10", "task:101", "milestone:11",
-            "project:2",
+            "project:2", "task:200",
         ])
-        expect(entries.every((e, i) => i === 0 || e.projectId >= entries[i - 1].projectId)).toBe(true)
+        // 무소속은 맨 마지막 그룹이고 projectId 가 null 이다 (SCHEDULE-AC-31)
+        expect(entries[entries.length - 1].projectId).toBeNull()
     })
 
     it("할 일만 고유색을 가지고 프로젝트/마일스톤은 null 이다", () => {
@@ -212,6 +219,12 @@ describe("applyStatus", () => {
     it("없는 id 는 아무것도 바꾸지 않는다", () => {
         const next = applyStatus(tree, "task", 999, "DONE")
         expect(next).toEqual(tree)
+    })
+
+    it("무소속 할 일 상태도 바꾼다", () => {
+        const next = applyStatus(tree, "task", 200, "DONE")
+        expect(next.tasks[0].status).toBe("DONE")
+        expect(next.projects[0].tasks[0].status).toBe(tree.projects[0].tasks[0].status)
     })
 
     it("원본 트리는 변형되지 않는다", () => {

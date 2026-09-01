@@ -20,8 +20,11 @@ public class Tasks {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 마일스톤 몇 단 아래에 있든 유저의 전체 할 일(달력)을 조인 한 번에 가져오기 위한 중복 보유. */
+    /** 소유자 — 소유권은 프로젝트 경유가 아니라 이 컬럼으로 직접 판별한다 (무소속 할 일 지원). */
     @Column(nullable = false)
+    private Long memberId;
+
+    /** NULL = 어느 프로젝트에도 속하지 않은 무소속 할 일. */
     private Long projectId;
 
     /** NULL = 프로젝트 직속. */
@@ -52,8 +55,9 @@ public class Tasks {
     private LocalDateTime updatedAt;
 
     @Builder
-    private Tasks(Long projectId, Long milestoneId, String name, ScheduleStatus status,
+    private Tasks(Long memberId, Long projectId, Long milestoneId, String name, ScheduleStatus status,
                   LocalDate startDate, LocalDate endDate, String color, int sortOrder) {
+        this.memberId = memberId;
         this.projectId = projectId;
         this.milestoneId = milestoneId;
         this.name = name;
@@ -64,10 +68,11 @@ public class Tasks {
         this.sortOrder = sortOrder;
     }
 
-    public static Tasks create(Long projectId, Long milestoneId, String name,
+    public static Tasks create(Long memberId, Long projectId, Long milestoneId, String name,
                                ScheduleStatus status, LocalDate startDate, LocalDate endDate,
                                String color) {
         return Tasks.builder()
+                .memberId(memberId)
                 .projectId(projectId)
                 .milestoneId(milestoneId)
                 .name(name)

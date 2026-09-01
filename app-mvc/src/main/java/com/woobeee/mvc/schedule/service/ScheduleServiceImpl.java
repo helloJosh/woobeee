@@ -121,16 +121,17 @@ public class ScheduleServiceImpl implements ScheduleService {
         taskRepository.completeOverdueForMember(memberId);
 
         List<Projects> projects = projectRepository.findAllForMember(memberId);
+        List<Tasks> allTasks = taskRepository.findAllForMember(memberId);
         if (projects.isEmpty()) {
-            return new GetScheduleTreeResponse(List.of());
+            return new GetScheduleTreeResponse(List.of(), toTaskNodes(allTasks));
         }
 
         List<Long> projectIds = new ArrayList<>();
         for (Projects p : projects) {
             projectIds.add(p.getId());
         }
+        Set<Long> projectIdSet = new HashSet<>(projectIds);
         List<Milestones> allMilestones = milestoneRepository.findAllForProjects(projectIds);
-        List<Tasks> allTasks = taskRepository.findAllForProjects(projectIds);
 
         // 동시 쓰기로 부모/마일스톤이 지워지면 고아가 생길 수 있다 — 조용히 누락시키지 않고
         // 프로젝트 루트로 재부착해 무결성 구멍을 눈에 보이게 한다.
@@ -151,8 +152,12 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         Map<Long, List<Tasks>> rootTasksByProject = new HashMap<>();
         Map<Long, List<Tasks>> tasksByMilestone = new HashMap<>();
+        List<Tasks> standaloneTasks = new ArrayList<>();
         for (Tasks t : allTasks) {
-            if (t.getMilestoneId() == null || !milestoneIds.contains(t.getMilestoneId())) {
+            // 무소속(projectId NULL) — 사라진 프로젝트를 가리키는 고아도 숨기지 않고 여기로 (AC-31)
+            if (t.getProjectId() == null || !projectIdSet.contains(t.getProjectId())) {
+                standaloneTasks.add(t);
+            } else if (t.getMilestoneId() == null || !milestoneIds.contains(t.getMilestoneId())) {
                 rootTasksByProject.computeIfAbsent(t.getProjectId(), k -> new ArrayList<>()).add(t);
             } else {
                 tasksByMilestone.computeIfAbsent(t.getMilestoneId(), k -> new ArrayList<>()).add(t);
@@ -169,7 +174,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             projectNodes.add(new GetScheduleTreeResponse.ProjectNode(p.getId(), p.getName(),
                     p.getStatus().name(), p.getStartDate(), p.getEndDate(), milestoneNodes, taskNodes));
         }
-        return new GetScheduleTreeResponse(projectNodes);
+        return new GetScheduleTreeResponse(projectNodes, toTaskNodes(standaloneTasks));
     }
 
     private List<GetScheduleTreeResponse.MilestoneNode> buildMilestoneNodes(
@@ -308,14 +313,25 @@ public class ScheduleServiceImpl implements ScheduleService {
     public TaskResponse createTask(String loginId, PostTaskRequest r) {
         Long memberId = memberResolver.requireMemberId(loginId);
         validateDates(r.startDate(), r.endDate());
-        Projects project = ownedProject(memberId, r.projectId());
 
+        // projectId 가 없으면 무소속 — 마일스톤 소속은 불가능하다 (SCHEDULE-AC-31)
+        if (r.projectId() == null) {
+            if (r.milestoneId() != null) {
+                throw ScheduleErrorCode.CROSS_PROJECT.asException();
+            }
+            Tasks saved = taskRepository.save(
+                    Tasks.create(memberId, null, null, r.name(), r.status(),
+                            r.startDate(), r.endDate(), ScheduleColors.randomColor()));
+            return TaskResponse.from(saved);
+        }
+
+        Projects project = ownedProject(memberId, r.projectId());
         if (r.milestoneId() != null) {
             requireMilestoneInProject(r.milestoneId(), project.getId());
         }
 
         Tasks saved = taskRepository.save(
-                Tasks.create(project.getId(), r.milestoneId(), r.name(), r.status(),
+                Tasks.create(memberId, project.getId(), r.milestoneId(), r.name(), r.status(),
                         r.startDate(), r.endDate(), ScheduleColors.randomColor()));
         return TaskResponse.from(saved);
     }
@@ -323,9 +339,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     public TaskResponse updateTask(String loginId, Long id, PutTaskRequest r) {
         Long memberId = memberResolver.requireMemberId(loginId);
-        Tasks target = taskRepository.findById(id)
-                .orElseThrow(ScheduleErrorCode.TASK_NOT_FOUND::asException);
-        Projects project = ownedProject(memberId, target.getProjectId());
+        Tasks target = ownedTask(memberId, id);
         validateDates(r.startDate(), r.endDate());
 
         String color = r.color();
@@ -338,7 +352,11 @@ public class ScheduleServiceImpl implements ScheduleService {
         }
 
         if (r.milestoneId() != null) {
-            requireMilestoneInProject(r.milestoneId(), project.getId());
+            // 무소속 할 일은 마일스톤에 붙을 수 없다
+            if (target.getProjectId() == null) {
+                throw ScheduleErrorCode.CROSS_PROJECT.asException();
+            }
+            requireMilestoneInProject(r.milestoneId(), target.getProjectId());
         }
 
         target.update(r.milestoneId(), r.name(), r.status(), r.startDate(), r.endDate(), color);
@@ -348,10 +366,15 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     public void deleteTask(String loginId, Long id) {
         Long memberId = memberResolver.requireMemberId(loginId);
-        Tasks target = taskRepository.findById(id)
-                .orElseThrow(ScheduleErrorCode.TASK_NOT_FOUND::asException);
-        ownedProject(memberId, target.getProjectId());
+        Tasks target = ownedTask(memberId, id);
         taskRepository.delete(target);
+    }
+
+    /** 남의(또는 없는) 할 일은 같은 404 로 — 소유권은 할 일 자신의 memberId 로 판별한다 (AC-31). */
+    private Tasks ownedTask(Long memberId, Long taskId) {
+        return taskRepository.findById(taskId)
+                .filter(t -> t.getMemberId().equals(memberId))
+                .orElseThrow(ScheduleErrorCode.TASK_NOT_FOUND::asException);
     }
 
     /* ===== 알림 설정 ===== */

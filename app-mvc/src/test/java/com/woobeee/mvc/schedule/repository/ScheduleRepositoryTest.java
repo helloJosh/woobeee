@@ -47,6 +47,12 @@ class ScheduleRepositoryTest {
                 "UPDATE " + table + " SET updated_at = (end_date - INTERVAL '1 day') WHERE id = ?", id);
     }
 
+    private Tasks newTask(Projects owner, Long milestoneId, String name,
+                          ScheduleStatus status, LocalDate startDate, LocalDate endDate) {
+        return Tasks.create(owner.getMemberId(), owner.getId(), milestoneId, name,
+                status, startDate, endDate, "#ef4444");
+    }
+
     private Projects project(long memberId) {
         return projectRepository.save(
                 Projects.create(memberId, "p", ScheduleStatus.NOT_STARTED, null, null));
@@ -90,7 +96,7 @@ class ScheduleRepositoryTest {
         Milestones child = milestoneRepository.save(
                 Milestones.create(p.getId(), root.getId(), "child", null, null, null));
         Tasks task = taskRepository.save(
-                Tasks.create(p.getId(), child.getId(), "t", null, null, null, "#ef4444"));
+                newTask(p, child.getId(), "t", null, null, null));
 
         List<Long> ids = milestoneRepository.findSelfAndDescendantIds(root.getId());
         taskRepository.deleteAllForMilestones(ids);
@@ -106,13 +112,13 @@ class ScheduleRepositoryTest {
         Projects p = project(1L);
         Milestones m = milestoneRepository.save(
                 Milestones.create(p.getId(), null, "m", null, null, null));
-        taskRepository.save(Tasks.create(p.getId(), m.getId(), "in-milestone", null, null, null, "#ef4444"));
-        taskRepository.save(Tasks.create(p.getId(), null, "direct", null, null, null, "#ef4444"));
+        taskRepository.save(newTask(p, m.getId(), "in-milestone", null, null, null));
+        taskRepository.save(newTask(p, null, "direct", null, null, null));
 
         taskRepository.deleteAllForProject(p.getId());
         milestoneRepository.deleteAllForProject(p.getId());
 
-        assertThat(taskRepository.findAllForProjects(List.of(p.getId()))).isEmpty();
+        assertThat(taskRepository.findAllForMember(1L)).isEmpty();
         assertThat(milestoneRepository.findAllForProject(p.getId())).isEmpty();
     }
 
@@ -125,8 +131,7 @@ class ScheduleRepositoryTest {
     void aBadgeClickAfterAutoCompleteSurvivesTheNextAutoCompleteSweep() {
         LocalDate yesterday = LocalDate.now().minusDays(1);
         Projects p = project(501L);
-        Tasks task = taskRepository.saveAndFlush(Tasks.create(
-                p.getId(), null, "지난 일", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        Tasks task = taskRepository.saveAndFlush(newTask(p, null, "지난 일", ScheduleStatus.IN_PROGRESS, null, yesterday));
         ageToBeforeDeadline("tasks", task.getId());
 
         // 첫 조회: 자동 완료가 DONE 으로
@@ -146,6 +151,20 @@ class ScheduleRepositoryTest {
                 .isEqualTo(ScheduleStatus.NOT_STARTED);
     }
 
+    /** SCHEDULE-AC-31 — 무소속 할 일(project_id NULL)이 저장되고 소유자 조회에 함께 나온다. */
+    @Test
+    void aStandaloneTaskPersistsAndIsFetchedByMember() {
+        Projects p = project(601L);
+        Tasks inProject = taskRepository.save(newTask(p, null, "in-project", null, null, null));
+        Tasks standalone = taskRepository.save(Tasks.create(
+                601L, null, null, "standalone", null, null, null, "#ef4444"));
+
+        assertThat(standalone.getProjectId()).isNull();
+        assertThat(taskRepository.findAllForMember(601L))
+                .extracting(Tasks::getId)
+                .containsExactlyInAnyOrder(inProject.getId(), standalone.getId());
+    }
+
     /** SCHEDULE-AC-26 — 다이제스트 조회는 오늘 마감/오늘 시작/기한 경과(미완료)를 소유자 기준으로 가른다. */
     @Test
     void digestQueriesPickTheRightTasksForTheRightMember() {
@@ -153,21 +172,15 @@ class ScheduleRepositoryTest {
         LocalDate today = LocalDate.now();
 
         Projects mine = project(401L);
-        Tasks dueToday = taskRepository.save(Tasks.create(
-                mine.getId(), null, "due-today", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
-        Tasks startingToday = taskRepository.save(Tasks.create(
-                mine.getId(), null, "starting-today", ScheduleStatus.NOT_STARTED, today, null, "#ef4444"));
-        Tasks overdue = taskRepository.saveAndFlush(Tasks.create(
-                mine.getId(), null, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        Tasks dueToday = taskRepository.save(newTask(mine, null, "due-today", ScheduleStatus.IN_PROGRESS, null, today));
+        Tasks startingToday = taskRepository.save(newTask(mine, null, "starting-today", ScheduleStatus.NOT_STARTED, today, null));
+        Tasks overdue = taskRepository.saveAndFlush(newTask(mine, null, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday));
         ageToBeforeDeadline("tasks", overdue.getId());
-        taskRepository.save(Tasks.create(
-                mine.getId(), null, "overdue-done", ScheduleStatus.DONE, null, yesterday, "#ef4444"));
+        taskRepository.save(newTask(mine, null, "overdue-done", ScheduleStatus.DONE, null, yesterday));
         // 마감 후 손댄(updated_at = 지금) 항목은 자동 완료 대상이 아니므로 다이제스트에도 안 담는다
-        taskRepository.save(Tasks.create(
-                mine.getId(), null, "overdue-reopened", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        taskRepository.save(newTask(mine, null, "overdue-reopened", ScheduleStatus.IN_PROGRESS, null, yesterday));
         Projects others = project(402L);
-        taskRepository.save(Tasks.create(
-                others.getId(), null, "not-mine", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
+        taskRepository.save(newTask(others, null, "not-mine", ScheduleStatus.IN_PROGRESS, null, today));
 
         assertThat(taskRepository.findDueTodayForMember(401L))
                 .extracting(Tasks::getId).containsExactly(dueToday.getId());
@@ -191,19 +204,15 @@ class ScheduleRepositoryTest {
                 301L, "overdue", ScheduleStatus.IN_PROGRESS, null, yesterday));
         Milestones overdueMilestone = milestoneRepository.saveAndFlush(Milestones.create(
                 overdueProject.getId(), null, "m", ScheduleStatus.NOT_STARTED, null, yesterday));
-        Tasks overdueTask = taskRepository.saveAndFlush(Tasks.create(
-                overdueProject.getId(), null, "t", ScheduleStatus.IN_PROGRESS, null, yesterday, "#ef4444"));
+        Tasks overdueTask = taskRepository.saveAndFlush(newTask(overdueProject, null, "t", ScheduleStatus.IN_PROGRESS, null, yesterday));
         ageToBeforeDeadline("projects", overdueProject.getId());
         ageToBeforeDeadline("milestones", overdueMilestone.getId());
         ageToBeforeDeadline("tasks", overdueTask.getId());
 
         // 마감이 지난 뒤 손댄 항목 — 방금 저장했으므로 updated_at = 지금(> 종료일)
-        Tasks manuallyReopened = taskRepository.saveAndFlush(Tasks.create(
-                overdueProject.getId(), null, "reopened", ScheduleStatus.NOT_STARTED, null, yesterday, "#ef4444"));
-        Tasks openEnded = taskRepository.saveAndFlush(Tasks.create(
-                overdueProject.getId(), null, "open", ScheduleStatus.IN_PROGRESS, null, null, "#ef4444"));
-        Tasks dueToday = taskRepository.saveAndFlush(Tasks.create(
-                overdueProject.getId(), null, "today", ScheduleStatus.IN_PROGRESS, null, today, "#ef4444"));
+        Tasks manuallyReopened = taskRepository.saveAndFlush(newTask(overdueProject, null, "reopened", ScheduleStatus.NOT_STARTED, null, yesterday));
+        Tasks openEnded = taskRepository.saveAndFlush(newTask(overdueProject, null, "open", ScheduleStatus.IN_PROGRESS, null, null));
+        Tasks dueToday = taskRepository.saveAndFlush(newTask(overdueProject, null, "today", ScheduleStatus.IN_PROGRESS, null, today));
         Projects othersProject = projectRepository.saveAndFlush(Projects.create(
                 999L, "other", ScheduleStatus.IN_PROGRESS, null, yesterday));
         ageToBeforeDeadline("projects", othersProject.getId());

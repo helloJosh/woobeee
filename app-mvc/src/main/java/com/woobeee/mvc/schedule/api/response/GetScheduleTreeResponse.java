@@ -4,7 +4,8 @@ package com.woobeee.mvc.schedule.api.response;
 import java.time.LocalDate;
 import java.util.List;
 
-public record GetScheduleTreeResponse(List<ProjectNode> projects) {
+/** {@code tasks} 는 어느 프로젝트에도 속하지 않은 무소속 할 일 (SCHEDULE-AC-31). */
+public record GetScheduleTreeResponse(List<ProjectNode> projects, List<TaskNode> tasks) {
 
     public record ProjectNode(
             Long id, String name, String status, LocalDate startDate, LocalDate endDate,
