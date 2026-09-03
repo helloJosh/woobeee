@@ -118,9 +118,10 @@ describe("formatDateRange", () => {
 })
 
 describe("palette", () => {
-    it("팔레트는 12색이고 전부 유효한 hex 다", () => {
-        expect(SCHEDULE_COLORS).toHaveLength(12)
+    it("팔레트는 24색이고 전부 유효한 hex 이며 중복이 없다", () => {
+        expect(SCHEDULE_COLORS).toHaveLength(24)
         for (const c of SCHEDULE_COLORS) expect(isValidHexColor(c)).toBe(true)
+        expect(new Set(SCHEDULE_COLORS).size).toBe(SCHEDULE_COLORS.length)
     })
 
     it("isValidHexColor 는 #RRGGBB 만 허용한다", () => {

@@ -16,7 +16,7 @@
 | 할 일 위치 | 프로젝트 직속 또는 아무 깊이의 마일스톤 아래 (`milestone_id` NULL 허용) |
 | 상태 | `NOT_STARTED`(시작전) / `IN_PROGRESS`(진행중) / `DONE`(완료). **세 층 모두 각자 직접 설정** — 자동 집계 없음 |
 | 날짜 | 세 층 모두 `start_date`/`end_date` 선택적. 종료일 미정(NULL) 허용 |
-| 색 | **할 일마다 고유색**. 생성 시 서버가 12색 팔레트에서 랜덤 배정, 이후 수정 가능(`#RRGGBB`) |
+| 색 | **할 일마다 고유색**. 생성 시 서버가 24색 팔레트에서 랜덤 배정, 이후 수정 가능(`#RRGGBB`) |
 | 화면 | 한 페이지에 **트리 리스트가 위, 달력(월 뷰)이 바로 아래**. 뷰 전환 토글 없음. 상태 필터 탭(전체/시작전/진행중/완료)은 둘 다에 적용 |
 | FK | **DB FK 제약 없음.** 참조 무결성은 전부 애플리케이션(서비스 계층)에서 검증 |
 | 테이블명 | `projects` / `milestones` / `tasks` — `schedule_` prefix 없음 |
@@ -161,7 +161,7 @@ schedule/
 
 ### 색 팔레트
 
-서버 상수 12색(hex). `POST /tasks` 시 랜덤 배정. 프론트 `lib/schedule.ts`의
+서버 상수 24색(hex) — tailwind 500 계열 색상환 17색 + 갈색·슬레이트·짙은 톤 7색. `POST /tasks` 시 랜덤 배정. 프론트 `lib/schedule.ts`의
 `SCHEDULE_COLORS`와 값이 동일해야 한다 — 백엔드 테스트가 팔레트 크기·형식을 고정하고,
 값 동기화는 스펙(이 문서)이 단일 출처.
 
@@ -197,7 +197,7 @@ schedule/
   행 끝 `DropdownMenu`(⋯)로 수정/삭제/하위 항목 추가.
 - 달력: 월 그리드 직접 구현 (shadcn `calendar`는 날짜 선택기라 이벤트 표시용이 아님).
   날짜 없는 할 일은 달력에 나오지 않는다. 막대 클릭 → 수정 다이얼로그.
-- 생성/수정: `Dialog` + `Input`, 날짜는 네이티브 `<input type=date>`, 색은 12색 스와치 + hex 입력.
+- 생성/수정: `Dialog` + `Input`, 날짜는 네이티브 `<input type=date>`, 색은 24색 스와치(12열 2행) + hex 입력.
 
 ### 로직 배치 — 판단은 전부 `front/lib/schedule.ts` (React-free)
 
@@ -208,7 +208,7 @@ vitest가 node 환경(컴포넌트 무검증)이므로 레포 규칙대로 판�
 - `calendarLayout(tasks, yearMonth)` — 주 단위 막대 세그먼트 계산: 월 경계 잘림, 종료 미정
   (막대를 뷰 끝까지 + open 플래그), 겹치는 막대의 행 배치
 - `formatDateRange(start, end)` — `08.20 ~ 미정` 형식, 같은 해 연도 생략 규칙
-- `SCHEDULE_COLORS` 12색 상수, `isValidHexColor`
+- `SCHEDULE_COLORS` 24색 상수, `isValidHexColor`
 - 상태 배지 매핑, `MAX_MILESTONE_DEPTH = 5` (서버와 동일 값)
 
 ### API 클라이언트·에러

@@ -96,7 +96,7 @@ export default function ScheduleItemDialog({ open, kind, title, context, initial
                     {showColor ? (
                         <div className="space-y-2">
                             <Label>색상</Label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="grid grid-cols-12 gap-2">
                                 {SCHEDULE_COLORS.map((c) => (
                                     <button key={c} type="button" aria-label={`색 ${c}`}
                                             className={`h-6 w-6 rounded-full border-2 ${draft.color === c ? "border-foreground" : "border-transparent"}`}

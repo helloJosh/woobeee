@@ -23,7 +23,7 @@
 | SCHEDULE-AC-06 | `parentId`·`milestoneId`가 요청의 프로젝트와 다른 프로젝트 소속 | 400 + `schedule_crossProject` |
 | SCHEDULE-AC-07 | 마일스톤 깊이 5 초과 생성/이동 | 400 + `schedule_depthExceeded` |
 | SCHEDULE-AC-08 | 마일스톤을 자기 자신/자기 자손 아래로 이동 | 400 + `schedule_cycle` |
-| SCHEDULE-AC-09 | 할 일 생성 | 12색 팔레트 중 하나가 자동 배정되어 응답에 포함 |
+| SCHEDULE-AC-09 | 할 일 생성 | 24색 팔레트 중 하나가 자동 배정되어 응답에 포함 |
 | SCHEDULE-AC-10 | `#RRGGBB` 형식이 아닌 색으로 수정 | 400 + `schedule_invalidColor` |
 | SCHEDULE-AC-11 | `endDate < startDate` | 400 + `schedule_invalidDateRange` |
 | SCHEDULE-AC-12 | 프로젝트 삭제 | 하위 마일스톤·할 일 전부 함께 삭제, 한 트랜잭션 |

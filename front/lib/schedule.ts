@@ -41,9 +41,12 @@ export interface ScheduleTree {
 }
 
 // 서버 ScheduleColors.PALETTE 와 동일해야 한다 (스펙 §4 가 단일 출처).
+// 24색 — 앞 17색은 tailwind 500 계열 색상환 전체, 뒤 7색은 갈색·슬레이트와 짙은 톤.
 export const SCHEDULE_COLORS = [
-    "#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e", "#14b8a6",
-    "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#d946ef", "#ec4899",
+    "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16", "#22c55e",
+    "#10b981", "#14b8a6", "#06b6d4", "#0ea5e9", "#3b82f6", "#6366f1",
+    "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#f43f5e", "#92400e",
+    "#64748b", "#991b1b", "#166534", "#115e59", "#1e40af", "#6b21a8",
 ] as const
 
 export const MAX_MILESTONE_DEPTH = 5
