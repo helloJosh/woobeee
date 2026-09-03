@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { calendarLayout, orderedRange } from "./schedule-calendar"
+import { applyBarDrag, calendarLayout, daysBetween, draggedRange, orderedRange, type BarDrag, type BarDragMode } from "./schedule-calendar"
 import type { CalendarEntry, ScheduleItemKind } from "./schedule"
 
 function entry(partial: Partial<CalendarEntry> & { id: number }): CalendarEntry {
@@ -173,5 +173,70 @@ describe("orderedRange", () => {
         expect(orderedRange("2026-08-03", "2026-08-07")).toEqual({ start: "2026-08-03", end: "2026-08-07" })
         expect(orderedRange("2026-08-07", "2026-08-03")).toEqual({ start: "2026-08-03", end: "2026-08-07" })
         expect(orderedRange("2026-08-05", "2026-08-05")).toEqual({ start: "2026-08-05", end: "2026-08-05" })
+    })
+})
+
+// SCHEDULE-AC-33 — 막대 드래그로 이동·리사이즈
+describe("daysBetween", () => {
+    it("앞→뒤는 양수, 뒤→앞은 음수, 월 경계를 넘어도 일수로 센다 (SCHEDULE-AC-33)", () => {
+        expect(daysBetween("2026-08-03", "2026-08-05")).toBe(2)
+        expect(daysBetween("2026-08-05", "2026-08-03")).toBe(-2)
+        expect(daysBetween("2026-08-30", "2026-09-02")).toBe(3)
+        expect(daysBetween("2026-08-03", "2026-08-03")).toBe(0)
+    })
+})
+
+describe("draggedRange", () => {
+    const range = { startDate: "2026-08-03", endDate: "2026-08-05" }
+    const drag = (mode: BarDragMode, anchor: string, current: string): BarDrag =>
+        ({ kind: "task", id: 1, mode, anchor, current })
+
+    it("move 는 시작·종료를 끌어간 일수만큼 함께 옮긴다 (SCHEDULE-AC-33)", () => {
+        expect(draggedRange(range, drag("move", "2026-08-04", "2026-08-11")))
+            .toEqual({ startDate: "2026-08-10", endDate: "2026-08-12" })
+        expect(draggedRange(range, drag("move", "2026-08-04", "2026-08-01")))
+            .toEqual({ startDate: "2026-07-31", endDate: "2026-08-02" })
+    })
+
+    it("move 에서 null 날짜는 null 로 남고 있는 쪽만 옮긴다 (SCHEDULE-AC-33)", () => {
+        expect(draggedRange({ startDate: "2026-08-03", endDate: null }, drag("move", "2026-08-03", "2026-08-06")))
+            .toEqual({ startDate: "2026-08-06", endDate: null })
+        expect(draggedRange({ startDate: null, endDate: "2026-08-03" }, drag("move", "2026-08-03", "2026-08-01")))
+            .toEqual({ startDate: null, endDate: "2026-08-01" })
+    })
+
+    it("resize-start 는 시작일만 놓은 칸으로 바꾼다 (SCHEDULE-AC-33)", () => {
+        expect(draggedRange(range, drag("resize-start", "2026-08-03", "2026-08-01")))
+            .toEqual({ startDate: "2026-08-01", endDate: "2026-08-05" })
+    })
+
+    it("resize-end 는 종료일만 놓은 칸으로 바꾼다 (SCHEDULE-AC-33)", () => {
+        expect(draggedRange(range, drag("resize-end", "2026-08-05", "2026-08-09")))
+            .toEqual({ startDate: "2026-08-03", endDate: "2026-08-09" })
+    })
+
+    it("끝이 서로를 지나치면 하루짜리로 고정한다 (SCHEDULE-AC-33)", () => {
+        expect(draggedRange(range, drag("resize-start", "2026-08-03", "2026-08-08")))
+            .toEqual({ startDate: "2026-08-05", endDate: "2026-08-05" })
+        expect(draggedRange(range, drag("resize-end", "2026-08-05", "2026-08-01")))
+            .toEqual({ startDate: "2026-08-03", endDate: "2026-08-03" })
+    })
+})
+
+describe("applyBarDrag", () => {
+    it("끌리는 항목만 새 날짜로 바꾼 entries 를 돌려주고 나머지는 그대로다 (SCHEDULE-AC-33)", () => {
+        const entries = [
+            entry({ id: 1, startDate: "2026-08-03", endDate: "2026-08-05" }),
+            entry({ id: 2, kind: "milestone", color: null, startDate: "2026-08-03", endDate: "2026-08-05" }),
+        ]
+        const out = applyBarDrag(entries, { kind: "task", id: 1, mode: "move", anchor: "2026-08-03", current: "2026-08-10" })
+        expect(out[0]).toMatchObject({ id: 1, startDate: "2026-08-10", endDate: "2026-08-12" })
+        expect(out[1]).toBe(entries[1]) // 같은 kind 가 아니면 id 가 같아도 건드리지 않는다
+        expect(entries[0].startDate).toBe("2026-08-03") // 입력은 변형하지 않는다
+    })
+
+    it("drag 가 null 이면 입력 배열을 그대로 돌려준다 (SCHEDULE-AC-33)", () => {
+        const entries = [entry({ id: 1, startDate: "2026-08-03", endDate: "2026-08-05" })]
+        expect(applyBarDrag(entries, null)).toBe(entries)
     })
 })

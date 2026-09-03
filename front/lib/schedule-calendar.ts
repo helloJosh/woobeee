@@ -177,3 +177,59 @@ export function calendarLayout(
 
     return weeks
 }
+
+// ── SCHEDULE-AC-33 — 막대 드래그로 이동·리사이즈 ──────────────────────────────
+
+export type BarDragMode = "move" | "resize-start" | "resize-end"
+
+/** 막대 위에서 시작한 드래그. anchor 는 잡은 칸, current 는 지금 마우스가 있는 칸. */
+export interface BarDrag {
+    kind: ScheduleItemKind
+    id: number
+    mode: BarDragMode
+    anchor: string
+    current: string
+}
+
+export interface DateRange {
+    startDate: string | null
+    endDate: string | null
+}
+
+/** from → to 일수. 뒤로 가면 음수. */
+export function daysBetween(fromIso: string, toIso: string): number {
+    return dayDiff(toLocalDate(fromIso), toLocalDate(toIso))
+}
+
+function shiftIso(iso: string, days: number): string {
+    return toIso(addDays(toLocalDate(iso), days))
+}
+
+/**
+ * 드래그가 끝났을 때(또는 미리보기로) 항목이 가질 날짜 범위.
+ * move 는 양끝을 같은 일수만큼 옮기고 null 은 null 로 둔다.
+ * resize 는 한쪽 끝만 놓은 칸으로 바꾸되, 끝이 서로를 지나치면 하루짜리로 고정한다.
+ */
+export function draggedRange(range: DateRange, drag: BarDrag): DateRange {
+    if (drag.mode === "move") {
+        const delta = daysBetween(drag.anchor, drag.current)
+        return {
+            startDate: range.startDate === null ? null : shiftIso(range.startDate, delta),
+            endDate: range.endDate === null ? null : shiftIso(range.endDate, delta),
+        }
+    }
+    if (drag.mode === "resize-start") {
+        const clamped = range.endDate !== null && drag.current > range.endDate ? range.endDate : drag.current
+        return { startDate: clamped, endDate: range.endDate }
+    }
+    const clamped = range.startDate !== null && drag.current < range.startDate ? range.startDate : drag.current
+    return { startDate: range.startDate, endDate: clamped }
+}
+
+/** 끌리는 항목만 새 날짜로 바꾼 entries — calendarLayout 에 넘기면 미리보기가 된다. 입력은 변형하지 않는다. */
+export function applyBarDrag(entries: CalendarEntry[], drag: BarDrag | null): CalendarEntry[] {
+    if (!drag) return entries
+    return entries.map((e) =>
+        e.kind === drag.kind && e.id === drag.id ? { ...e, ...draggedRange(e, drag) } : e,
+    )
+}
