@@ -159,6 +159,11 @@ schedule/
 - 마일스톤 삭제: 재귀 CTE 네이티브 쿼리로 자손 마일스톤 id 수집 → 해당 마일스톤들의 tasks
   일괄 삭제 → 마일스톤들 일괄 삭제.
 
+### 시간과 시작 전 알림 (2026-09-04 확장)
+
+할 일에만 `start_time`/`end_time`(TIME, 선택)과 `task_reminders`(10·30분 전, Slack 발송)가 있다.
+설계는 `2026-09-04-task-time-reminders-design.md`, 인수 기준은 SCHEDULE-AC-34 ~ 37.
+
 ### 색 팔레트
 
 서버 상수 24색(hex) — tailwind 500 계열 색상환 17색 + 갈색·슬레이트·짙은 톤 7색. `POST /tasks` 시 랜덤 배정. 프론트 `lib/schedule.ts`의

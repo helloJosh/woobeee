@@ -11,6 +11,11 @@ export interface ScheduleTask {
     status: ScheduleStatus
     startDate: string | null // "YYYY-MM-DD"
     endDate: string | null
+    /** "HH:mm" — 선택. 해당 날짜가 null 이면 항상 null (SCHEDULE-AC-34). */
+    startTime: string | null
+    endTime: string | null
+    /** 시작 전 알림(분) — 10·30 (SCHEDULE-AC-35). */
+    reminders: number[]
     color: string
 }
 
@@ -79,6 +84,8 @@ export interface CalendarEntry {
     status: ScheduleStatus
     startDate: string | null
     endDate: string | null
+    /** 할 일의 시작 시간 — 막대 라벨 앞에 붙인다. 프로젝트/마일스톤은 없다. */
+    startTime?: string | null
     color: string | null
 }
 
@@ -90,7 +97,7 @@ export function collectCalendarEntries(tree: ScheduleTree): CalendarEntry[] {
     const out: CalendarEntry[] = []
     const taskEntry = (projectId: number, t: ScheduleTask): CalendarEntry => ({
         kind: "task", id: t.id, projectId, name: t.name, status: t.status,
-        startDate: t.startDate, endDate: t.endDate, color: t.color,
+        startDate: t.startDate, endDate: t.endDate, startTime: t.startTime, color: t.color,
     })
     for (const p of tree.projects) {
         out.push({
@@ -114,7 +121,7 @@ export function collectCalendarEntries(tree: ScheduleTree): CalendarEntry[] {
     for (const t of tree.tasks) {
         out.push({
             kind: "task", id: t.id, projectId: null, name: t.name, status: t.status,
-            startDate: t.startDate, endDate: t.endDate, color: t.color,
+            startDate: t.startDate, endDate: t.endDate, startTime: t.startTime, color: t.color,
         })
     }
     return out
@@ -263,4 +270,84 @@ export function formatDateRange(
     if (start && !end) return `${formatOne(start, year)} ~ 미정`
     if (!start && end) return `~ ${formatOne(end, year)}`
     return `${formatOne(start!, year)} ~ ${formatOne(end!, year)}`
+}
+
+// ── SCHEDULE-AC-34 ~ 37 — 할 일 시간과 시작 전 알림 ─────────────────────────────
+
+/** 서버 TaskReminders.ALLOWED_MINUTES 와 같아야 한다. */
+export const REMINDER_OPTIONS = [10, 30] as const
+
+export function reminderLabel(minutes: number): string {
+    return `${minutes}분 전`
+}
+
+export function isValidTime(value: string): boolean {
+    return /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
+}
+
+/**
+ * SCHEDULE-AC-34 — 날짜 범위가 유효하고, 같은 날짜에 둘 다 시간이 있으면 종료가 시작보다 빠르지 않다.
+ * 날짜가 다르거나 한쪽 시간이 비면 시간 순서는 보지 않는다.
+ */
+export function isValidTimeRange(
+    start: string | null, end: string | null,
+    startTime: string | null, endTime: string | null,
+): boolean {
+    if (!isValidDateRange(start, end)) return false
+    if (!start || !end || start !== end || !startTime || !endTime) return true
+    return endTime >= startTime
+}
+
+/** SCHEDULE-AC-35 — 알림은 시작일과 시작 시간이 둘 다 있을 때만 붙일 수 있다. */
+export function canRemind(startDate: string | null, startTime: string | null): boolean {
+    return !!startDate && !!startTime
+}
+
+function formatOneWithTime(iso: string, time: string | null, todayYear: number): string {
+    return time ? `${formatOne(iso, todayYear)} ${time}` : formatOne(iso, todayYear)
+}
+
+/** SCHEDULE-AC-34 — 할 일 표기. 시간이 있으면 날짜 뒤에 붙인다: "08.26 14:30 ~ 09.01 18:00". 없으면 formatDateRange 와 같다. */
+export function formatTaskRange(
+    start: string | null, end: string | null,
+    startTime: string | null, endTime: string | null,
+    today: Date = new Date(),
+): string {
+    const year = today.getFullYear()
+    if (!start && !end) return "일정 미정"
+    if (start && !end) return `${formatOneWithTime(start, startTime, year)} ~ 미정`
+    if (!start && end) return `~ ${formatOneWithTime(end, endTime, year)}`
+    return `${formatOneWithTime(start!, startTime, year)} ~ ${formatOneWithTime(end!, endTime, year)}`
+}
+
+/** PUT /tasks/{id} 본문 — 서버가 전체 교체하므로 모든 필드를 싣는다. */
+export interface TaskPutBody {
+    name: string
+    status: ScheduleStatus
+    startDate: string | null
+    endDate: string | null
+    startTime: string | null
+    endTime: string | null
+    reminders: number[]
+    milestoneId: number | null
+    color: string
+}
+
+/**
+ * SCHEDULE-AC-37 — 날짜만 고치는 곳(막대 팝오버·막대 드래그·배지 클릭)도 PUT 이 전체 교체라서
+ * 기존 시간·알림·소속·색을 그대로 실어 보낸다. 날짜가 비면 그쪽 시간은 비우고, 시작 일시가 사라지면
+ * 알림도 비운다 — 서버가 400 을 내는 대신 여기서 정규화한다.
+ */
+export function taskPutBody(task: ScheduleTask, patch: Partial<TaskPutBody> = {}): TaskPutBody {
+    const merged: TaskPutBody = {
+        name: task.name, status: task.status,
+        startDate: task.startDate, endDate: task.endDate,
+        startTime: task.startTime, endTime: task.endTime,
+        reminders: task.reminders, milestoneId: task.milestoneId, color: task.color,
+        ...patch,
+    }
+    const startTime = merged.startDate ? merged.startTime : null
+    const endTime = merged.endDate ? merged.endTime : null
+    const reminders = canRemind(merged.startDate, startTime) ? [...merged.reminders].sort((a, b) => a - b) : []
+    return { ...merged, startTime, endTime, reminders }
 }

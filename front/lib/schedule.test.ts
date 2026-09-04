@@ -8,7 +8,15 @@ import {
     findMilestone,
     filterTree,
     formatDateRange,
+    formatTaskRange,
     isValidDateRange,
+    isValidTime,
+    isValidTimeRange,
+    canRemind,
+    taskPutBody,
+    REMINDER_OPTIONS,
+    reminderLabel,
+    type ScheduleTask,
     isValidHexColor,
     isValidSlackWebhookUrl,
     nextStatus,
@@ -21,13 +29,13 @@ const tree: ScheduleTree = {
         {
             id: 1, name: "DM", status: "IN_PROGRESS", startDate: "2026-08-20", endDate: "2026-09-04",
             tasks: [
-                { id: 100, milestoneId: null, name: "직속 완료", status: "DONE", startDate: null, endDate: null, color: "#ef4444" },
+                { id: 100, milestoneId: null, name: "직속 완료", status: "DONE", startDate: null, endDate: null, startTime: null, endTime: null, reminders: [], color: "#ef4444" },
             ],
             milestones: [
                 {
                     id: 10, name: "POC", status: "IN_PROGRESS", startDate: null, endDate: null,
                     tasks: [
-                        { id: 101, milestoneId: 10, name: "진행중 일", status: "IN_PROGRESS", startDate: "2026-08-26", endDate: "2026-09-01", color: "#3b82f6" },
+                        { id: 101, milestoneId: 10, name: "진행중 일", status: "IN_PROGRESS", startDate: "2026-08-26", endDate: "2026-09-01", startTime: null, endTime: null, reminders: [], color: "#3b82f6" },
                     ],
                     milestones: [
                         {
@@ -44,7 +52,7 @@ const tree: ScheduleTree = {
         },
     ],
     tasks: [
-        { id: 200, milestoneId: null, name: "무소속 진행중", status: "IN_PROGRESS", startDate: null, endDate: null, color: "#f97316" },
+        { id: 200, milestoneId: null, name: "무소속 진행중", status: "IN_PROGRESS", startDate: null, endDate: null, startTime: null, endTime: null, reminders: [], color: "#f97316" },
     ],
 }
 
@@ -262,5 +270,107 @@ describe("todayIso", () => {
 
     it("한 자리 월·일은 0 을 채운다", () => {
         expect(todayIso(new Date(2026, 0, 5))).toBe("2026-01-05")
+    })
+})
+
+// ── SCHEDULE-AC-34 ~ 37 ───────────────────────────────────────────────────────
+
+describe("isValidTimeRange", () => {
+    it("같은 날짜에 종료 시간이 시작보다 빠르면 무효다 (SCHEDULE-AC-34)", () => {
+        expect(isValidTimeRange("2026-09-04", "2026-09-04", "15:00", "14:00")).toBe(false)
+        expect(isValidTimeRange("2026-09-04", "2026-09-04", "14:00", "14:00")).toBe(true)
+        expect(isValidTimeRange("2026-09-04", "2026-09-04", "14:00", "15:00")).toBe(true)
+    })
+
+    it("날짜가 다르거나 한쪽 시간이 비면 시간 순서는 보지 않는다", () => {
+        expect(isValidTimeRange("2026-09-04", "2026-09-05", "15:00", "09:00")).toBe(true)
+        expect(isValidTimeRange("2026-09-04", "2026-09-04", "15:00", null)).toBe(true)
+        expect(isValidTimeRange("2026-09-04", null, "15:00", "09:00")).toBe(true)
+    })
+
+    it("날짜 범위가 뒤집히면 시간과 무관하게 무효다", () => {
+        expect(isValidTimeRange("2026-09-05", "2026-09-04", null, null)).toBe(false)
+    })
+})
+
+describe("isValidTime", () => {
+    it("HH:mm 24시간제만 허용한다", () => {
+        expect(isValidTime("00:00")).toBe(true)
+        expect(isValidTime("23:59")).toBe(true)
+        expect(isValidTime("24:00")).toBe(false)
+        expect(isValidTime("9:00")).toBe(false)
+        expect(isValidTime("09:60")).toBe(false)
+    })
+})
+
+describe("canRemind", () => {
+    it("시작일과 시작 시간이 둘 다 있어야 참이다 (SCHEDULE-AC-35)", () => {
+        expect(canRemind("2026-09-04", "09:00")).toBe(true)
+        expect(canRemind("2026-09-04", null)).toBe(false)
+        expect(canRemind(null, "09:00")).toBe(false)
+    })
+
+    it("알림 선택지는 서버와 같은 10·30 이다", () => {
+        expect([...REMINDER_OPTIONS]).toEqual([10, 30])
+        expect(reminderLabel(10)).toBe("10분 전")
+    })
+})
+
+describe("formatTaskRange", () => {
+    const today = new Date(2026, 8, 4)
+
+    it("시간이 있으면 날짜 뒤에 붙인다 (SCHEDULE-AC-34)", () => {
+        expect(formatTaskRange("2026-08-26", "2026-09-01", "14:30", "18:00", today)).toBe("08.26 14:30 ~ 09.01 18:00")
+        expect(formatTaskRange("2026-08-26", "2026-09-01", "14:30", null, today)).toBe("08.26 14:30 ~ 09.01")
+        expect(formatTaskRange("2026-08-26", null, "14:30", null, today)).toBe("08.26 14:30 ~ 미정")
+        expect(formatTaskRange(null, "2026-09-01", null, "18:00", today)).toBe("~ 09.01 18:00")
+    })
+
+    it("시간이 없으면 formatDateRange 와 같다", () => {
+        expect(formatTaskRange("2026-08-26", "2026-09-01", null, null, today))
+            .toBe(formatDateRange("2026-08-26", "2026-09-01", today))
+        expect(formatTaskRange(null, null, null, null, today)).toBe("일정 미정")
+    })
+})
+
+describe("taskPutBody", () => {
+    const task: ScheduleTask = {
+        id: 5, milestoneId: 3, name: "회의", status: "NOT_STARTED",
+        startDate: "2026-09-04", endDate: "2026-09-04", startTime: "14:30", endTime: "15:00",
+        reminders: [30, 10], color: "#ef4444",
+    }
+
+    it("날짜만 바꾸는 패치도 시간·알림·소속·색을 그대로 싣는다 (SCHEDULE-AC-37)", () => {
+        expect(taskPutBody(task, { startDate: "2026-09-05", endDate: "2026-09-05" })).toEqual({
+            name: "회의", status: "NOT_STARTED",
+            startDate: "2026-09-05", endDate: "2026-09-05", startTime: "14:30", endTime: "15:00",
+            reminders: [10, 30], milestoneId: 3, color: "#ef4444",
+        })
+    })
+
+    it("상태만 바꾸는 배지 클릭도 나머지를 보존한다", () => {
+        const body = taskPutBody(task, { status: "DONE" })
+        expect(body.status).toBe("DONE")
+        expect(body.startTime).toBe("14:30")
+        expect(body.reminders).toEqual([10, 30])
+    })
+
+    it("날짜를 비우면 그쪽 시간을 비우고, 시작 일시가 사라지면 알림도 비운다", () => {
+        const noEnd = taskPutBody(task, { endDate: null })
+        expect(noEnd.endTime).toBeNull()
+        expect(noEnd.reminders).toEqual([10, 30])
+
+        const noStart = taskPutBody(task, { startDate: null })
+        expect(noStart.startTime).toBeNull()
+        expect(noStart.reminders).toEqual([])
+
+        const noStartTime = taskPutBody(task, { startTime: null })
+        expect(noStartTime.reminders).toEqual([])
+    })
+
+    it("입력을 변형하지 않는다", () => {
+        taskPutBody(task, { startDate: null })
+        expect(task.startTime).toBe("14:30")
+        expect(task.reminders).toEqual([30, 10])
     })
 })

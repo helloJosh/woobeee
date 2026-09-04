@@ -21,6 +21,9 @@ public enum ScheduleErrorCode {
     CYCLE(HttpStatus.BAD_REQUEST, "schedule_cycle", "A milestone cannot move under itself or its descendant"),
     INVALID_DATE_RANGE(HttpStatus.BAD_REQUEST, "schedule_invalidDateRange", "endDate must not be before startDate"),
     INVALID_COLOR(HttpStatus.BAD_REQUEST, "schedule_invalidColor", "Color must be #RRGGBB"),
+    INVALID_REMINDER(HttpStatus.BAD_REQUEST, "schedule_invalidReminder", "Reminder must be 10 or 30 minutes"),
+    REMINDER_NEEDS_START_TIME(HttpStatus.BAD_REQUEST, "schedule_reminderNeedsStartTime",
+            "Reminders need both a start date and a start time"),
     INVALID_WEBHOOK_URL(HttpStatus.BAD_REQUEST, "schedule_invalidWebhookUrl",
             "Webhook URL must start with https://hooks.slack.com/"),
 

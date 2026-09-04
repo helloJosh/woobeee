@@ -16,7 +16,7 @@ import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
     applyStatus, collectCalendarEntries, collectTasks, filterTree, findMilestone, nextStatus,
-    STATUS_LABELS, todayIso,
+    STATUS_LABELS, taskPutBody, todayIso,
     type FilteredMilestone, type FilteredProject, type ScheduleItemKind, type ScheduleStatus,
     type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
@@ -44,12 +44,21 @@ export default function SchedulePage() {
     const [dialogInitial, setDialogInitial] = useState<ItemDraft>(EMPTY_DRAFT)
     const [dialogContext, setDialogContext] = useState<string | null>(null)
     const [notifOpen, setNotifOpen] = useState(false)
+    // 할 일 다이얼로그가 "Slack 미등록이면 알림이 발송되지 않는다"를 안내하는 데 쓴다. null = 아직 모름.
+    const [slackConfigured, setSlackConfigured] = useState<boolean | null>(null)
     const [calYear, setCalYear] = useState(() => new Date().getFullYear())
     const [calMonth, setCalMonth] = useState(() => new Date().getMonth() + 1)
 
     // 첫 로드에만 스켈레톤을 보여준다 — 이후 갱신(배지 클릭·저장·삭제)은 화면을 유지한 채
     // 조용히 바꿔치기해서 전체가 깜박이지 않게 한다. 갱신 실패는 apiRequest 가 alert 로 알린다.
     const hasLoadedOnce = useRef(false)
+    const fetchSlackConfigured = useCallback(async () => {
+        try {
+            setSlackConfigured((await scheduleAPI.getNotification()).webhookUrl !== null)
+        } catch {
+            setSlackConfigured(null)
+        }
+    }, [])
     const fetchTree = useCallback(async () => {
         try {
             if (!hasLoadedOnce.current) setTreeState("loading")
@@ -68,7 +77,8 @@ export default function SchedulePage() {
             return
         }
         void fetchTree()
-    }, [loading, isAuthenticated, router, fetchTree])
+        void fetchSlackConfigured()
+    }, [loading, isAuthenticated, router, fetchTree, fetchSlackConfigured])
 
     if (loading || !isAuthenticated) {
         return <div className="mx-auto max-w-4xl p-6"><Skeleton className="h-40 w-full" /></div>
@@ -126,7 +136,7 @@ export default function SchedulePage() {
     const cycleTask = (task: ScheduleTask) => {
         const to = nextStatus(task.status)
         return cycleStatus("task", task.id,
-            () => scheduleAPI.updateTask(task.id, { name: task.name, status: to, startDate: task.startDate, endDate: task.endDate, milestoneId: task.milestoneId, color: task.color }), to)
+            () => scheduleAPI.updateTask(task.id, taskPutBody(task, { status: to })), to) // 시간·알림 보존 (SCHEDULE-AC-37)
     }
 
     /** 생성 다이얼로그의 "어디에 만드는지" 안내 문구. */
@@ -157,14 +167,19 @@ export default function SchedulePage() {
             await scheduleAPI.updateMilestone(id, { ...draft, parentId: findMilestoneParentId(id) })
         } else {
             const found = findTask(id)
-            await scheduleAPI.updateTask(id, { ...draft, milestoneId: found?.task.milestoneId ?? null, color: found?.task.color })
+            if (!found) return
+            // 날짜만 고치는 팝오버·드래그 — 시간·알림·소속·색은 그대로 (SCHEDULE-AC-37)
+            await scheduleAPI.updateTask(id, taskPutBody(found.task, draft))
         }
         await fetchTree()
     }
 
     const openEditTask = (projectId: number | null, task: ScheduleTask) => {
         setDialogContext(null)
-        setDialogInitial({ name: task.name, status: task.status, startDate: task.startDate, endDate: task.endDate, color: task.color })
+        setDialogInitial({
+            name: task.name, status: task.status, startDate: task.startDate, endDate: task.endDate,
+            startTime: task.startTime, endTime: task.endTime, reminders: task.reminders, color: task.color,
+        })
         setDialog({ kind: "task", mode: "edit", projectId, id: task.id })
     }
 
@@ -180,10 +195,17 @@ export default function SchedulePage() {
                 await scheduleAPI.updateMilestone(dialog.id, { ...base, parentId: findMilestoneParentId(dialog.id) })
             }
         } else {
-            if (dialog.mode === "create") await scheduleAPI.createTask({ ...base, ...(dialog.projectId !== null ? { projectId: dialog.projectId } : {}), milestoneId: dialog.milestoneId })
+            const timed = {
+                ...base,
+                startTime: draft.startDate ? draft.startTime ?? null : null,
+                endTime: draft.endDate ? draft.endTime ?? null : null,
+                reminders: draft.reminders ?? [],
+            }
+            if (dialog.mode === "create") await scheduleAPI.createTask({ ...timed, ...(dialog.projectId !== null ? { projectId: dialog.projectId } : {}), milestoneId: dialog.milestoneId })
             else {
                 const found = findTask(dialog.id)
-                await scheduleAPI.updateTask(dialog.id, { ...base, milestoneId: found?.task.milestoneId ?? null, color: draft.color })
+                if (!found) return
+                await scheduleAPI.updateTask(dialog.id, taskPutBody(found.task, { ...timed, color: draft.color ?? found.task.color }))
             }
         }
         await fetchTree()
@@ -282,7 +304,7 @@ export default function SchedulePage() {
                 />
             ) : null}
 
-            <NotificationDialog open={notifOpen} onClose={() => setNotifOpen(false)} />
+            <NotificationDialog open={notifOpen} onClose={() => { setNotifOpen(false); void fetchSlackConfigured() }} />
 
             {dialog ? (
                 <ScheduleItemDialog
@@ -291,6 +313,7 @@ export default function SchedulePage() {
                     context={dialogContext ?? undefined}
                     initial={dialogInitial}
                     showColor={dialog.kind === "task" && dialog.mode === "edit"}
+                    slackConfigured={slackConfigured}
                     onSubmit={submit}
                     onClose={() => setDialog(null)}
                 />

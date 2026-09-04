@@ -6,6 +6,8 @@ export interface CalendarSegment {
     kind: ScheduleItemKind
     id: number
     name: string
+    /** 할 일 시작 시간 "HH:mm" — 라벨 앞에 붙인다. 없으면 null. */
+    startTime: string | null
     /** 할 일 고유색. 프로젝트/마일스톤은 null — 컴포넌트가 중립 톤으로 그린다. */
     color: string | null
     /** 같은 주 안에서 세로로 쌓이는 줄 번호 (0부터). 같은 그룹 안에서 겹치지 않으면 줄을 재사용한다. */
@@ -157,6 +159,7 @@ export function calendarLayout(
                     kind: entry.kind,
                     id: entry.id,
                     name: entry.name,
+                    startTime: entry.startTime ?? null,
                     color: entry.color,
                     lane: laneOffset + lane,
                     startCol: seg.startCol,

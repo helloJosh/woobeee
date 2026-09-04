@@ -3,6 +3,7 @@ package com.woobeee.mvc.schedule.repository;
 import com.woobeee.mvc.schedule.entity.Milestones;
 import com.woobeee.mvc.schedule.entity.Projects;
 import com.woobeee.mvc.schedule.entity.ScheduleStatus;
+import com.woobeee.mvc.schedule.entity.TaskReminders;
 import com.woobeee.mvc.schedule.entity.Tasks;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,8 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +42,7 @@ class ScheduleRepositoryTest {
     @Autowired ProjectRepository projectRepository;
     @Autowired MilestoneRepository milestoneRepository;
     @Autowired TaskRepository taskRepository;
+    @Autowired TaskReminderRepository reminderRepository;
     @Autowired JdbcTemplate jdbcTemplate;
 
     /** 마감 전 마지막 수정처럼 보이게 updated_at 을 종료일 하루 전으로 되돌린다. */
@@ -141,7 +145,8 @@ class ScheduleRepositoryTest {
 
         // 배지 클릭: 서비스의 PUT 과 같은 경로 — 엔티티 수정 + 플러시 (@UpdateTimestamp 가 지금으로 갱신)
         afterSweep.update(afterSweep.getMilestoneId(), afterSweep.getName(), ScheduleStatus.NOT_STARTED,
-                afterSweep.getStartDate(), afterSweep.getEndDate(), afterSweep.getColor());
+                afterSweep.getStartDate(), afterSweep.getEndDate(), afterSweep.getStartTime(), afterSweep.getEndTime(),
+                afterSweep.getColor());
         taskRepository.saveAndFlush(afterSweep);
 
         // 직후 재조회의 자동 완료 — 마감 후 수동 수정이므로 건드리면 안 된다
@@ -235,5 +240,76 @@ class ScheduleRepositoryTest {
                 .isEqualTo(ScheduleStatus.IN_PROGRESS);
         assertThat(projectRepository.findById(othersProject.getId()).orElseThrow().getStatus())
                 .isEqualTo(ScheduleStatus.IN_PROGRESS);
+    }
+
+    /* ===== SCHEDULE-AC-36 — 발송 대상 조회 ===== */
+
+    private long memberWithWebhook(String webhook) {
+        String key = "rem-" + System.nanoTime();
+        return jdbcTemplate.queryForObject("""
+                INSERT INTO members (google_subject, email, nickname, terms_agreed, privacy_policy_agreed,
+                                     active, created_at, slack_webhook_url)
+                VALUES (?, ?, 'n', true, true, true, CURRENT_TIMESTAMP, ?) RETURNING id
+                """, Long.class, key, key + "@example.com", webhook);
+    }
+
+    private Tasks timedTask(long memberId, LocalDate day, LocalTime startTime) {
+        return taskRepository.save(Tasks.create(memberId, null, null, "회의", null, day, day, startTime, null, "#ef4444"));
+    }
+
+    /** SCHEDULE-AC-36 — 발송 시각이 왔고 아직 시작 전인 미발송 알림만 나온다. 놓친(이미 시작한) 알림은 빠진다. */
+    @Test
+    void findDueReturnsOnlyRemindersWhoseWindowIsOpen() {
+        long member = memberWithWebhook("https://hooks.slack.com/services/x");
+        LocalDate day = LocalDate.of(2026, 9, 4);
+        Tasks soon = timedTask(member, day, LocalTime.of(14, 20));      // 14:00 기준 20분 뒤 → 30분 전 알림은 열림, 10분 전은 아직
+        Tasks started = timedTask(member, day, LocalTime.of(13, 50));   // 이미 시작 → 빠진다
+        Tasks noTime = taskRepository.save(Tasks.create(member, null, null, "종일", null, day, day, "#ef4444"));
+        reminderRepository.saveAll(List.of(
+                TaskReminders.create(soon.getId(), 30), TaskReminders.create(soon.getId(), 10),
+                TaskReminders.create(started.getId(), 10), TaskReminders.create(noTime.getId(), 10)));
+
+        List<DueReminder> due = reminderRepository.findDue(LocalDateTime.of(2026, 9, 4, 14, 0));
+
+        assertThat(due).hasSize(1);
+        assertThat(due.get(0).getMinutesBefore()).isEqualTo(30);
+        assertThat(due.get(0).getTaskName()).isEqualTo("회의");
+        assertThat(due.get(0).getProjectName()).isNull();
+        assertThat(due.get(0).getStartTime()).isEqualTo(LocalTime.of(14, 20));
+        assertThat(due.get(0).getWebhookUrl()).isEqualTo("https://hooks.slack.com/services/x");
+    }
+
+    /** SCHEDULE-AC-36 — sent_at 이 찍힌 알림과 webhook 미등록 멤버의 알림은 나오지 않는다. */
+    @Test
+    void findDueSkipsSentRemindersAndMembersWithoutAWebhook() {
+        long withHook = memberWithWebhook("https://hooks.slack.com/services/x");
+        long noHook = memberWithWebhook(null);
+        LocalDate day = LocalDate.of(2026, 9, 4);
+        Tasks sentTask = timedTask(withHook, day, LocalTime.of(14, 20));
+        Tasks quietTask = timedTask(noHook, day, LocalTime.of(14, 20));
+        TaskReminders sent = reminderRepository.save(TaskReminders.create(sentTask.getId(), 30));
+        reminderRepository.save(TaskReminders.create(quietTask.getId(), 30));
+        LocalDateTime now = LocalDateTime.of(2026, 9, 4, 14, 0);
+        reminderRepository.markSent(sent.getId(), now);
+
+        assertThat(reminderRepository.findDue(now)).isEmpty();
+    }
+
+    /** 캐스케이드 — 프로젝트·마일스톤 삭제는 그 밑 할 일의 알림까지 지운다 (tasks 삭제 전에 호출). */
+    @Test
+    void reminderCascadesFollowTheTaskCascades() {
+        Projects p = project(1L);
+        Milestones m = milestoneRepository.save(Milestones.create(p.getId(), null, "m", null, null, null));
+        Tasks inMilestone = taskRepository.save(newTask(p, m.getId(), "a", null, null, null));
+        Tasks direct = taskRepository.save(newTask(p, null, "b", null, null, null));
+        reminderRepository.saveAll(List.of(
+                TaskReminders.create(inMilestone.getId(), 10), TaskReminders.create(direct.getId(), 10)));
+
+        reminderRepository.deleteAllForMilestones(List.of(m.getId()));
+        assertThat(reminderRepository.findAllForTasks(List.of(inMilestone.getId(), direct.getId())))
+                .extracting(TaskReminders::getTaskId).containsExactly(direct.getId());
+
+        reminderRepository.deleteAllForProject(p.getId());
+        assertThat(reminderRepository.findAllForTasks(List.of(inMilestone.getId(), direct.getId()))).isEmpty();
     }
 }

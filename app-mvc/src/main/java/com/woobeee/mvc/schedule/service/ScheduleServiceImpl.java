@@ -5,10 +5,12 @@ import com.woobeee.mvc.schedule.api.request.*;
 import com.woobeee.mvc.schedule.api.response.*;
 import com.woobeee.mvc.schedule.entity.Milestones;
 import com.woobeee.mvc.schedule.entity.Projects;
+import com.woobeee.mvc.schedule.entity.TaskReminders;
 import com.woobeee.mvc.schedule.entity.Tasks;
 import com.woobeee.mvc.schedule.exception.ScheduleErrorCode;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
+import com.woobeee.mvc.schedule.repository.TaskReminderRepository;
 import com.woobeee.mvc.schedule.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,11 +18,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -34,6 +39,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     private final ProjectRepository projectRepository;
     private final MilestoneRepository milestoneRepository;
     private final TaskRepository taskRepository;
+    private final TaskReminderRepository reminderRepository;
     private final ScheduleMemberResolver memberResolver;
 
     /* ===== 공통 검증 ===== */
@@ -49,6 +55,66 @@ public class ScheduleServiceImpl implements ScheduleService {
         if (start != null && end != null && end.isBefore(start)) {
             throw ScheduleErrorCode.INVALID_DATE_RANGE.asException();
         }
+    }
+
+    /** SCHEDULE-AC-34 — 같은 날짜에 둘 다 시간이 있으면 종료가 시작보다 빠를 수 없다. 날짜 없는 시간은 무시된다. */
+    private static void validateTimes(LocalDate start, LocalDate end, LocalTime startTime, LocalTime endTime) {
+        validateDates(start, end);
+        if (start != null && end != null && start.equals(end)
+                && startTime != null && endTime != null && endTime.isBefore(startTime)) {
+            throw ScheduleErrorCode.INVALID_DATE_RANGE.asException();
+        }
+    }
+
+    /**
+     * SCHEDULE-AC-35 — 알림 값은 10·30 만, 그리고 시작 날짜와 시간이 둘 다 있어야 붙일 수 있다.
+     * 정렬·중복 제거된 목록을 돌려준다.
+     */
+    private static List<Integer> validateReminders(List<Integer> reminders, LocalDate start, LocalTime startTime) {
+        if (reminders == null || reminders.isEmpty()) {
+            return List.of();
+        }
+        for (Integer m : reminders) {
+            if (m == null || !TaskReminders.ALLOWED_MINUTES.contains(m)) {
+                throw ScheduleErrorCode.INVALID_REMINDER.asException();
+            }
+        }
+        if (start == null || startTime == null) {
+            throw ScheduleErrorCode.REMINDER_NEEDS_START_TIME.asException();
+        }
+        return reminders.stream().distinct().sorted().toList();
+    }
+
+    private static List<Integer> minutesOf(List<TaskReminders> rows) {
+        List<Integer> out = new ArrayList<>();
+        for (TaskReminders r : rows) {
+            out.add(r.getMinutesBefore());
+        }
+        return out;
+    }
+
+    private void saveReminders(Long taskId, List<Integer> minutes) {
+        List<TaskReminders> rows = new ArrayList<>();
+        for (Integer m : minutes) {
+            rows.add(TaskReminders.create(taskId, m));
+        }
+        if (!rows.isEmpty()) {
+            reminderRepository.saveAll(rows);
+        }
+    }
+
+    /**
+     * SCHEDULE-AC-35 — 시작 일시와 집합이 모두 같으면 행을 건드리지 않아 이미 보낸 알림이 다시 나가지 않는다.
+     * 하나라도 다르면 삭제 후 재생성(sent_at 리셋).
+     */
+    private List<Integer> replaceRemindersIfChanged(Tasks task, LocalDateTime previousStartAt, List<Integer> wanted) {
+        List<Integer> current = minutesOf(reminderRepository.findAllForTask(task.getId()));
+        if (current.equals(wanted) && Objects.equals(previousStartAt, task.startAt())) {
+            return current;
+        }
+        reminderRepository.deleteAllForTask(task.getId());
+        saveReminders(task.getId(), wanted);
+        return wanted;
     }
 
     /** parentId(또는 milestoneId)가 이 프로젝트의 마일스톤인지. null 이면 통과. */
@@ -122,8 +188,9 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         List<Projects> projects = projectRepository.findAllForMember(memberId);
         List<Tasks> allTasks = taskRepository.findAllForMember(memberId);
+        Map<Long, List<Integer>> remindersByTask = remindersByTask(allTasks);
         if (projects.isEmpty()) {
-            return new GetScheduleTreeResponse(List.of(), toTaskNodes(allTasks));
+            return new GetScheduleTreeResponse(List.of(), toTaskNodes(allTasks, remindersByTask));
         }
 
         List<Long> projectIds = new ArrayList<>();
@@ -168,37 +235,56 @@ public class ScheduleServiceImpl implements ScheduleService {
         for (Projects p : projects) {
             List<GetScheduleTreeResponse.MilestoneNode> milestoneNodes = buildMilestoneNodes(
                     rootMilestonesByProject.getOrDefault(p.getId(), List.of()),
-                    childMilestonesByParent, tasksByMilestone);
+                    childMilestonesByParent, tasksByMilestone, remindersByTask);
             List<GetScheduleTreeResponse.TaskNode> taskNodes =
-                    toTaskNodes(rootTasksByProject.getOrDefault(p.getId(), List.of()));
+                    toTaskNodes(rootTasksByProject.getOrDefault(p.getId(), List.of()), remindersByTask);
             projectNodes.add(new GetScheduleTreeResponse.ProjectNode(p.getId(), p.getName(),
                     p.getStatus().name(), p.getStartDate(), p.getEndDate(), milestoneNodes, taskNodes));
         }
-        return new GetScheduleTreeResponse(projectNodes, toTaskNodes(standaloneTasks));
+        return new GetScheduleTreeResponse(projectNodes, toTaskNodes(standaloneTasks, remindersByTask));
+    }
+
+    /** SCHEDULE-AC-14 — 알림은 할 일 id 를 모아 한 번에 (네 번째 배치 조회). 할 일이 없으면 조회하지 않는다. */
+    private Map<Long, List<Integer>> remindersByTask(List<Tasks> tasks) {
+        Map<Long, List<Integer>> out = new HashMap<>();
+        if (tasks.isEmpty()) {
+            return out;
+        }
+        List<Long> ids = new ArrayList<>();
+        for (Tasks t : tasks) {
+            ids.add(t.getId());
+        }
+        for (TaskReminders r : reminderRepository.findAllForTasks(ids)) {
+            out.computeIfAbsent(r.getTaskId(), k -> new ArrayList<>()).add(r.getMinutesBefore());
+        }
+        return out;
     }
 
     private List<GetScheduleTreeResponse.MilestoneNode> buildMilestoneNodes(
             List<Milestones> milestones,
             Map<Long, List<Milestones>> childMilestonesByParent,
-            Map<Long, List<Tasks>> tasksByMilestone) {
+            Map<Long, List<Tasks>> tasksByMilestone,
+            Map<Long, List<Integer>> remindersByTask) {
         List<GetScheduleTreeResponse.MilestoneNode> nodes = new ArrayList<>();
         for (Milestones m : milestones) {
             List<GetScheduleTreeResponse.MilestoneNode> childNodes = buildMilestoneNodes(
                     childMilestonesByParent.getOrDefault(m.getId(), List.of()),
-                    childMilestonesByParent, tasksByMilestone);
+                    childMilestonesByParent, tasksByMilestone, remindersByTask);
             List<GetScheduleTreeResponse.TaskNode> taskNodes =
-                    toTaskNodes(tasksByMilestone.getOrDefault(m.getId(), List.of()));
+                    toTaskNodes(tasksByMilestone.getOrDefault(m.getId(), List.of()), remindersByTask);
             nodes.add(new GetScheduleTreeResponse.MilestoneNode(m.getId(), m.getName(),
                     m.getStatus().name(), m.getStartDate(), m.getEndDate(), childNodes, taskNodes));
         }
         return nodes;
     }
 
-    private List<GetScheduleTreeResponse.TaskNode> toTaskNodes(List<Tasks> tasks) {
+    private List<GetScheduleTreeResponse.TaskNode> toTaskNodes(List<Tasks> tasks,
+                                                                Map<Long, List<Integer>> remindersByTask) {
         List<GetScheduleTreeResponse.TaskNode> nodes = new ArrayList<>();
         for (Tasks t : tasks) {
             nodes.add(new GetScheduleTreeResponse.TaskNode(t.getId(), t.getMilestoneId(), t.getName(),
-                    t.getStatus().name(), t.getStartDate(), t.getEndDate(), t.getColor()));
+                    t.getStatus().name(), t.getStartDate(), t.getEndDate(), t.getStartTime(), t.getEndTime(),
+                    remindersByTask.getOrDefault(t.getId(), List.of()), t.getColor()));
         }
         return nodes;
     }
@@ -227,6 +313,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     public void deleteProject(String loginId, Long id) {
         Long memberId = memberResolver.requireMemberId(loginId);
         Projects p = ownedProject(memberId, id);
+        reminderRepository.deleteAllForProject(id);
         taskRepository.deleteAllForProject(id);
         milestoneRepository.deleteAllForProject(id);
         projectRepository.delete(p);
@@ -303,6 +390,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         ownedProject(memberId, target.getProjectId());
 
         List<Long> ids = milestoneRepository.findSelfAndDescendantIds(id);
+        reminderRepository.deleteAllForMilestones(ids);
         taskRepository.deleteAllForMilestones(ids);
         milestoneRepository.deleteAllByIds(ids);
     }
@@ -312,7 +400,8 @@ public class ScheduleServiceImpl implements ScheduleService {
     @Override
     public TaskResponse createTask(String loginId, PostTaskRequest r) {
         Long memberId = memberResolver.requireMemberId(loginId);
-        validateDates(r.startDate(), r.endDate());
+        validateTimes(r.startDate(), r.endDate(), r.startTime(), r.endTime());
+        List<Integer> reminders = validateReminders(r.reminders(), r.startDate(), r.startTime());
 
         // projectId 가 없으면 무소속 — 마일스톤 소속은 불가능하다 (SCHEDULE-AC-31)
         if (r.projectId() == null) {
@@ -321,8 +410,9 @@ public class ScheduleServiceImpl implements ScheduleService {
             }
             Tasks saved = taskRepository.save(
                     Tasks.create(memberId, null, null, r.name(), r.status(),
-                            r.startDate(), r.endDate(), ScheduleColors.randomColor()));
-            return TaskResponse.from(saved);
+                            r.startDate(), r.endDate(), r.startTime(), r.endTime(), ScheduleColors.randomColor()));
+            saveReminders(saved.getId(), reminders);
+            return TaskResponse.from(saved, reminders);
         }
 
         Projects project = ownedProject(memberId, r.projectId());
@@ -332,15 +422,17 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         Tasks saved = taskRepository.save(
                 Tasks.create(memberId, project.getId(), r.milestoneId(), r.name(), r.status(),
-                        r.startDate(), r.endDate(), ScheduleColors.randomColor()));
-        return TaskResponse.from(saved);
+                        r.startDate(), r.endDate(), r.startTime(), r.endTime(), ScheduleColors.randomColor()));
+        saveReminders(saved.getId(), reminders);
+        return TaskResponse.from(saved, reminders);
     }
 
     @Override
     public TaskResponse updateTask(String loginId, Long id, PutTaskRequest r) {
         Long memberId = memberResolver.requireMemberId(loginId);
         Tasks target = ownedTask(memberId, id);
-        validateDates(r.startDate(), r.endDate());
+        validateTimes(r.startDate(), r.endDate(), r.startTime(), r.endTime());
+        List<Integer> reminders = validateReminders(r.reminders(), r.startDate(), r.startTime());
 
         String color = r.color();
         if (color != null) {
@@ -359,14 +451,18 @@ public class ScheduleServiceImpl implements ScheduleService {
             requireMilestoneInProject(r.milestoneId(), target.getProjectId());
         }
 
-        target.update(r.milestoneId(), r.name(), r.status(), r.startDate(), r.endDate(), color);
-        return TaskResponse.from(target);
+        LocalDateTime previousStartAt = target.startAt();
+        target.update(r.milestoneId(), r.name(), r.status(), r.startDate(), r.endDate(),
+                r.startTime(), r.endTime(), color);
+        List<Integer> saved = replaceRemindersIfChanged(target, previousStartAt, reminders);
+        return TaskResponse.from(target, saved);
     }
 
     @Override
     public void deleteTask(String loginId, Long id) {
         Long memberId = memberResolver.requireMemberId(loginId);
         Tasks target = ownedTask(memberId, id);
+        reminderRepository.deleteAllForTask(id);
         taskRepository.delete(target);
     }
 

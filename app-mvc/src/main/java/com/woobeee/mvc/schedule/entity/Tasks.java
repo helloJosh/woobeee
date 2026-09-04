@@ -10,6 +10,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @Getter
 @Entity
@@ -41,6 +42,11 @@ public class Tasks {
 
     private LocalDate endDate;
 
+    /** 선택 입력 — 해당 날짜가 NULL 이면 시간도 NULL (SCHEDULE-AC-34). */
+    private LocalTime startTime;
+
+    private LocalTime endTime;
+
     @Column(nullable = false, length = 7)
     private String color;
 
@@ -56,7 +62,8 @@ public class Tasks {
 
     @Builder
     private Tasks(Long memberId, Long projectId, Long milestoneId, String name, ScheduleStatus status,
-                  LocalDate startDate, LocalDate endDate, String color, int sortOrder) {
+                  LocalDate startDate, LocalDate endDate, LocalTime startTime, LocalTime endTime,
+                  String color, int sortOrder) {
         this.memberId = memberId;
         this.projectId = projectId;
         this.milestoneId = milestoneId;
@@ -64,13 +71,22 @@ public class Tasks {
         this.status = status;
         this.startDate = startDate;
         this.endDate = endDate;
+        this.startTime = startTime;
+        this.endTime = endTime;
         this.color = color;
         this.sortOrder = sortOrder;
     }
 
+    /** 시간 없는 하루 단위 할 일. */
     public static Tasks create(Long memberId, Long projectId, Long milestoneId, String name,
                                ScheduleStatus status, LocalDate startDate, LocalDate endDate,
                                String color) {
+        return create(memberId, projectId, milestoneId, name, status, startDate, endDate, null, null, color);
+    }
+
+    public static Tasks create(Long memberId, Long projectId, Long milestoneId, String name,
+                               ScheduleStatus status, LocalDate startDate, LocalDate endDate,
+                               LocalTime startTime, LocalTime endTime, String color) {
         return Tasks.builder()
                 .memberId(memberId)
                 .projectId(projectId)
@@ -79,18 +95,28 @@ public class Tasks {
                 .status(status == null ? ScheduleStatus.NOT_STARTED : status)
                 .startDate(startDate)
                 .endDate(endDate)
+                .startTime(startDate == null ? null : startTime)
+                .endTime(endDate == null ? null : endTime)
                 .color(color)
                 .sortOrder(0)
                 .build();
     }
 
     public void update(Long milestoneId, String name, ScheduleStatus status,
-                       LocalDate startDate, LocalDate endDate, String color) {
+                       LocalDate startDate, LocalDate endDate, LocalTime startTime, LocalTime endTime,
+                       String color) {
         this.milestoneId = milestoneId;
         this.name = name;
         this.status = status;
         this.startDate = startDate;
         this.endDate = endDate;
+        this.startTime = startDate == null ? null : startTime;
+        this.endTime = endDate == null ? null : endTime;
         this.color = color;
+    }
+
+    /** 알림 발송 시각의 기준. 날짜나 시간이 없으면 null — 알림을 붙일 수 없다 (SCHEDULE-AC-35). */
+    public LocalDateTime startAt() {
+        return startDate == null || startTime == null ? null : LocalDateTime.of(startDate, startTime);
     }
 }

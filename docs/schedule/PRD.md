@@ -28,7 +28,7 @@
 | SCHEDULE-AC-11 | `endDate < startDate` | 400 + `schedule_invalidDateRange` |
 | SCHEDULE-AC-12 | 프로젝트 삭제 | 하위 마일스톤·할 일 전부 함께 삭제, 한 트랜잭션 |
 | SCHEDULE-AC-13 | 마일스톤 삭제 | 자기+자손 마일스톤과 거기 달린 할 일 전부 삭제 |
-| SCHEDULE-AC-14 | `GET /tree`의 저장소 접근 | 조회 3회(프로젝트/마일스톤/할 일), 루프 내 단건 조회 없음 |
+| SCHEDULE-AC-14 | `GET /tree`의 저장소 접근 | 배치 조회 4회(프로젝트/마일스톤/할 일/알림 — 할 일이 없으면 알림 조회 생략), 루프 내 단건 조회 없음 |
 | SCHEDULE-AC-15 | `ScheduleErrorCode` ↔ `error-messages.ts` | ko/en 모두 양방향 일치 (없는 코드도, 죽은 키도 실패) |
 | SCHEDULE-AC-16 | bean validation 실패(빈 name 등)·깨진 JSON | 400 + `schedule_badRequest` 봉투 |
 | SCHEDULE-AC-17 | `filterTree(tree, status)` | 자기 상태가 일치하는 노드와 그 조상 체인만 남고, 조상은 `dimmed` 표시 |
@@ -48,3 +48,7 @@
 | SCHEDULE-AC-31 | 무소속 할 일 | `POST /tasks`에 `projectId` 생략 시 어느 프로젝트에도 속하지 않는 할 일로 저장(`tasks.member_id`로 직접 소유 — V10). 마일스톤 소속 불가(`schedule_crossProject`). 트리 응답 최상위 `tasks`, 화면은 맨 아래 「바로 할 일」 섹션·달력 마지막 그룹. 자동 완료·다이제스트 동일 적용(다이제스트에선 프로젝트 접두 없이) |
 | SCHEDULE-AC-32 | 달력에서 생성 | 빈 날짜 칸 클릭=그 날짜 하루짜리, 드래그=범위(`orderedRange` — 역방향 허용, 앞뒤 달 칸도 실제 날짜)로 **무소속** 할 일 생성 다이얼로그. 막대 위에서는 생성이 시작되지 않는다(막대 드래그는 AC-33 이동, 움직임 없는 클릭은 수정) |
 | SCHEDULE-AC-33 | 달력 막대 드래그 | 프로젝트·마일스톤·할 일 막대 몸통을 끌면 기간 전체가 놓은 칸까지의 일수만큼 이동(`draggedRange` move — null 날짜는 null 유지). 양끝 손잡이를 끌면 그 끝만 이동(resize-start/resize-end)하고, 끝이 서로를 지나치면 하루짜리로 고정. 손잡이는 시작·종료일이 둘 다 있는 막대에만. 끄는 동안 새 위치에 미리 그려지고(`applyBarDrag`), 놓는 즉시 이름·상태 그대로 날짜만 저장, 실패 시 원위치. Esc 로 취소 |
+| SCHEDULE-AC-34 | 할 일 시간 입력 | `startTime`/`endTime`(`HH:mm`, 선택)을 `tasks.start_time`/`end_time`(TIME, V11)에 저장·응답. 해당 날짜가 없으면 시간은 null 로 정규화. 같은 날짜에 둘 다 있고 `endTime < startTime` 이면 400 + `schedule_invalidDateRange`. 날짜 컬럼과 달력·자동 완료·다이제스트 로직은 그대로. 트리 행·달력 막대 라벨에 시간이 있으면 표시(`formatTaskRange`) |
+| SCHEDULE-AC-35 | 시작 전 알림 저장 | `reminders: number[]` — 10·30 만(아니면 400 + `schedule_invalidReminder`), 비어 있지 않은데 `startDate` 나 `startTime` 이 없으면 400 + `schedule_reminderNeedsStartTime`. `task_reminders(task_id, minutes_before, sent_at)` 에 한 행씩. `PUT` 은 집합 교체 — 시작 일시와 집합이 모두 같으면 행을 건드리지 않고(보낸 기록 유지), 하나라도 다르면 삭제 후 재생성. 할 일·마일스톤·프로젝트 삭제 시 알림 행부터 지운다 |
+| SCHEDULE-AC-36 | 시작 전 알림 발송 | `TaskReminderNotifier` 가 매 분(Asia/Seoul 기준 `now`) 미발송·webhook 등록·발송 시각 도달·**아직 시작 전**인 알림을 한 쿼리로 가져와 Slack 으로 보내고 성공한 건만 `sent_at` 을 찍는다. 실패는 로그만, 다음 분 재시도, 시작 시각을 넘기면 조회에서 빠진다(놓친 알림은 뒤늦게 보내지 않음). 본문 `⏰ 30분 후 시작 (14:30) — [프로젝트] 이름`, 무소속은 접두 없이 |
+| SCHEDULE-AC-37 | 날짜만 고치는 경로의 보존 | 막대 팝오버·막대 드래그·배지 클릭은 `taskPutBody(task, patch)` 로 기존 시간·알림·소속·색을 실어 보낸다. 날짜를 비우면 그쪽 시간을 비우고, 시작 일시가 사라지면 알림도 비운다 |

@@ -752,6 +752,11 @@ export interface MilestoneBody extends ProjectBody {
 export interface TaskBody extends ProjectBody {
     projectId?: number
     milestoneId?: number | null
+    /** "HH:mm" — 선택 (SCHEDULE-AC-34). */
+    startTime?: string | null
+    endTime?: string | null
+    /** 시작 전 알림(분) — PUT 은 집합을 통째로 교체 (SCHEDULE-AC-35). */
+    reminders?: number[]
     color?: string
 }
 

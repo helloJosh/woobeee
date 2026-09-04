@@ -11,6 +11,7 @@ import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
+import com.woobeee.mvc.schedule.repository.TaskReminderRepository;
 import com.woobeee.mvc.schedule.repository.TaskRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -60,6 +61,9 @@ class WoobeeeMvcApplicationTests {
 
     @MockitoBean
     private TaskRepository taskRepository;
+
+    @MockitoBean
+    private TaskReminderRepository taskReminderRepository;
 
     @Test
     void contextLoads() {

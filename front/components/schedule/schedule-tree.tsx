@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { formatDateRange, STATUS_LABELS, type FilteredMilestone, type FilteredProject, type FilteredTree, type ScheduleStatus, type ScheduleTask } from "@/lib/schedule"
+import { formatDateRange, formatTaskRange, STATUS_LABELS, type FilteredMilestone, type FilteredProject, type FilteredTree, type ScheduleStatus, type ScheduleTask } from "@/lib/schedule"
 
 export interface TreeCallbacks {
     onCycleProject: (project: FilteredProject) => void
@@ -77,7 +77,7 @@ function TaskRow({ projectId, task, cb }: { projectId: number | null; task: Sche
             <StatusBadge status={task.status} onClick={() => cb.onCycleTask(projectId, task)} />
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: task.color }} />
             <span className={`flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}>{task.name}</span>
-            <span className="hidden text-xs text-muted-foreground sm:inline">{formatDateRange(task.startDate, task.endDate)}</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">{formatTaskRange(task.startDate, task.endDate, task.startTime, task.endTime)}</span>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>

@@ -279,7 +279,7 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 }}
                                 title={seg.name}
                             >
-                                <span className={`truncate ${seg.done ? "line-through opacity-60" : ""}`}>[{KIND_LABEL[seg.kind]}] {seg.name}{seg.openEnded && !seg.continuesRight ? " →" : ""}</span>
+                                <span className={`truncate ${seg.done ? "line-through opacity-60" : ""}`}>[{KIND_LABEL[seg.kind]}] {seg.startTime ? `${seg.startTime} ` : ""}{seg.name}{seg.openEnded && !seg.continuesRight ? " →" : ""}</span>
                                 {resizable(seg.kind, seg.id) && !seg.continuesLeft ? (
                                     <span data-bar-handle="start" aria-hidden className="absolute inset-y-0 left-0 w-1.5 cursor-col-resize" />
                                 ) : null}
