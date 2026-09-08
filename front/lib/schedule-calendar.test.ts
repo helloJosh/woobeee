@@ -86,6 +86,18 @@ describe("calendarLayout (2026-08)", () => {
         expect(byId.get(2)).toBe(false)
     })
 
+    // SCHEDULE-AC-38 — 보류·오류 막대는 상태로 구분해 그린다: 세그먼트가 상태를 그대로 실어 나른다
+    it("세그먼트는 항목의 상태를 그대로 가진다 (보류·오류 구분용)", () => {
+        const weeks = calendarLayout([
+            entry({ id: 1, status: "ON_HOLD", startDate: "2026-08-03", endDate: "2026-08-04" }),
+            entry({ id: 2, status: "ERROR", startDate: "2026-08-05", endDate: "2026-08-06" }),
+        ], 2026, 8)
+        const byId = new Map(weeks[1].segments.map((s) => [s.id, s.status]))
+        expect(byId.get(1)).toBe("ON_HOLD")
+        expect(byId.get(2)).toBe("ERROR")
+        expect(weeks[1].segments.every((s) => s.done === false)).toBe(true)
+    })
+
     it("시작 없이 종료만 있으면 종료일 하루짜리다", () => {
         const weeks = calendarLayout([entry({ id: 1, startDate: null, endDate: "2026-08-05" })], 2026, 8)
         expect(weeks[1].segments[0]).toMatchObject({ startCol: 3, span: 1 })

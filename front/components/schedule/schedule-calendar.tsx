@@ -263,6 +263,10 @@ export default function ScheduleCalendar({ entries, year, month, onMove, onEntry
                                 className={`absolute flex items-center truncate rounded px-1.5 text-[10px] ${
                                     seg.kind === "task" ? "text-white" : NEUTRAL_KIND_CLASS[seg.kind as Exclude<ScheduleItemKind, "task">]
                                 } ${barDrag ? "" : "cursor-grab"} ${
+                                    // SCHEDULE-AC-38 — 보류는 흐리게, 오류는 붉은 테두리
+                                    seg.status === "ON_HOLD" ? "opacity-50 outline-dashed outline-1 outline-foreground/40"
+                                        : seg.status === "ERROR" ? "ring-2 ring-red-500" : ""
+                                } ${
                                     (barDrag ?? committedDrag)?.kind === seg.kind && (barDrag ?? committedDrag)?.id === seg.id
                                         ? "opacity-70 ring-2 ring-primary" : ""
                                 }`}

@@ -20,6 +20,9 @@ import {
     isValidHexColor,
     isValidSlackWebhookUrl,
     nextStatus,
+    openIssueCount,
+    applyIssue,
+    STATUS_LABELS,
     todayIso,
     type ScheduleTree,
 } from "./schedule"
@@ -29,13 +32,13 @@ const tree: ScheduleTree = {
         {
             id: 1, name: "DM", status: "IN_PROGRESS", startDate: "2026-08-20", endDate: "2026-09-04",
             tasks: [
-                { id: 100, milestoneId: null, name: "직속 완료", status: "DONE", startDate: null, endDate: null, startTime: null, endTime: null, reminders: [], color: "#ef4444" },
+                { id: 100, milestoneId: null, name: "직속 완료", status: "DONE", startDate: null, endDate: null, startTime: null, endTime: null, reminders: [], issues: [{ id: 900, content: "빌드 깨짐", resolved: false }, { id: 901, content: "문서 누락", resolved: true }], color: "#ef4444" },
             ],
             milestones: [
                 {
                     id: 10, name: "POC", status: "IN_PROGRESS", startDate: null, endDate: null,
                     tasks: [
-                        { id: 101, milestoneId: 10, name: "진행중 일", status: "IN_PROGRESS", startDate: "2026-08-26", endDate: "2026-09-01", startTime: null, endTime: null, reminders: [], color: "#3b82f6" },
+                        { id: 101, milestoneId: 10, name: "진행중 일", status: "IN_PROGRESS", startDate: "2026-08-26", endDate: "2026-09-01", startTime: null, endTime: null, reminders: [], issues: [], color: "#3b82f6" },
                     ],
                     milestones: [
                         {
@@ -52,7 +55,7 @@ const tree: ScheduleTree = {
         },
     ],
     tasks: [
-        { id: 200, milestoneId: null, name: "무소속 진행중", status: "IN_PROGRESS", startDate: null, endDate: null, startTime: null, endTime: null, reminders: [], color: "#f97316" },
+        { id: 200, milestoneId: null, name: "무소속 진행중", status: "IN_PROGRESS", startDate: null, endDate: null, startTime: null, endTime: null, reminders: [], issues: [], color: "#f97316" },
     ],
 }
 
@@ -243,12 +246,68 @@ describe("applyStatus", () => {
     })
 })
 
-// SCHEDULE-AC-29
+// SCHEDULE-AC-29 + SCHEDULE-AC-38 — 보류·오류도 배지 순환에 들어간다
 describe("nextStatus", () => {
-    it("시작전 → 진행중 → 완료 → 시작전으로 순환한다", () => {
+    it("시작전 → 진행중 → 완료 → 보류 → 오류 → 시작전으로 순환한다", () => {
         expect(nextStatus("NOT_STARTED")).toBe("IN_PROGRESS")
         expect(nextStatus("IN_PROGRESS")).toBe("DONE")
-        expect(nextStatus("DONE")).toBe("NOT_STARTED")
+        expect(nextStatus("DONE")).toBe("ON_HOLD")
+        expect(nextStatus("ON_HOLD")).toBe("ERROR")
+        expect(nextStatus("ERROR")).toBe("NOT_STARTED")
+    })
+
+    it("다섯 상태 모두 라벨이 있다 (SCHEDULE-AC-38)", () => {
+        expect(STATUS_LABELS.ON_HOLD).toBe("보류")
+        expect(STATUS_LABELS.ERROR).toBe("오류")
+        expect(Object.keys(STATUS_LABELS)).toEqual(["NOT_STARTED", "IN_PROGRESS", "DONE", "ON_HOLD", "ERROR"])
+    })
+})
+
+// SCHEDULE-AC-17 + SCHEDULE-AC-38 — 새 상태도 필터가 그대로 가른다
+describe("filterTree with ON_HOLD", () => {
+    it("보류 필터는 보류 노드와 그 조상 체인만 남긴다", () => {
+        const held: ScheduleTree = applyStatus(tree, "task", 101, "ON_HOLD")
+        const out = filterTree(held, "ON_HOLD")
+        expect(out.projects.map((p) => p.id)).toEqual([1])
+        expect(out.projects[0].dimmed).toBe(true)
+        expect(out.projects[0].tasks).toEqual([])
+        expect(out.projects[0].milestones[0].tasks.map((t) => t.id)).toEqual([101])
+    })
+})
+
+// SCHEDULE-AC-42 — 이슈는 할 일에 딸려 다닌다: 미해결 수, 옵티미스틱 해결 토글
+describe("openIssueCount", () => {
+    it("미해결 이슈만 센다", () => {
+        expect(openIssueCount(tree.projects[0].tasks[0].issues)).toBe(1)
+        expect(openIssueCount([])).toBe(0)
+        expect(openIssueCount([{ id: 1, content: "x", resolved: true }])).toBe(0)
+    })
+})
+
+describe("applyIssue", () => {
+    it("해당 이슈의 해결 여부만 바꾼다", () => {
+        const next = applyIssue(tree, 900, true)
+        const issues = next.projects[0].tasks[0].issues
+        expect(issues.map((i) => i.resolved)).toEqual([true, true])
+        expect(issues[0].content).toBe("빌드 깨짐")
+        expect(next.projects[0].tasks[0].status).toBe("DONE")
+    })
+
+    it("없는 id 는 아무것도 바꾸지 않고, 원본은 변형되지 않는다", () => {
+        const before = JSON.stringify(tree)
+        const next = applyIssue(tree, 999, true)
+        expect(next).toEqual(tree)
+        applyIssue(tree, 900, true)
+        expect(JSON.stringify(tree)).toBe(before)
+    })
+})
+
+// SCHEDULE-AC-42 — 이슈는 달력에 나오지 않는다: 평탄화는 할 일 막대만 만들고 이슈를 싣지 않는다
+describe("collectCalendarEntries ignores issues", () => {
+    it("이슈가 달린 할 일도 막대 하나뿐이다", () => {
+        const entries = collectCalendarEntries(tree).filter((e) => e.kind === "task" && e.id === 100)
+        expect(entries).toHaveLength(1)
+        expect("issues" in entries[0]).toBe(false)
     })
 })
 
@@ -337,7 +396,7 @@ describe("taskPutBody", () => {
     const task: ScheduleTask = {
         id: 5, milestoneId: 3, name: "회의", status: "NOT_STARTED",
         startDate: "2026-09-04", endDate: "2026-09-04", startTime: "14:30", endTime: "15:00",
-        reminders: [30, 10], color: "#ef4444",
+        reminders: [30, 10], issues: [], color: "#ef4444",
     }
 
     it("날짜만 바꾸는 패치도 시간·알림·소속·색을 그대로 싣는다 (SCHEDULE-AC-37)", () => {

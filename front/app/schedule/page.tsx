@@ -15,9 +15,9 @@ import { useAuth } from "@/hooks/use-auth"
 import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
-    applyStatus, collectCalendarEntries, collectTasks, filterTree, findMilestone, nextStatus,
+    applyIssue, applyStatus, collectCalendarEntries, collectTasks, filterTree, findMilestone, nextStatus,
     STATUS_LABELS, taskPutBody, todayIso,
-    type FilteredMilestone, type FilteredProject, type ScheduleItemKind, type ScheduleStatus,
+    type FilteredMilestone, type FilteredProject, type ScheduleIssue, type ScheduleItemKind, type ScheduleStatus,
     type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
 
@@ -211,6 +211,29 @@ export default function SchedulePage() {
         await fetchTree()
     }
 
+    // SCHEDULE-AC-42 — 이슈: 해결 체크만 옵티미스틱(배지 클릭과 같은 규칙), 추가·수정·삭제는 저장 뒤 재조회
+    const addIssue = async (taskId: number, content: string) => {
+        await scheduleAPI.createIssue(taskId, content)
+        await fetchTree()
+    }
+    const toggleIssue = async (issue: ScheduleIssue, resolved: boolean) => {
+        setTree((prev) => (prev ? applyIssue(prev, issue.id, resolved) : prev))
+        try {
+            await scheduleAPI.updateIssue(issue.id, { content: issue.content, resolved })
+        } catch {
+            await fetchTree()
+        }
+    }
+    const editIssue = async (issue: ScheduleIssue, content: string) => {
+        await scheduleAPI.updateIssue(issue.id, { content, resolved: issue.resolved })
+        await fetchTree()
+    }
+    const removeIssue = async (issueId: number) => {
+        if (!window.confirm("이슈를 삭제할까요?")) return
+        await scheduleAPI.deleteIssue(issueId)
+        await fetchTree()
+    }
+
     const remove = async (kind: ItemKind, id: number) => {
         if (!window.confirm(kind === "project" ? "프로젝트와 하위 항목이 모두 삭제됩니다. 계속할까요?"
                 : kind === "milestone" ? "마일스톤과 하위 항목이 모두 삭제됩니다. 계속할까요?"
@@ -242,6 +265,8 @@ export default function SchedulePage() {
                     <TabsTrigger value="NOT_STARTED">{STATUS_LABELS.NOT_STARTED}</TabsTrigger>
                     <TabsTrigger value="IN_PROGRESS">{STATUS_LABELS.IN_PROGRESS}</TabsTrigger>
                     <TabsTrigger value="DONE">{STATUS_LABELS.DONE}</TabsTrigger>
+                    <TabsTrigger value="ON_HOLD">{STATUS_LABELS.ON_HOLD}</TabsTrigger>
+                    <TabsTrigger value="ERROR">{STATUS_LABELS.ERROR}</TabsTrigger>
                 </TabsList>
             </Tabs>
 
@@ -282,6 +307,10 @@ export default function SchedulePage() {
                         onDeleteProject: (id) => void remove("project", id),
                         onDeleteMilestone: (id) => void remove("milestone", id),
                         onDeleteTask: (id) => void remove("task", id),
+                        onAddIssue: addIssue,
+                        onToggleIssue: (issue, resolved) => void toggleIssue(issue, resolved),
+                        onEditIssue: editIssue,
+                        onDeleteIssue: (id) => void removeIssue(id),
                     }}
                 />
             ) : (

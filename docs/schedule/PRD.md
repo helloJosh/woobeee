@@ -3,8 +3,10 @@
 ## 개요
 
 로그인한 유저가 **자기 일정만** 관리한다. 구조는 프로젝트 > 마일스톤(재귀, 깊이 ≤ 5) > 할 일.
-할 일은 프로젝트 직속 또는 아무 깊이의 마일스톤 아래에 붙는다. 상태(시작전/진행중/완료)와
+할 일은 프로젝트 직속 또는 아무 깊이의 마일스톤 아래에 붙는다. 상태(시작전/진행중/완료/보류/오류)와
 날짜 범위(종료 미정 허용)는 세 층 모두 각자 가진다. 할 일은 고유색을 가지고 달력에 표시된다.
+할 일 밑에는 **이슈사항**(내용 + 해결 여부)을 달 수 있다 — 달력에는 나오지 않고 할 일 행 아래에
+접혀 있다가 「이슈 N」 배지로 펼친다.
 
 - 백엔드: app-mvc `com.woobeee.mvc.schedule`, 베이스 경로 `/api/back/schedule`
 - 프론트: `/schedule` — 트리 리스트(위) + 월 달력(아래), 상태 필터는 둘 다 적용
@@ -52,3 +54,8 @@
 | SCHEDULE-AC-35 | 시작 전 알림 저장 | `reminders: number[]` — 10·30 만(아니면 400 + `schedule_invalidReminder`), 비어 있지 않은데 `startDate` 나 `startTime` 이 없으면 400 + `schedule_reminderNeedsStartTime`. `task_reminders(task_id, minutes_before, sent_at)` 에 한 행씩. `PUT` 은 집합 교체 — 시작 일시와 집합이 모두 같으면 행을 건드리지 않고(보낸 기록 유지), 하나라도 다르면 삭제 후 재생성. 할 일·마일스톤·프로젝트 삭제 시 알림 행부터 지운다 |
 | SCHEDULE-AC-36 | 시작 전 알림 발송 | `TaskReminderNotifier` 가 매 분(Asia/Seoul 기준 `now`) 미발송·webhook 등록·발송 시각 도달·**아직 시작 전**인 알림을 한 쿼리로 가져와 Slack 으로 보내고 성공한 건만 `sent_at` 을 찍는다. 실패는 로그만, 다음 분 재시도, 시작 시각을 넘기면 조회에서 빠진다(놓친 알림은 뒤늦게 보내지 않음). 본문 `⏰ 30분 후 시작 (14:30) — [프로젝트] 이름`, 무소속은 접두 없이 |
 | SCHEDULE-AC-37 | 날짜만 고치는 경로의 보존 | 막대 팝오버·막대 드래그·배지 클릭은 `taskPutBody(task, patch)` 로 기존 시간·알림·소속·색을 실어 보낸다. 날짜를 비우면 그쪽 시간을 비우고, 시작 일시가 사라지면 알림도 비운다 |
+| SCHEDULE-AC-38 | 상태 보류·오류 | `ScheduleStatus` 에 `ON_HOLD`(보류)·`ERROR`(오류) — 세 층 공통, 세 테이블 CHECK 제약 5값(V12). 상태 필터 탭·수정 다이얼로그 선택지에 포함. 배지 클릭 순환(`nextStatus`)은 시작전→진행중→완료→보류→오류→시작전. 달력 막대는 보류는 흐리게(점선 외곽), 오류는 붉은 테두리 — 세그먼트가 `status` 를 실어 나른다 |
+| SCHEDULE-AC-39 | 보류·오류와 자동 완료 | 기한이 지나도 `ON_HOLD`·`ERROR` 는 자동 완료(AC-21)·다이제스트 기한 경과 목록(AC-26/28)에서 제외 — 네 쿼리 모두 `status NOT IN ('DONE','ON_HOLD','ERROR')`. 사용자가 세워 둔 상태를 기계가 덮지 않는다 |
+| SCHEDULE-AC-40 | 이슈 CRUD | `POST /tasks/{taskId}/issues`(content, ≤1000자, 빈 값은 `schedule_badRequest`) → 미해결로 생성. `PUT /issues/{issueId}`(content, resolved) 전체 교체. `DELETE /issues/{issueId}`. 소유권은 부모 할 일의 `member_id` — 남의 할 일(또는 그 이슈)은 404 `schedule_taskNotFound`, 없는 이슈는 404 `schedule_issueNotFound` |
+| SCHEDULE-AC-41 | 트리의 이슈 | `GET /tree` 의 각 `TaskNode.issues: [{id, taskId, content, resolved}]`(id 순). 배치 조회 5회(프로젝트/마일스톤/할 일/알림/이슈 — 할 일이 없으면 뒤 둘 생략), 루프 내 단건 조회 없음. 할 일·마일스톤·프로젝트 삭제 시 `task_issues` 를 알림보다 먼저(tasks 삭제 전에) 지운다 |
+| SCHEDULE-AC-42 | 이슈 화면 | 할 일 행 끝의 「이슈 N/M」 토글(미해결/전체 — 미해결 있으면 주황, 전부 해결이면 회색, 없으면 아이콘만)로 행 아래 패널을 펼친다. 체크=해결(`applyIssue` 옵티미스틱, 실패 시 재조회), 내용 클릭=수정, 삭제, 한 줄 입력=추가. 이슈는 달력·`collectCalendarEntries`·상태 필터에 관여하지 않는다 |

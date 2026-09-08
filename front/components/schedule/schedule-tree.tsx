@@ -1,15 +1,16 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, ChevronRight, ListTodo, Milestone, MoreHorizontal, Plus } from "lucide-react"
+import { ChevronDown, ChevronRight, ListTodo, MessageSquare, Milestone, MoreHorizontal, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { formatDateRange, formatTaskRange, STATUS_LABELS, type FilteredMilestone, type FilteredProject, type FilteredTree, type ScheduleStatus, type ScheduleTask } from "@/lib/schedule"
+import TaskIssues, { type IssueCallbacks } from "@/components/schedule/task-issues"
+import { formatDateRange, formatTaskRange, openIssueCount, STATUS_LABELS, type FilteredMilestone, type FilteredProject, type FilteredTree, type ScheduleStatus, type ScheduleTask } from "@/lib/schedule"
 
-export interface TreeCallbacks {
+export interface TreeCallbacks extends IssueCallbacks {
     onCycleProject: (project: FilteredProject) => void
     onCycleMilestone: (projectId: number, milestone: FilteredMilestone) => void
     onCycleTask: (projectId: number | null, task: ScheduleTask) => void
@@ -28,6 +29,8 @@ const STATUS_BADGE_CLASS: Record<ScheduleStatus, string> = {
     NOT_STARTED: "bg-muted text-muted-foreground",
     IN_PROGRESS: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
     DONE: "bg-green-500/15 text-green-600 dark:text-green-400",
+    ON_HOLD: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+    ERROR: "bg-red-500/15 text-red-600 dark:text-red-400",
 }
 
 function StatusBadge({ status, onClick }: { status: ScheduleStatus; onClick?: () => void }) {
@@ -37,7 +40,7 @@ function StatusBadge({ status, onClick }: { status: ScheduleStatus; onClick?: ()
         </Badge>
     )
     if (!onClick) return badge
-    // SCHEDULE-AC-29 — 클릭할 때마다 시작전→진행중→완료 순환
+    // SCHEDULE-AC-29/38 — 클릭할 때마다 시작전→진행중→완료→보류→오류 순환
     return (
         <button type="button" onClick={onClick} title="클릭하면 상태가 바뀝니다" aria-label="상태 변경">
             {badge}
@@ -70,23 +73,51 @@ function AddMenu({ onAddTask, onAddMilestone, milestoneLabel }: {
     )
 }
 
+/** SCHEDULE-AC-42 — 「이슈 N」 토글. 미해결이 있으면 주황, 전부 해결이면 회색, 하나도 없으면 아이콘만. */
+function IssueToggle({ issues, open, onToggle }: { issues: ScheduleTask["issues"]; open: boolean; onToggle: () => void }) {
+    const openCount = openIssueCount(issues)
+    if (issues.length === 0) {
+        return (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" aria-label="이슈사항"
+                    aria-expanded={open} title="이슈사항 추가" onClick={onToggle}>
+                <MessageSquare className="h-4 w-4" />
+            </Button>
+        )
+    }
+    return (
+        <button type="button" onClick={onToggle} aria-expanded={open} title={open ? "이슈 접기" : "이슈 펼치기"}>
+            <Badge variant="outline" className={`border-transparent ${
+                openCount > 0 ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground"
+            }`}>
+                <MessageSquare className="mr-1 h-3 w-3" />이슈 {openCount}/{issues.length}
+            </Badge>
+        </button>
+    )
+}
+
 function TaskRow({ projectId, task, cb }: { projectId: number | null; task: ScheduleTask; cb: TreeCallbacks }) {
     const done = task.status === "DONE"
+    const [issuesOpen, setIssuesOpen] = useState(false)
     return (
-        <li className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50">
-            <StatusBadge status={task.status} onClick={() => cb.onCycleTask(projectId, task)} />
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: task.color }} />
-            <span className={`flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}>{task.name}</span>
-            <span className="hidden text-xs text-muted-foreground sm:inline">{formatTaskRange(task.startDate, task.endDate, task.startTime, task.endTime)}</span>
-            <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => cb.onEditTask(projectId, task)}>수정</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive" onClick={() => cb.onDeleteTask(task.id)}>삭제</DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenu>
+        <li>
+            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50">
+                <StatusBadge status={task.status} onClick={() => cb.onCycleTask(projectId, task)} />
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: task.color }} />
+                <span className={`flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}>{task.name}</span>
+                <span className="hidden text-xs text-muted-foreground sm:inline">{formatTaskRange(task.startDate, task.endDate, task.startTime, task.endTime)}</span>
+                <IssueToggle issues={task.issues} open={issuesOpen} onToggle={() => setIssuesOpen(!issuesOpen)} />
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => cb.onEditTask(projectId, task)}>수정</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIssuesOpen(true)}>이슈 추가</DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive" onClick={() => cb.onDeleteTask(task.id)}>삭제</DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+            {issuesOpen ? <TaskIssues taskId={task.id} issues={task.issues} cb={cb} /> : null}
         </li>
     )
 }

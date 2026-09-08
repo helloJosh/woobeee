@@ -5,11 +5,13 @@ import com.woobeee.mvc.schedule.api.request.*;
 import com.woobeee.mvc.schedule.api.response.*;
 import com.woobeee.mvc.schedule.entity.Milestones;
 import com.woobeee.mvc.schedule.entity.Projects;
+import com.woobeee.mvc.schedule.entity.TaskIssues;
 import com.woobeee.mvc.schedule.entity.TaskReminders;
 import com.woobeee.mvc.schedule.entity.Tasks;
 import com.woobeee.mvc.schedule.exception.ScheduleErrorCode;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
+import com.woobeee.mvc.schedule.repository.TaskIssueRepository;
 import com.woobeee.mvc.schedule.repository.TaskReminderRepository;
 import com.woobeee.mvc.schedule.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +42,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     private final MilestoneRepository milestoneRepository;
     private final TaskRepository taskRepository;
     private final TaskReminderRepository reminderRepository;
+    private final TaskIssueRepository issueRepository;
     private final ScheduleMemberResolver memberResolver;
 
     /* ===== 공통 검증 ===== */
@@ -188,9 +191,11 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         List<Projects> projects = projectRepository.findAllForMember(memberId);
         List<Tasks> allTasks = taskRepository.findAllForMember(memberId);
-        Map<Long, List<Integer>> remindersByTask = remindersByTask(allTasks);
+        List<Long> taskIds = idsOf(allTasks);
+        Map<Long, List<Integer>> remindersByTask = remindersByTask(taskIds);
+        Map<Long, List<IssueResponse>> issuesByTask = issuesByTask(taskIds);
         if (projects.isEmpty()) {
-            return new GetScheduleTreeResponse(List.of(), toTaskNodes(allTasks, remindersByTask));
+            return new GetScheduleTreeResponse(List.of(), toTaskNodes(allTasks, remindersByTask, issuesByTask));
         }
 
         List<Long> projectIds = new ArrayList<>();
@@ -235,27 +240,43 @@ public class ScheduleServiceImpl implements ScheduleService {
         for (Projects p : projects) {
             List<GetScheduleTreeResponse.MilestoneNode> milestoneNodes = buildMilestoneNodes(
                     rootMilestonesByProject.getOrDefault(p.getId(), List.of()),
-                    childMilestonesByParent, tasksByMilestone, remindersByTask);
+                    childMilestonesByParent, tasksByMilestone, remindersByTask, issuesByTask);
             List<GetScheduleTreeResponse.TaskNode> taskNodes =
-                    toTaskNodes(rootTasksByProject.getOrDefault(p.getId(), List.of()), remindersByTask);
+                    toTaskNodes(rootTasksByProject.getOrDefault(p.getId(), List.of()), remindersByTask, issuesByTask);
             projectNodes.add(new GetScheduleTreeResponse.ProjectNode(p.getId(), p.getName(),
                     p.getStatus().name(), p.getStartDate(), p.getEndDate(), milestoneNodes, taskNodes));
         }
-        return new GetScheduleTreeResponse(projectNodes, toTaskNodes(standaloneTasks, remindersByTask));
+        return new GetScheduleTreeResponse(projectNodes, toTaskNodes(standaloneTasks, remindersByTask, issuesByTask));
     }
 
-    /** SCHEDULE-AC-14 — 알림은 할 일 id 를 모아 한 번에 (네 번째 배치 조회). 할 일이 없으면 조회하지 않는다. */
-    private Map<Long, List<Integer>> remindersByTask(List<Tasks> tasks) {
-        Map<Long, List<Integer>> out = new HashMap<>();
-        if (tasks.isEmpty()) {
-            return out;
-        }
+    private static List<Long> idsOf(List<Tasks> tasks) {
         List<Long> ids = new ArrayList<>();
         for (Tasks t : tasks) {
             ids.add(t.getId());
         }
-        for (TaskReminders r : reminderRepository.findAllForTasks(ids)) {
+        return ids;
+    }
+
+    /** SCHEDULE-AC-14 — 알림은 할 일 id 를 모아 한 번에 (네 번째 배치 조회). 할 일이 없으면 조회하지 않는다. */
+    private Map<Long, List<Integer>> remindersByTask(List<Long> taskIds) {
+        Map<Long, List<Integer>> out = new HashMap<>();
+        if (taskIds.isEmpty()) {
+            return out;
+        }
+        for (TaskReminders r : reminderRepository.findAllForTasks(taskIds)) {
             out.computeIfAbsent(r.getTaskId(), k -> new ArrayList<>()).add(r.getMinutesBefore());
+        }
+        return out;
+    }
+
+    /** SCHEDULE-AC-41 — 이슈도 같은 id 묶음으로 한 번에 (다섯 번째 배치 조회). 할 일이 없으면 조회하지 않는다. */
+    private Map<Long, List<IssueResponse>> issuesByTask(List<Long> taskIds) {
+        Map<Long, List<IssueResponse>> out = new HashMap<>();
+        if (taskIds.isEmpty()) {
+            return out;
+        }
+        for (TaskIssues i : issueRepository.findAllForTasks(taskIds)) {
+            out.computeIfAbsent(i.getTaskId(), k -> new ArrayList<>()).add(IssueResponse.from(i));
         }
         return out;
     }
@@ -264,14 +285,15 @@ public class ScheduleServiceImpl implements ScheduleService {
             List<Milestones> milestones,
             Map<Long, List<Milestones>> childMilestonesByParent,
             Map<Long, List<Tasks>> tasksByMilestone,
-            Map<Long, List<Integer>> remindersByTask) {
+            Map<Long, List<Integer>> remindersByTask,
+            Map<Long, List<IssueResponse>> issuesByTask) {
         List<GetScheduleTreeResponse.MilestoneNode> nodes = new ArrayList<>();
         for (Milestones m : milestones) {
             List<GetScheduleTreeResponse.MilestoneNode> childNodes = buildMilestoneNodes(
                     childMilestonesByParent.getOrDefault(m.getId(), List.of()),
-                    childMilestonesByParent, tasksByMilestone, remindersByTask);
+                    childMilestonesByParent, tasksByMilestone, remindersByTask, issuesByTask);
             List<GetScheduleTreeResponse.TaskNode> taskNodes =
-                    toTaskNodes(tasksByMilestone.getOrDefault(m.getId(), List.of()), remindersByTask);
+                    toTaskNodes(tasksByMilestone.getOrDefault(m.getId(), List.of()), remindersByTask, issuesByTask);
             nodes.add(new GetScheduleTreeResponse.MilestoneNode(m.getId(), m.getName(),
                     m.getStatus().name(), m.getStartDate(), m.getEndDate(), childNodes, taskNodes));
         }
@@ -279,12 +301,14 @@ public class ScheduleServiceImpl implements ScheduleService {
     }
 
     private List<GetScheduleTreeResponse.TaskNode> toTaskNodes(List<Tasks> tasks,
-                                                                Map<Long, List<Integer>> remindersByTask) {
+                                                                Map<Long, List<Integer>> remindersByTask,
+                                                                Map<Long, List<IssueResponse>> issuesByTask) {
         List<GetScheduleTreeResponse.TaskNode> nodes = new ArrayList<>();
         for (Tasks t : tasks) {
             nodes.add(new GetScheduleTreeResponse.TaskNode(t.getId(), t.getMilestoneId(), t.getName(),
                     t.getStatus().name(), t.getStartDate(), t.getEndDate(), t.getStartTime(), t.getEndTime(),
-                    remindersByTask.getOrDefault(t.getId(), List.of()), t.getColor()));
+                    remindersByTask.getOrDefault(t.getId(), List.of()), t.getColor(),
+                    issuesByTask.getOrDefault(t.getId(), List.of())));
         }
         return nodes;
     }
@@ -313,6 +337,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     public void deleteProject(String loginId, Long id) {
         Long memberId = memberResolver.requireMemberId(loginId);
         Projects p = ownedProject(memberId, id);
+        issueRepository.deleteAllForProject(id);
         reminderRepository.deleteAllForProject(id);
         taskRepository.deleteAllForProject(id);
         milestoneRepository.deleteAllForProject(id);
@@ -390,6 +415,7 @@ public class ScheduleServiceImpl implements ScheduleService {
         ownedProject(memberId, target.getProjectId());
 
         List<Long> ids = milestoneRepository.findSelfAndDescendantIds(id);
+        issueRepository.deleteAllForMilestones(ids);
         reminderRepository.deleteAllForMilestones(ids);
         taskRepository.deleteAllForMilestones(ids);
         milestoneRepository.deleteAllByIds(ids);
@@ -462,6 +488,7 @@ public class ScheduleServiceImpl implements ScheduleService {
     public void deleteTask(String loginId, Long id) {
         Long memberId = memberResolver.requireMemberId(loginId);
         Tasks target = ownedTask(memberId, id);
+        issueRepository.deleteAllForTask(id);
         reminderRepository.deleteAllForTask(id);
         taskRepository.delete(target);
     }
@@ -471,6 +498,38 @@ public class ScheduleServiceImpl implements ScheduleService {
         return taskRepository.findById(taskId)
                 .filter(t -> t.getMemberId().equals(memberId))
                 .orElseThrow(ScheduleErrorCode.TASK_NOT_FOUND::asException);
+    }
+
+    /* ===== 이슈사항 (SCHEDULE-AC-40) ===== */
+
+    @Override
+    public IssueResponse createIssue(String loginId, Long taskId, PostIssueRequest r) {
+        Long memberId = memberResolver.requireMemberId(loginId);
+        Tasks task = ownedTask(memberId, taskId);
+        TaskIssues saved = issueRepository.save(TaskIssues.create(task.getId(), r.content()));
+        return IssueResponse.from(saved);
+    }
+
+    @Override
+    public IssueResponse updateIssue(String loginId, Long issueId, PutIssueRequest r) {
+        Long memberId = memberResolver.requireMemberId(loginId);
+        TaskIssues target = ownedIssue(memberId, issueId);
+        target.update(r.content(), r.resolved());
+        return IssueResponse.from(target);
+    }
+
+    @Override
+    public void deleteIssue(String loginId, Long issueId) {
+        Long memberId = memberResolver.requireMemberId(loginId);
+        issueRepository.delete(ownedIssue(memberId, issueId));
+    }
+
+    /** 이슈의 소유권은 부모 할 일로 판별한다 — 남의 할 일의 이슈는 할 일 404 와 같은 얼굴을 한다. */
+    private TaskIssues ownedIssue(Long memberId, Long issueId) {
+        TaskIssues issue = issueRepository.findById(issueId)
+                .orElseThrow(ScheduleErrorCode.ISSUE_NOT_FOUND::asException);
+        ownedTask(memberId, issue.getTaskId());
+        return issue;
     }
 
     /* ===== 알림 설정 ===== */

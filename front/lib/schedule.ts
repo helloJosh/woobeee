@@ -1,8 +1,16 @@
 // front/lib/schedule.ts — 일정 탭의 React-free 판단 로직.
 // 컴포넌트에는 판단을 두지 않는다 (vitest 가 node 환경이라 컴포넌트는 검증 밖이다).
 
-export type ScheduleStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE"
+/** 서버 ScheduleStatus 와 같아야 한다. 보류·오류는 자동 완료가 건드리지 않는다 (SCHEDULE-AC-38/39). */
+export type ScheduleStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE" | "ON_HOLD" | "ERROR"
 export type StatusFilter = ScheduleStatus | "ALL"
+
+/** 할 일 밑 이슈사항 한 건 — 달력에는 나오지 않는다 (SCHEDULE-AC-40~42). */
+export interface ScheduleIssue {
+    id: number
+    content: string
+    resolved: boolean
+}
 
 export interface ScheduleTask {
     id: number
@@ -16,6 +24,8 @@ export interface ScheduleTask {
     endTime: string | null
     /** 시작 전 알림(분) — 10·30 (SCHEDULE-AC-35). */
     reminders: number[]
+    /** 할 일 밑 이슈사항 — 트리 응답에 실려 온다 (SCHEDULE-AC-41). */
+    issues: ScheduleIssue[]
     color: string
 }
 
@@ -60,6 +70,8 @@ export const STATUS_LABELS: Record<ScheduleStatus, string> = {
     NOT_STARTED: "시작전",
     IN_PROGRESS: "진행중",
     DONE: "완료",
+    ON_HOLD: "보류",
+    ERROR: "오류",
 }
 
 export function isValidHexColor(value: string): boolean {
@@ -172,11 +184,37 @@ export function applyStatus(
     }
 }
 
-/** SCHEDULE-AC-29 — 배지 클릭 순환: 시작전 → 진행중 → 완료 → 시작전. */
+/** SCHEDULE-AC-29/38 — 배지 클릭 순환: 시작전 → 진행중 → 완료 → 보류 → 오류 → 시작전. */
 export function nextStatus(status: ScheduleStatus): ScheduleStatus {
-    if (status === "NOT_STARTED") return "IN_PROGRESS"
-    if (status === "IN_PROGRESS") return "DONE"
-    return "NOT_STARTED"
+    const order: ScheduleStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE", "ON_HOLD", "ERROR"]
+    return order[(order.indexOf(status) + 1) % order.length]
+}
+
+// ── SCHEDULE-AC-40 ~ 42 — 이슈사항 ─────────────────────────────────────────────
+
+/** 할 일 행의 「이슈 N」 배지 — 미해결만 센다. */
+export function openIssueCount(issues: ScheduleIssue[]): number {
+    return issues.filter((i) => !i.resolved).length
+}
+
+/**
+ * SCHEDULE-AC-42 — 해결 체크의 옵티미스틱 반영: 해당 이슈의 resolved 만 바꾼 새 트리.
+ * 원본은 변형하지 않는다. 저장 실패 시 호출부가 재조회로 원복한다.
+ */
+export function applyIssue(tree: ScheduleTree, issueId: number, resolved: boolean): ScheduleTree {
+    const mapTask = (t: ScheduleTask): ScheduleTask =>
+        t.issues.some((i) => i.id === issueId)
+            ? { ...t, issues: t.issues.map((i) => (i.id === issueId ? { ...i, resolved } : i)) }
+            : t
+    const mapMilestone = (m: ScheduleMilestone): ScheduleMilestone => ({
+        ...m, tasks: m.tasks.map(mapTask), milestones: m.milestones.map(mapMilestone),
+    })
+    return {
+        projects: tree.projects.map((p) => ({
+            ...p, tasks: p.tasks.map(mapTask), milestones: p.milestones.map(mapMilestone),
+        })),
+        tasks: tree.tasks.map(mapTask),
+    }
 }
 
 /** SCHEDULE-AC-24 — Slack Incoming Webhook 만 허용한다 (서버와 같은 규칙). */

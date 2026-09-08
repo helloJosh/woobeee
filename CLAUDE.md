@@ -133,7 +133,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | --- | --- | --- | --- |
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용 |
-| app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일 — 전부 로그인 필수, 본인 것만 |
+| app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
 | app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
 ## 안전 수칙
@@ -187,8 +187,8 @@ G3 — 게임이 끝나도 방이 `FINISHED` 로 가지 않음 — 도 있었으
 고정해 뒀다 — 메모가 아니라 실행 가능한 할 일이다. **테스트는 다섯 개다**: G2 만 결과가 게임
 종류에 따라 다르므로 둘로 나뉜다(오목은 정적 누수, 장애물피하기는 이미 사라진 방의 결과 행을
 쓰는 능동적 오염). 다섯 테스트 모두 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test`
-에서는 제외된다(그래서 위 기본 검증 명령은 계속 445개 그린을 유지한다 — core 6 / app-mvc 138 /
-app-webflux 301. 포함해서 돌리면 450개 중 445개 통과, 5개 실패다). 루트 `pom.xml` 의
+에서는 제외된다(그래서 위 기본 검증 명령은 계속 457개 그린을 유지한다 — core 6 / app-mvc 150 /
+app-webflux 301. 포함해서 돌리면 462개 중 457개 통과, 5개 실패다). 루트 `pom.xml` 의
 `known.gap.excludedGroups` 프로퍼티(기본값 `known-gap`)가 surefire의 `excludedGroups` 를
 구동한다.
 

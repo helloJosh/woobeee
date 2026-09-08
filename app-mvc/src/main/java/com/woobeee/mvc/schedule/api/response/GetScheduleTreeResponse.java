@@ -21,6 +21,8 @@ public record GetScheduleTreeResponse(List<ProjectNode> projects, List<TaskNode>
     public record TaskNode(
             Long id, Long milestoneId, String name, String status,
             LocalDate startDate, LocalDate endDate, LocalTime startTime, LocalTime endTime,
-            List<Integer> reminders, String color
+            List<Integer> reminders, String color,
+            /** 할 일 밑 이슈사항 — 달력에는 나오지 않는다 (SCHEDULE-AC-41). */
+            List<IssueResponse> issues
     ) {}
 }

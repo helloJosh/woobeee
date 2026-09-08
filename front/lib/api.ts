@@ -24,7 +24,7 @@ import {
     RoomSummary,
     TokenResponse
 } from "./types"
-import type { ScheduleStatus, ScheduleTree } from "@/lib/schedule"
+import type { ScheduleIssue, ScheduleStatus, ScheduleTree } from "@/lib/schedule"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
 import {describeHttpFailure} from "@/lib/errors/http-failure";
 
@@ -797,6 +797,14 @@ export const scheduleAPI = {
         scheduleRequest(`/api/back/schedule/tasks/${taskId}`, "PUT", body),
     deleteTask: (taskId: number) =>
         scheduleRequest(`/api/back/schedule/tasks/${taskId}`, "DELETE"),
+
+    // SCHEDULE-AC-40 — 할 일 밑 이슈사항
+    createIssue: (taskId: number, content: string): Promise<ScheduleIssue> =>
+        scheduleRequest(`/api/back/schedule/tasks/${taskId}/issues`, "POST", { content }),
+    updateIssue: (issueId: number, body: { content: string; resolved: boolean }): Promise<ScheduleIssue> =>
+        scheduleRequest(`/api/back/schedule/issues/${issueId}`, "PUT", body),
+    deleteIssue: (issueId: number) =>
+        scheduleRequest(`/api/back/schedule/issues/${issueId}`, "DELETE"),
 
     getNotification: (): Promise<{ webhookUrl: string | null }> =>
         scheduleRequest("/api/back/schedule/notification", "GET"),

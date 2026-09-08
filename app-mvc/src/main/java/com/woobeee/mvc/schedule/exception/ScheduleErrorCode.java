@@ -15,6 +15,7 @@ public enum ScheduleErrorCode {
     PROJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "schedule_projectNotFound", "Project not found or not yours"),
     MILESTONE_NOT_FOUND(HttpStatus.NOT_FOUND, "schedule_milestoneNotFound", "Milestone not found"),
     TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "schedule_taskNotFound", "Task not found"),
+    ISSUE_NOT_FOUND(HttpStatus.NOT_FOUND, "schedule_issueNotFound", "Issue not found"),
 
     CROSS_PROJECT(HttpStatus.BAD_REQUEST, "schedule_crossProject", "Referenced node belongs to another project"),
     DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "schedule_depthExceeded", "Milestone depth may not exceed 5"),

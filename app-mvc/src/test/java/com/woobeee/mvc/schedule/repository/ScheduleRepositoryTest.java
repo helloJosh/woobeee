@@ -3,6 +3,7 @@ package com.woobeee.mvc.schedule.repository;
 import com.woobeee.mvc.schedule.entity.Milestones;
 import com.woobeee.mvc.schedule.entity.Projects;
 import com.woobeee.mvc.schedule.entity.ScheduleStatus;
+import com.woobeee.mvc.schedule.entity.TaskIssues;
 import com.woobeee.mvc.schedule.entity.TaskReminders;
 import com.woobeee.mvc.schedule.entity.Tasks;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ class ScheduleRepositoryTest {
     @Autowired MilestoneRepository milestoneRepository;
     @Autowired TaskRepository taskRepository;
     @Autowired TaskReminderRepository reminderRepository;
+    @Autowired TaskIssueRepository issueRepository;
     @Autowired JdbcTemplate jdbcTemplate;
 
     /** 마감 전 마지막 수정처럼 보이게 updated_at 을 종료일 하루 전으로 되돌린다. */
@@ -311,5 +313,77 @@ class ScheduleRepositoryTest {
 
         reminderRepository.deleteAllForProject(p.getId());
         assertThat(reminderRepository.findAllForTasks(List.of(inMilestone.getId(), direct.getId()))).isEmpty();
+    }
+    /* ===== SCHEDULE-AC-38/39 — 보류·오류 상태 ===== */
+
+    /**
+     * SCHEDULE-AC-38/39 — 보류·오류는 세 테이블의 CHECK 제약을 통과하고, 기한이 지나도
+     * 자동 완료와 다이제스트의 기한 경과 목록에서 빠진다 — 사용자가 일부러 세워 둔 상태를 기계가 덮지 않는다.
+     */
+    @Test
+    void onHoldAndErrorItemsSurviveTheOverdueSweepInAllThreeLayers() {
+        LocalDate yesterday = LocalDate.now().minusDays(1);
+        Projects onHoldProject = projectRepository.saveAndFlush(Projects.create(
+                701L, "hold", ScheduleStatus.ON_HOLD, null, yesterday));
+        Milestones errorMilestone = milestoneRepository.saveAndFlush(Milestones.create(
+                onHoldProject.getId(), null, "m", ScheduleStatus.ERROR, null, yesterday));
+        Tasks onHoldTask = taskRepository.saveAndFlush(newTask(onHoldProject, null, "hold", ScheduleStatus.ON_HOLD, null, yesterday));
+        Tasks errorTask = taskRepository.saveAndFlush(newTask(onHoldProject, null, "error", ScheduleStatus.ERROR, null, yesterday));
+        Tasks plainOverdue = taskRepository.saveAndFlush(newTask(onHoldProject, null, "plain", ScheduleStatus.IN_PROGRESS, null, yesterday));
+        ageToBeforeDeadline("projects", onHoldProject.getId());
+        ageToBeforeDeadline("milestones", errorMilestone.getId());
+        ageToBeforeDeadline("tasks", onHoldTask.getId());
+        ageToBeforeDeadline("tasks", errorTask.getId());
+        ageToBeforeDeadline("tasks", plainOverdue.getId());
+
+        // 다이제스트 기한 경과 목록도 같은 규칙 — 보류·오류는 담지 않는다
+        assertThat(taskRepository.findOverdueForMember(701L))
+                .extracting(Tasks::getId).containsExactly(plainOverdue.getId());
+
+        projectRepository.completeOverdueForMember(701L);
+        milestoneRepository.completeOverdueForMember(701L);
+        taskRepository.completeOverdueForMember(701L);
+
+        assertThat(projectRepository.findById(onHoldProject.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.ON_HOLD);
+        assertThat(milestoneRepository.findById(errorMilestone.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.ERROR);
+        assertThat(taskRepository.findById(onHoldTask.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.ON_HOLD);
+        assertThat(taskRepository.findById(errorTask.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.ERROR);
+        assertThat(taskRepository.findById(plainOverdue.getId()).orElseThrow().getStatus())
+                .isEqualTo(ScheduleStatus.DONE);
+    }
+    /* ===== SCHEDULE-AC-40/41 — 이슈 ===== */
+
+    /** SCHEDULE-AC-41 — 이슈 배치 조회는 할 일 순서·이슈 id 순서로 나오고, 캐스케이드 세 종류가 알림과 같은 규칙으로 지운다. */
+    @Test
+    void issueBatchReadAndCascadesFollowTheTaskCascades() {
+        Projects p = project(1L);
+        Milestones m = milestoneRepository.save(Milestones.create(p.getId(), null, "m", null, null, null));
+        Tasks inMilestone = taskRepository.save(newTask(p, m.getId(), "a", null, null, null));
+        Tasks direct = taskRepository.save(newTask(p, null, "b", null, null, null));
+        Tasks standalone = taskRepository.save(Tasks.create(1L, null, null, "c", null, null, null, "#ef4444"));
+        TaskIssues first = issueRepository.save(TaskIssues.create(direct.getId(), "첫째"));
+        TaskIssues second = issueRepository.save(TaskIssues.create(direct.getId(), "둘째"));
+        issueRepository.save(TaskIssues.create(inMilestone.getId(), "마일스톤 밑"));
+        issueRepository.save(TaskIssues.create(standalone.getId(), "무소속"));
+        List<Long> all = List.of(inMilestone.getId(), direct.getId(), standalone.getId());
+
+        assertThat(issueRepository.findAllForTasks(List.of(direct.getId())))
+                .extracting(TaskIssues::getId).containsExactly(first.getId(), second.getId());
+        assertThat(issueRepository.findById(first.getId()).orElseThrow().isResolved()).isFalse();
+
+        issueRepository.deleteAllForMilestones(List.of(m.getId()));
+        assertThat(issueRepository.findAllForTasks(all))
+                .extracting(TaskIssues::getTaskId).containsExactlyInAnyOrder(direct.getId(), direct.getId(), standalone.getId());
+
+        issueRepository.deleteAllForProject(p.getId());
+        assertThat(issueRepository.findAllForTasks(all))
+                .extracting(TaskIssues::getTaskId).containsExactly(standalone.getId());
+
+        issueRepository.deleteAllForTask(standalone.getId());
+        assertThat(issueRepository.findAllForTasks(all)).isEmpty();
     }
 }

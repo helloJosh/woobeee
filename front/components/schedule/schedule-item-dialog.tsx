@@ -42,7 +42,8 @@ interface Props {
     onClose: () => void
 }
 
-const STATUSES: ScheduleStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"]
+// 다섯 상태 전부 — 보류·오류는 여기와 배지 순환에서 지정한다 (SCHEDULE-AC-38)
+const STATUSES: ScheduleStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE", "ON_HOLD", "ERROR"]
 
 export default function ScheduleItemDialog({ open, kind, title, context, initial, showColor, slackConfigured, onSubmit, onClose }: Props) {
     const [draft, setDraft] = useState<ItemDraft>(initial)

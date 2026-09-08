@@ -1,6 +1,6 @@
 // front/lib/schedule-calendar.ts — 월 달력에 일정 막대를 배치하는 순수 계산.
 // 날짜는 전부 "YYYY-MM-DD" 문자열을 로컬 자정 기준으로 다룬다 (UTC 파싱 함정 회피).
-import type { CalendarEntry, ScheduleItemKind } from "./schedule"
+import type { CalendarEntry, ScheduleItemKind, ScheduleStatus } from "./schedule"
 
 export interface CalendarSegment {
     kind: ScheduleItemKind
@@ -24,6 +24,8 @@ export interface CalendarSegment {
     openEnded: boolean
     /** 완료 항목 — 트리처럼 취소선으로 그린다. */
     done: boolean
+    /** 항목의 상태 그대로 — 보류는 흐리게, 오류는 붉은 테두리로 구분한다 (SCHEDULE-AC-38). */
+    status: ScheduleStatus
 }
 
 export interface CalendarDay {
@@ -168,6 +170,7 @@ export function calendarLayout(
                     continuesRight: end > segEndDate,
                     openEnded,
                     done: entry.status === "DONE",
+                    status: entry.status,
                 })
             }
             for (let l = 0; l < laneEnds.length; l++) {

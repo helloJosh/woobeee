@@ -11,6 +11,7 @@ import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
+import com.woobeee.mvc.schedule.repository.TaskIssueRepository;
 import com.woobeee.mvc.schedule.repository.TaskReminderRepository;
 import com.woobeee.mvc.schedule.repository.TaskRepository;
 import org.junit.jupiter.api.Test;
@@ -64,6 +65,9 @@ class WoobeeeMvcApplicationTests {
 
     @MockitoBean
     private TaskReminderRepository taskReminderRepository;
+
+    @MockitoBean
+    private TaskIssueRepository taskIssueRepository;
 
     @Test
     void contextLoads() {

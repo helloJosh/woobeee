@@ -106,6 +106,34 @@ public class ScheduleController {
         return ApiResponse.success("Task deleted");
     }
 
+    @PostMapping("/tasks/{taskId}/issues")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "이슈 생성", description = "할 일 밑에 이슈사항을 추가합니다. 새 이슈는 미해결 상태입니다.")
+    public ApiResponse<IssueResponse> createIssue(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long taskId,
+            @Valid @RequestBody PostIssueRequest request) {
+        return ApiResponse.createSuccess(scheduleService.createIssue(loginId, taskId, request), "Issue created");
+    }
+
+    @PutMapping("/issues/{issueId}")
+    @Operation(summary = "이슈 수정", description = "내용과 해결 여부를 함께 교체합니다.")
+    public ApiResponse<IssueResponse> updateIssue(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long issueId,
+            @Valid @RequestBody PutIssueRequest request) {
+        return ApiResponse.success(scheduleService.updateIssue(loginId, issueId, request), "Issue updated");
+    }
+
+    @DeleteMapping("/issues/{issueId}")
+    @Operation(summary = "이슈 삭제")
+    public ApiResponse<Void> deleteIssue(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long issueId) {
+        scheduleService.deleteIssue(loginId, issueId);
+        return ApiResponse.success("Issue deleted");
+    }
+
     @GetMapping("/notification")
     @Operation(summary = "알림 설정 조회", description = "내 Slack webhook URL을 조회합니다. null이면 미사용.")
     public ApiResponse<NotificationResponse> getNotification(

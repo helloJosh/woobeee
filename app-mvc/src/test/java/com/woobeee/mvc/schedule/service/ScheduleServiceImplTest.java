@@ -3,21 +3,26 @@ package com.woobeee.mvc.schedule.service;
 import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.schedule.api.request.PostMilestoneRequest;
 import com.woobeee.mvc.schedule.api.request.PostProjectRequest;
+import com.woobeee.mvc.schedule.api.request.PostIssueRequest;
 import com.woobeee.mvc.schedule.api.request.PostTaskRequest;
 import com.woobeee.mvc.schedule.api.request.PutMilestoneRequest;
 import com.woobeee.mvc.schedule.api.request.PutNotificationRequest;
+import com.woobeee.mvc.schedule.api.request.PutIssueRequest;
 import com.woobeee.mvc.schedule.api.request.PutTaskRequest;
 import com.woobeee.mvc.schedule.api.response.GetScheduleTreeResponse;
+import com.woobeee.mvc.schedule.api.response.IssueResponse;
 import com.woobeee.mvc.schedule.api.response.TaskResponse;
 import com.woobeee.mvc.schedule.entity.Milestones;
 import com.woobeee.mvc.schedule.entity.Projects;
 import com.woobeee.mvc.schedule.entity.ScheduleStatus;
+import com.woobeee.mvc.schedule.entity.TaskIssues;
 import com.woobeee.mvc.schedule.entity.TaskReminders;
 import com.woobeee.mvc.schedule.entity.Tasks;
 import com.woobeee.mvc.schedule.exception.ScheduleErrorCode;
 import com.woobeee.mvc.schedule.exception.ScheduleException;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
+import com.woobeee.mvc.schedule.repository.TaskIssueRepository;
 import com.woobeee.mvc.schedule.repository.TaskReminderRepository;
 import com.woobeee.mvc.schedule.repository.TaskRepository;
 import org.junit.jupiter.api.Test;
@@ -53,6 +58,7 @@ class ScheduleServiceImplTest {
     @Mock MilestoneRepository milestoneRepository;
     @Mock TaskRepository taskRepository;
     @Mock TaskReminderRepository reminderRepository;
+    @Mock TaskIssueRepository issueRepository;
     @Mock ScheduleMemberResolver memberResolver;
 
     @InjectMocks ScheduleServiceImpl service;
@@ -198,8 +204,9 @@ class ScheduleServiceImplTest {
 
         service.deleteProject(LOGIN, 10L);
 
-        InOrder order = inOrder(reminderRepository, taskRepository, milestoneRepository, projectRepository);
-        order.verify(reminderRepository).deleteAllForProject(10L); // tasks 를 지우기 전에 — 서브쿼리가 tasks 를 본다
+        InOrder order = inOrder(issueRepository, reminderRepository, taskRepository, milestoneRepository, projectRepository);
+        order.verify(issueRepository).deleteAllForProject(10L);    // 이슈·알림은 tasks 를 지우기 전에 — 서브쿼리가 tasks 를 본다 (AC-41)
+        order.verify(reminderRepository).deleteAllForProject(10L);
         order.verify(taskRepository).deleteAllForProject(10L);
         order.verify(milestoneRepository).deleteAllForProject(10L);
         order.verify(projectRepository).delete(p);
@@ -216,15 +223,16 @@ class ScheduleServiceImplTest {
 
         service.deleteMilestone(LOGIN, 1L);
 
-        InOrder order = inOrder(reminderRepository, taskRepository, milestoneRepository);
+        InOrder order = inOrder(issueRepository, reminderRepository, taskRepository, milestoneRepository);
+        order.verify(issueRepository).deleteAllForMilestones(List.of(1L, 2L, 3L));
         order.verify(reminderRepository).deleteAllForMilestones(List.of(1L, 2L, 3L));
         order.verify(taskRepository).deleteAllForMilestones(List.of(1L, 2L, 3L));
         order.verify(milestoneRepository).deleteAllByIds(List.of(1L, 2L, 3L));
     }
 
-    /** SCHEDULE-AC-02 + SCHEDULE-AC-14 — 트리는 4회 배치 조회(프로젝트/마일스톤/할 일/알림)로 조립되고 중첩이 맞다. */
+    /** SCHEDULE-AC-02 + SCHEDULE-AC-14 + SCHEDULE-AC-41 — 트리는 5회 배치 조회(프로젝트/마일스톤/할 일/알림/이슈)로 조립되고 중첩이 맞다. */
     @Test
-    void treeIsAssembledFromFourBatchQueries() {
+    void treeIsAssembledFromFiveBatchQueries() {
         loggedIn();
         Projects p = ownedProject(10L);
         when(projectRepository.findAllForMember(MEMBER_ID)).thenReturn(List.of(p));
@@ -241,6 +249,13 @@ class ScheduleServiceImplTest {
         // 알림은 할 일 id 를 모아 한 번에 (SCHEDULE-AC-14)
         when(reminderRepository.findAllForTasks(List.of(100L, 101L, 102L)))
                 .thenReturn(List.of(TaskReminders.create(101L, 10), TaskReminders.create(101L, 30)));
+        // 이슈도 같은 id 묶음으로 한 번에 — 다섯 번째 배치 조회 (SCHEDULE-AC-41)
+        TaskIssues open = TaskIssues.create(100L, "빌드가 깨짐");
+        ReflectionTestUtils.setField(open, "id", 900L);
+        TaskIssues resolved = TaskIssues.create(100L, "문서 누락");
+        ReflectionTestUtils.setField(resolved, "id", 901L);
+        resolved.update("문서 누락", true);
+        when(issueRepository.findAllForTasks(List.of(100L, 101L, 102L))).thenReturn(List.of(open, resolved));
 
         GetScheduleTreeResponse tree = service.getTree(LOGIN);
 
@@ -255,6 +270,11 @@ class ScheduleServiceImplTest {
                 .extracting(GetScheduleTreeResponse.TaskNode::name).containsExactly("nested");
         assertThat(rootNode.milestones().get(0).tasks().get(0).reminders()).containsExactly(10, 30);
         assertThat(projectNode.tasks().get(0).reminders()).isEmpty();
+        assertThat(projectNode.tasks().get(0).issues())
+                .extracting(IssueResponse::id, IssueResponse::content, IssueResponse::resolved)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(900L, "빌드가 깨짐", false),
+                        org.assertj.core.groups.Tuple.tuple(901L, "문서 누락", true));
+        assertThat(rootNode.milestones().get(0).tasks().get(0).issues()).isEmpty();
         // 무소속 할 일은 최상위 tasks 로 (SCHEDULE-AC-31)
         assertThat(tree.tasks()).extracting(GetScheduleTreeResponse.TaskNode::name)
                 .containsExactly("standalone");
@@ -597,8 +617,99 @@ class ScheduleServiceImplTest {
 
         service.deleteTask(LOGIN, 3L);
 
-        InOrder order = inOrder(reminderRepository, taskRepository);
+        InOrder order = inOrder(issueRepository, reminderRepository, taskRepository);
+        order.verify(issueRepository).deleteAllForTask(3L);
         order.verify(reminderRepository).deleteAllForTask(3L);
         order.verify(taskRepository).delete(task);
+    }
+    /* ===== SCHEDULE-AC-40 — 이슈사항 ===== */
+
+    private TaskIssues issue(long id, long taskId, String content) {
+        TaskIssues i = TaskIssues.create(taskId, content);
+        ReflectionTestUtils.setField(i, "id", id);
+        return i;
+    }
+
+    /** SCHEDULE-AC-40 — 내 할 일 밑에 이슈를 만들면 미해결 상태로 저장되고 응답에 그대로 나온다. */
+    @Test
+    void anIssueIsCreatedUnresolvedUnderAnOwnedTask() {
+        loggedIn();
+        when(taskRepository.findById(3L)).thenReturn(Optional.of(ownedTask(3L, null, null)));
+        when(issueRepository.save(any(TaskIssues.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        IssueResponse response = service.createIssue(LOGIN, 3L, new PostIssueRequest("테스트 서버 죽음"));
+
+        assertThat(response.taskId()).isEqualTo(3L);
+        assertThat(response.content()).isEqualTo("테스트 서버 죽음");
+        assertThat(response.resolved()).isFalse();
+    }
+
+    /** SCHEDULE-AC-40 — 남의(또는 없는) 할 일에 이슈를 달면 할 일이 없는 것과 같은 404. */
+    @Test
+    void anIssueOnAnotherMembersTaskLooksLikeNotFound() {
+        loggedIn();
+        Tasks foreign = Tasks.create(999L, null, null, "t", null, null, null, "#ef4444");
+        ReflectionTestUtils.setField(foreign, "id", 3L);
+        when(taskRepository.findById(3L)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.createIssue(LOGIN, 3L, new PostIssueRequest("x")))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.TASK_NOT_FOUND));
+        verify(issueRepository, never()).save(any());
+    }
+
+    /** SCHEDULE-AC-40 — 없는 이슈 수정은 schedule_issueNotFound. */
+    @Test
+    void updatingAMissingIssueIsNotFound() {
+        loggedIn();
+        when(issueRepository.findById(900L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.updateIssue(LOGIN, 900L, new PutIssueRequest("x", true)))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.ISSUE_NOT_FOUND));
+    }
+
+    /** SCHEDULE-AC-40 — 이슈의 소유권은 부모 할 일로 판별한다: 남의 할 일의 이슈는 할 일 404 로 보인다. */
+    @Test
+    void anIssueWhoseTaskBelongsToSomeoneElseLooksLikeNotFound() {
+        loggedIn();
+        when(issueRepository.findById(900L)).thenReturn(Optional.of(issue(900L, 3L, "x")));
+        Tasks foreign = Tasks.create(999L, null, null, "t", null, null, null, "#ef4444");
+        ReflectionTestUtils.setField(foreign, "id", 3L);
+        when(taskRepository.findById(3L)).thenReturn(Optional.of(foreign));
+
+        assertThatThrownBy(() -> service.deleteIssue(LOGIN, 900L))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.TASK_NOT_FOUND));
+        verify(issueRepository, never()).delete(any());
+    }
+
+    /** SCHEDULE-AC-40 — 수정은 내용과 해결 여부를 함께 바꾼다. */
+    @Test
+    void resolvingAnIssueStoresContentAndResolvedTogether() {
+        loggedIn();
+        TaskIssues target = issue(900L, 3L, "예전 내용");
+        when(issueRepository.findById(900L)).thenReturn(Optional.of(target));
+        when(taskRepository.findById(3L)).thenReturn(Optional.of(ownedTask(3L, null, null)));
+
+        IssueResponse response = service.updateIssue(LOGIN, 900L, new PutIssueRequest("고쳤음", true));
+
+        assertThat(response.id()).isEqualTo(900L);
+        assertThat(response.content()).isEqualTo("고쳤음");
+        assertThat(response.resolved()).isTrue();
+        assertThat(target.isResolved()).isTrue();
+    }
+
+    /** SCHEDULE-AC-40 — 내 이슈 삭제. */
+    @Test
+    void deletingAnOwnedIssueRemovesIt() {
+        loggedIn();
+        TaskIssues target = issue(900L, 3L, "x");
+        when(issueRepository.findById(900L)).thenReturn(Optional.of(target));
+        when(taskRepository.findById(3L)).thenReturn(Optional.of(ownedTask(3L, null, null)));
+
+        service.deleteIssue(LOGIN, 900L);
+
+        verify(issueRepository).delete(target);
     }
 }

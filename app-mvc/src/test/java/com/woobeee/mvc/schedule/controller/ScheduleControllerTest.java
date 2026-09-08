@@ -1,6 +1,8 @@
 package com.woobeee.mvc.schedule.controller;
 
+import com.woobeee.mvc.schedule.api.request.PostIssueRequest;
 import com.woobeee.mvc.schedule.api.response.GetScheduleTreeResponse;
+import com.woobeee.mvc.schedule.api.response.IssueResponse;
 import com.woobeee.mvc.schedule.exception.ScheduleControllerAdvice;
 import com.woobeee.mvc.schedule.exception.ScheduleErrorCode;
 import com.woobeee.mvc.schedule.service.ScheduleService;
@@ -17,7 +19,9 @@ import java.util.List;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -108,5 +112,57 @@ class ScheduleControllerTest {
                         .content("{\"webhookUrl\":\"https://example.com/hook\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.header.message").value("schedule_invalidWebhookUrl"));
+    }
+    /* ===== SCHEDULE-AC-40 — 이슈 엔드포인트 ===== */
+
+    /** SCHEDULE-AC-40 — 이슈 생성은 201 봉투로 나간다. */
+    @Test
+    void creatingAnIssueReturnsACreatedEnvelope() throws Exception {
+        when(scheduleService.createIssue(eq("me@example.com"), eq(3L), any(PostIssueRequest.class)))
+                .thenReturn(new IssueResponse(900L, 3L, "빌드 깨짐", false));
+
+        mockMvc.perform(post("/api/back/schedule/tasks/3/issues")
+                        .header("loginId", "me@example.com")
+                        .contentType("application/json")
+                        .content("{\"content\":\"빌드 깨짐\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.header.isSuccessful").value(true))
+                .andExpect(jsonPath("$.data.id").value(900))
+                .andExpect(jsonPath("$.data.resolved").value(false));
+    }
+
+    /** SCHEDULE-AC-16/40 — 빈 내용은 schedule_badRequest. */
+    @Test
+    void aBlankIssueContentBecomesTheBadRequestEnvelope() throws Exception {
+        mockMvc.perform(post("/api/back/schedule/tasks/3/issues")
+                        .header("loginId", "me@example.com")
+                        .contentType("application/json")
+                        .content("{\"content\":\"  \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.header.message").value("schedule_badRequest"));
+    }
+
+    /** SCHEDULE-AC-40 — 없는 이슈 수정은 404 + schedule_issueNotFound. */
+    @Test
+    void issueNotFoundBecomesA404Envelope() throws Exception {
+        when(scheduleService.updateIssue(eq("me@example.com"), eq(900L), any()))
+                .thenThrow(ScheduleErrorCode.ISSUE_NOT_FOUND.asException());
+
+        mockMvc.perform(put("/api/back/schedule/issues/900")
+                        .header("loginId", "me@example.com")
+                        .contentType("application/json")
+                        .content("{\"content\":\"x\",\"resolved\":true}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.header.message").value("schedule_issueNotFound"));
+    }
+
+    /** SCHEDULE-AC-40 — 이슈 삭제는 서비스로 위임되고 성공 봉투로 나간다. */
+    @Test
+    void deletingAnIssueDelegatesToTheService() throws Exception {
+        mockMvc.perform(delete("/api/back/schedule/issues/900").header("loginId", "me@example.com"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.header.isSuccessful").value(true));
+
+        verify(scheduleService).deleteIssue("me@example.com", 900L);
     }
 }
