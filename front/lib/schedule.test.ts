@@ -21,6 +21,8 @@ import {
     isValidSlackWebhookUrl,
     nextStatus,
     openIssueCount,
+    pickColor,
+    normalizeTree,
     applyIssue,
     STATUS_LABELS,
     todayIso,
@@ -431,5 +433,34 @@ describe("taskPutBody", () => {
         taskPutBody(task, { startDate: null })
         expect(task.startTime).toBe("14:30")
         expect(task.reminders).toEqual([30, 10])
+    })
+})
+
+// SCHEDULE-AC-09 — 생성 다이얼로그가 미리 고르는 색: 팔레트 안에서, 난수 소스로 결정된다
+describe("pickColor", () => {
+    it("난수 0 은 첫 색, 1 직전은 마지막 색", () => {
+        expect(pickColor(() => 0)).toBe(SCHEDULE_COLORS[0])
+        expect(pickColor(() => 0.999999)).toBe(SCHEDULE_COLORS[SCHEDULE_COLORS.length - 1])
+    })
+
+    it("기본 난수로도 항상 팔레트 안의 색이다", () => {
+        for (let i = 0; i < 50; i++) expect(SCHEDULE_COLORS).toContain(pickColor())
+    })
+})
+
+// SCHEDULE-AC-41 — 이슈 필드가 없는(구버전 서버) 응답도 화면이 깨지지 않게 빈 배열로 채운다
+describe("normalizeTree", () => {
+    it("issues 가 빠진 할 일은 빈 배열을 받고, 있는 것은 그대로다", () => {
+        const raw = JSON.parse(JSON.stringify(tree)) as ScheduleTree
+        delete (raw.projects[0].milestones[0].tasks[0] as Partial<ScheduleTask>).issues
+        delete (raw.tasks[0] as Partial<ScheduleTask>).issues
+        const out = normalizeTree(raw)
+        expect(out.projects[0].milestones[0].tasks[0].issues).toEqual([])
+        expect(out.tasks[0].issues).toEqual([])
+        expect(out.projects[0].tasks[0].issues).toHaveLength(2)
+    })
+
+    it("이미 온전한 트리는 값이 같다", () => {
+        expect(normalizeTree(tree)).toEqual(tree)
     })
 })

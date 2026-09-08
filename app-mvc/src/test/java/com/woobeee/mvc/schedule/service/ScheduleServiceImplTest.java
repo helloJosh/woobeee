@@ -92,7 +92,7 @@ class ScheduleServiceImplTest {
         when(projectRepository.findById(10L)).thenReturn(Optional.of(foreignProject(10L)));
 
         assertThatThrownBy(() -> service.createTask(LOGIN,
-                new PostTaskRequest(10L, null, "t", null, null, null, null, null, null)))
+                new PostTaskRequest(10L, null, "t", null, null, null, null, null, null, null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.PROJECT_NOT_FOUND));
     }
@@ -176,7 +176,7 @@ class ScheduleServiceImplTest {
         when(taskRepository.save(any(Tasks.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TaskResponse response = service.createTask(LOGIN,
-                new PostTaskRequest(10L, null, "t", null, null, null, null, null, null));
+                new PostTaskRequest(10L, null, "t", null, null, null, null, null, null, null));
 
         assertThat(ScheduleColors.PALETTE).contains(response.color());
     }
@@ -303,7 +303,7 @@ class ScheduleServiceImplTest {
         when(milestoneRepository.findById(55L)).thenReturn(Optional.of(milestone(55L, 20L, null)));
 
         assertThatThrownBy(() -> service.createTask(LOGIN,
-                new PostTaskRequest(10L, 55L, "t", null, null, null, null, null, null)))
+                new PostTaskRequest(10L, 55L, "t", null, null, null, null, null, null, null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.CROSS_PROJECT));
     }
@@ -429,7 +429,7 @@ class ScheduleServiceImplTest {
         when(taskRepository.save(any(Tasks.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TaskResponse response = service.createTask(LOGIN,
-                new PostTaskRequest(null, null, "장보기", null, null, null, null, null, null));
+                new PostTaskRequest(null, null, "장보기", null, null, null, null, null, null, null));
 
         assertThat(response.projectId()).isNull();
         assertThat(response.milestoneId()).isNull();
@@ -442,7 +442,7 @@ class ScheduleServiceImplTest {
         loggedIn();
 
         assertThatThrownBy(() -> service.createTask(LOGIN,
-                new PostTaskRequest(null, 5L, "장보기", null, null, null, null, null, null)))
+                new PostTaskRequest(null, 5L, "장보기", null, null, null, null, null, null, null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.CROSS_PROJECT));
     }
@@ -476,7 +476,7 @@ class ScheduleServiceImplTest {
 
         assertThatThrownBy(() -> service.createTask(LOGIN,
                 new PostTaskRequest(null, null, "t", null, day, day,
-                        LocalTime.of(15, 0), LocalTime.of(14, 0), null)))
+                        LocalTime.of(15, 0), LocalTime.of(14, 0), null, null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.INVALID_DATE_RANGE));
     }
@@ -489,7 +489,7 @@ class ScheduleServiceImplTest {
 
         TaskResponse response = service.createTask(LOGIN,
                 new PostTaskRequest(null, null, "t", null, LocalDate.of(2026, 9, 4), LocalDate.of(2026, 9, 5),
-                        LocalTime.of(15, 0), LocalTime.of(9, 0), null));
+                        LocalTime.of(15, 0), LocalTime.of(9, 0), null, null));
 
         assertThat(response.startTime()).isEqualTo(LocalTime.of(15, 0));
         assertThat(response.endTime()).isEqualTo(LocalTime.of(9, 0));
@@ -503,7 +503,7 @@ class ScheduleServiceImplTest {
         when(taskRepository.save(any(Tasks.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TaskResponse response = service.createTask(LOGIN,
-                new PostTaskRequest(null, null, "t", null, null, null, LocalTime.of(9, 0), LocalTime.of(10, 0), null));
+                new PostTaskRequest(null, null, "t", null, null, null, LocalTime.of(9, 0), LocalTime.of(10, 0), null, null));
 
         assertThat(response.startTime()).isNull();
         assertThat(response.endTime()).isNull();
@@ -515,7 +515,7 @@ class ScheduleServiceImplTest {
         loggedIn();
 
         assertThatThrownBy(() -> service.createTask(LOGIN,
-                new PostTaskRequest(null, null, "t", null, LocalDate.of(2026, 9, 4), null, null, null, List.of(10))))
+                new PostTaskRequest(null, null, "t", null, LocalDate.of(2026, 9, 4), null, null, null, List.of(10), null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.REMINDER_NEEDS_START_TIME));
     }
@@ -527,7 +527,7 @@ class ScheduleServiceImplTest {
 
         assertThatThrownBy(() -> service.createTask(LOGIN,
                 new PostTaskRequest(null, null, "t", null, LocalDate.of(2026, 9, 4), null,
-                        LocalTime.of(9, 0), null, List.of(15))))
+                        LocalTime.of(9, 0), null, List.of(15), null)))
                 .isInstanceOfSatisfying(ScheduleException.class,
                         e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.INVALID_REMINDER));
     }
@@ -544,7 +544,7 @@ class ScheduleServiceImplTest {
 
         TaskResponse response = service.createTask(LOGIN,
                 new PostTaskRequest(null, null, "t", null, LocalDate.of(2026, 9, 4), null,
-                        LocalTime.of(9, 0), null, List.of(30, 10, 30)));
+                        LocalTime.of(9, 0), null, List.of(30, 10, 30), null));
 
         assertThat(response.reminders()).containsExactly(10, 30);
         verify(reminderRepository).saveAll(argThat((Iterable<TaskReminders> rows) -> {
@@ -711,5 +711,30 @@ class ScheduleServiceImplTest {
         service.deleteIssue(LOGIN, 900L);
 
         verify(issueRepository).delete(target);
+    }
+    /* ===== SCHEDULE-AC-09 — 생성 시 색 지정 ===== */
+
+    /** SCHEDULE-AC-09 — 생성 요청에 팔레트 색을 실으면 그 색으로 저장된다 (자동 배정 대신). */
+    @Test
+    void aChosenColorOnCreateIsKept() {
+        loggedIn();
+        when(taskRepository.save(any(Tasks.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        TaskResponse response = service.createTask(LOGIN,
+                new PostTaskRequest(null, null, "t", null, null, null, null, null, null, "#1e40af"));
+
+        assertThat(response.color()).isEqualTo("#1e40af");
+    }
+
+    /** SCHEDULE-AC-09/10 — 생성 시 형식이 틀린 색은 400 schedule_invalidColor 이고 저장되지 않는다. */
+    @Test
+    void anInvalidColorOnCreateIsRejected() {
+        loggedIn();
+
+        assertThatThrownBy(() -> service.createTask(LOGIN,
+                new PostTaskRequest(null, null, "t", null, null, null, null, null, null, "blue")))
+                .isInstanceOfSatisfying(ScheduleException.class,
+                        e -> assertThat(e.errorCode()).isEqualTo(ScheduleErrorCode.INVALID_COLOR));
+        verify(taskRepository, never()).save(any());
     }
 }

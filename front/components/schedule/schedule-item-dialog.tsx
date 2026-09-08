@@ -25,7 +25,7 @@ export interface ItemDraft {
     endTime?: string | null
     /** 할 일만 — 시작 전 알림(분) (SCHEDULE-AC-35). */
     reminders?: number[]
-    color?: string // task 수정에서만
+    color?: string // task 생성(미리 고른 색)·수정
 }
 
 interface Props {
@@ -35,7 +35,7 @@ interface Props {
     /** 생성 시 무엇을 어디에 만드는지 안내 — 예: "「DM」 프로젝트 아래에 추가 — ...". */
     context?: string
     initial: ItemDraft
-    showColor: boolean // task 수정에서만 true (생성 색은 서버가 배정)
+    showColor: boolean // task 생성·수정에서 true — 생성은 pickColor 로 미리 고른 색이 initial 에 온다 (SCHEDULE-AC-09)
     /** Slack webhook 등록 여부 — false 면 알림이 발송되지 않는다고 안내한다. null 은 아직 모름. */
     slackConfigured?: boolean | null
     onSubmit: (draft: ItemDraft) => Promise<void>

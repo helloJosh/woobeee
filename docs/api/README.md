@@ -72,7 +72,7 @@ access token TTL 은 role 로 갈린다 — `ROLE_ADMIN` 1일, 그 외 15분 (AU
 | POST | `/api/back/schedule/milestones` | 마일스톤 생성 | 로그인 |
 | PUT | `/api/back/schedule/milestones/{milestoneId}` | 마일스톤 수정 | 로그인 + 본인 |
 | DELETE | `/api/back/schedule/milestones/{milestoneId}` | 마일스톤 삭제 (하위 할 일 캐스케이드) | 로그인 + 본인 |
-| POST | `/api/back/schedule/tasks` | 할 일 생성 — `projectId` 생략 시 무소속. `startTime`/`endTime`(`HH:mm`, 선택), `reminders`(10·30 분 전 — 시작일+시작 시간 필요) | 로그인 |
+| POST | `/api/back/schedule/tasks` | 할 일 생성 — `projectId` 생략 시 무소속. `startTime`/`endTime`(`HH:mm`, 선택), `reminders`(10·30 분 전 — 시작일+시작 시간 필요), `color`(`#RRGGBB`, 선택 — 생략 시 자동 배정) | 로그인 |
 | PUT | `/api/back/schedule/tasks/{taskId}` | 할 일 수정 — 전체 교체(`reminders` 집합 포함) | 로그인 + 본인 |
 | DELETE | `/api/back/schedule/tasks/{taskId}` | 할 일 삭제 (이슈·알림 캐스케이드) | 로그인 + 본인 |
 | POST | `/api/back/schedule/tasks/{taskId}/issues` | 할 일 밑 이슈 생성 — `content`(≤1000자), 미해결로 시작 | 로그인 + 본인(할 일) |

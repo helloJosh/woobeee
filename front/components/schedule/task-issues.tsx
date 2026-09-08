@@ -18,7 +18,11 @@ export interface IssueCallbacks {
 
 const MAX_CONTENT = 1000
 
-function IssueRow({ issue, cb }: { issue: ScheduleIssue; cb: IssueCallbacks }) {
+function failureMessage(e: unknown): string {
+    return e instanceof Error && e.message ? e.message : "저장하지 못했습니다."
+}
+
+function IssueRow({ issue, cb, onError }: { issue: ScheduleIssue; cb: IssueCallbacks; onError: (message: string | null) => void }) {
     const [editing, setEditing] = useState<string | null>(null)
 
     const commit = async () => {
@@ -26,7 +30,12 @@ function IssueRow({ issue, cb }: { issue: ScheduleIssue; cb: IssueCallbacks }) {
         const content = editing.trim()
         setEditing(null)
         if (content === "" || content === issue.content) return
-        await cb.onEditIssue(issue, content)
+        try {
+            onError(null)
+            await cb.onEditIssue(issue, content)
+        } catch (e) {
+            onError(failureMessage(e))
+        }
     }
 
     return (
@@ -79,14 +88,19 @@ export default function TaskIssues({ taskId, issues, cb }: {
 }) {
     const [draft, setDraft] = useState("")
     const [saving, setSaving] = useState(false)
+    // 실패를 삼키지 않는다 — 구버전 서버(엔드포인트 없음)나 네트워크 오류가 "아무 일도 안 일어남"으로 보이면 안 된다
+    const [error, setError] = useState<string | null>(null)
 
     const add = async () => {
         const content = draft.trim()
         if (content === "" || saving) return
         setSaving(true)
+        setError(null)
         try {
             await cb.onAddIssue(taskId, content)
             setDraft("")
+        } catch (e) {
+            setError(failureMessage(e))
         } finally {
             setSaving(false)
         }
@@ -96,7 +110,7 @@ export default function TaskIssues({ taskId, issues, cb }: {
         <div className="ml-8 mt-1 mb-2 rounded-md border border-dashed bg-muted/20 p-2">
             {issues.length > 0 ? (
                 <ul className="space-y-0.5">
-                    {issues.map((i) => <IssueRow key={i.id} issue={i} cb={cb} />)}
+                    {issues.map((i) => <IssueRow key={i.id} issue={i} cb={cb} onError={setError} />)}
                 </ul>
             ) : (
                 <p className="px-1 pb-1 text-xs text-muted-foreground">아직 이슈가 없습니다.</p>
@@ -117,6 +131,7 @@ export default function TaskIssues({ taskId, issues, cb }: {
                     <Plus className="mr-1 h-3.5 w-3.5" />추가
                 </Button>
             </form>
+            {error ? <p role="alert" className="mt-1 px-1 text-xs text-destructive">{error}</p> : null}
         </div>
     )
 }

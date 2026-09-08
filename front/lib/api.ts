@@ -24,7 +24,7 @@ import {
     RoomSummary,
     TokenResponse
 } from "./types"
-import type { ScheduleIssue, ScheduleStatus, ScheduleTree } from "@/lib/schedule"
+import { normalizeTree, type ScheduleIssue, type ScheduleStatus, type ScheduleTree } from "@/lib/schedule"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
 import {describeHttpFailure} from "@/lib/errors/http-failure";
 
@@ -757,6 +757,7 @@ export interface TaskBody extends ProjectBody {
     endTime?: string | null
     /** 시작 전 알림(분) — PUT 은 집합을 통째로 교체 (SCHEDULE-AC-35). */
     reminders?: number[]
+    /** 생성: 선택(없으면 서버 자동 배정). 수정: null/생략이면 기존 값 유지 (SCHEDULE-AC-09/10). */
     color?: string
 }
 
@@ -775,7 +776,7 @@ async function scheduleRequest<T>(endpoint: string, method: string, body?: unkno
 
 export const scheduleAPI = {
     getTree: (): Promise<ScheduleTree> =>
-        scheduleRequest("/api/back/schedule/tree", "GET"),
+        scheduleRequest<ScheduleTree>("/api/back/schedule/tree", "GET").then(normalizeTree),
 
     createProject: (body: ProjectBody) =>
         scheduleRequest("/api/back/schedule/projects", "POST", body),

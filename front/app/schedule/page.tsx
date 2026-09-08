@@ -16,7 +16,7 @@ import { buildAuthHref } from "@/lib/auth-redirect"
 import { scheduleAPI } from "@/lib/api"
 import {
     applyIssue, applyStatus, collectCalendarEntries, collectTasks, filterTree, findMilestone, nextStatus,
-    STATUS_LABELS, taskPutBody, todayIso,
+    pickColor, STATUS_LABELS, taskPutBody, todayIso,
     type FilteredMilestone, type FilteredProject, type ScheduleIssue, type ScheduleItemKind, type ScheduleStatus,
     type ScheduleTask, type ScheduleTree as Tree, type StatusFilter,
 } from "@/lib/schedule"
@@ -201,7 +201,7 @@ export default function SchedulePage() {
                 endTime: draft.endDate ? draft.endTime ?? null : null,
                 reminders: draft.reminders ?? [],
             }
-            if (dialog.mode === "create") await scheduleAPI.createTask({ ...timed, ...(dialog.projectId !== null ? { projectId: dialog.projectId } : {}), milestoneId: dialog.milestoneId })
+            if (dialog.mode === "create") await scheduleAPI.createTask({ ...timed, ...(draft.color ? { color: draft.color } : {}), ...(dialog.projectId !== null ? { projectId: dialog.projectId } : {}), milestoneId: dialog.milestoneId })
             else {
                 const found = findTask(dialog.id)
                 if (!found) return
@@ -291,8 +291,8 @@ export default function SchedulePage() {
                         onCycleMilestone: (_projectId, m) => void cycleMilestone(m),
                         onCycleTask: (_projectId, task) => void cycleTask(task),
                         onAddMilestone: (projectId, parentId) => { setDialogInitial(EMPTY_DRAFT); setDialogContext(`${parentLabel(projectId, parentId)} — 할 일을 묶는 단계입니다 (5단계까지 중첩).`); setDialog({ kind: "milestone", mode: "create", projectId, parentId }) },
-                        // 할 일 생성은 시작일 기본값이 오늘이다 (SCHEDULE-AC-23) — 입력란에서 바꿀 수 있다
-                        onAddTask: (projectId, milestoneId) => { setDialogInitial({ ...EMPTY_DRAFT, startDate: todayIso() }); setDialogContext(`${parentLabel(projectId, milestoneId)} — 고유색 막대로 달력에 표시됩니다.`); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
+                        // 할 일 생성은 시작일 기본값이 오늘(SCHEDULE-AC-23), 색은 팔레트에서 미리 골라 둔다(AC-09) — 둘 다 바꿀 수 있다
+                        onAddTask: (projectId, milestoneId) => { setDialogInitial({ ...EMPTY_DRAFT, startDate: todayIso(), color: pickColor() }); setDialogContext(`${parentLabel(projectId, milestoneId)} — 고유색 막대로 달력에 표시됩니다.`); setDialog({ kind: "task", mode: "create", projectId, milestoneId }) },
                         onEditProject: (p: FilteredProject) => {
                             setDialogContext(null)
                             setDialogInitial({ name: p.name, status: p.status, startDate: p.startDate, endDate: p.endDate })
@@ -341,7 +341,7 @@ export default function SchedulePage() {
                     title={`${dialog.mode === "create" ? "새 " : ""}${dialog.kind === "project" ? "프로젝트" : dialog.kind === "milestone" ? "마일스톤" : "할 일"}${dialog.mode === "edit" ? " 수정" : ""}`}
                     context={dialogContext ?? undefined}
                     initial={dialogInitial}
-                    showColor={dialog.kind === "task" && dialog.mode === "edit"}
+                    showColor={dialog.kind === "task"}
                     slackConfigured={slackConfigured}
                     onSubmit={submit}
                     onClose={() => setDialog(null)}

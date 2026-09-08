@@ -20,5 +20,7 @@ public record PostTaskRequest(
         LocalTime startTime,
         LocalTime endTime,
         /** 시작 전 알림(분). null 은 빈 목록 (SCHEDULE-AC-35). */
-        List<Integer> reminders
+        List<Integer> reminders,
+        /** "#RRGGBB" — 선택. null 이면 서버가 팔레트에서 자동 배정한다 (SCHEDULE-AC-09). */
+        String color
 ) {}

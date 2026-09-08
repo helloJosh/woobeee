@@ -25,7 +25,7 @@
 | SCHEDULE-AC-06 | `parentId`·`milestoneId`가 요청의 프로젝트와 다른 프로젝트 소속 | 400 + `schedule_crossProject` |
 | SCHEDULE-AC-07 | 마일스톤 깊이 5 초과 생성/이동 | 400 + `schedule_depthExceeded` |
 | SCHEDULE-AC-08 | 마일스톤을 자기 자신/자기 자손 아래로 이동 | 400 + `schedule_cycle` |
-| SCHEDULE-AC-09 | 할 일 생성 | 24색 팔레트 중 하나가 자동 배정되어 응답에 포함 |
+| SCHEDULE-AC-09 | 할 일 생성 | `color` 를 실으면 그 색(형식이 틀리면 AC-10 과 같은 `schedule_invalidColor`), 생략하면 24색 팔레트 중 하나가 자동 배정되어 응답에 포함. 생성 다이얼로그는 `pickColor` 로 팔레트에서 미리 고른 색을 보여 주고 바꿀 수 있다 |
 | SCHEDULE-AC-10 | `#RRGGBB` 형식이 아닌 색으로 수정 | 400 + `schedule_invalidColor` |
 | SCHEDULE-AC-11 | `endDate < startDate` | 400 + `schedule_invalidDateRange` |
 | SCHEDULE-AC-12 | 프로젝트 삭제 | 하위 마일스톤·할 일 전부 함께 삭제, 한 트랜잭션 |
@@ -57,5 +57,5 @@
 | SCHEDULE-AC-38 | 상태 보류·오류 | `ScheduleStatus` 에 `ON_HOLD`(보류)·`ERROR`(오류) — 세 층 공통, 세 테이블 CHECK 제약 5값(V12). 상태 필터 탭·수정 다이얼로그 선택지에 포함. 배지 클릭 순환(`nextStatus`)은 시작전→진행중→완료→보류→오류→시작전. 달력 막대는 보류는 흐리게(점선 외곽), 오류는 붉은 테두리 — 세그먼트가 `status` 를 실어 나른다 |
 | SCHEDULE-AC-39 | 보류·오류와 자동 완료 | 기한이 지나도 `ON_HOLD`·`ERROR` 는 자동 완료(AC-21)·다이제스트 기한 경과 목록(AC-26/28)에서 제외 — 네 쿼리 모두 `status NOT IN ('DONE','ON_HOLD','ERROR')`. 사용자가 세워 둔 상태를 기계가 덮지 않는다 |
 | SCHEDULE-AC-40 | 이슈 CRUD | `POST /tasks/{taskId}/issues`(content, ≤1000자, 빈 값은 `schedule_badRequest`) → 미해결로 생성. `PUT /issues/{issueId}`(content, resolved) 전체 교체. `DELETE /issues/{issueId}`. 소유권은 부모 할 일의 `member_id` — 남의 할 일(또는 그 이슈)은 404 `schedule_taskNotFound`, 없는 이슈는 404 `schedule_issueNotFound` |
-| SCHEDULE-AC-41 | 트리의 이슈 | `GET /tree` 의 각 `TaskNode.issues: [{id, taskId, content, resolved}]`(id 순). 배치 조회 5회(프로젝트/마일스톤/할 일/알림/이슈 — 할 일이 없으면 뒤 둘 생략), 루프 내 단건 조회 없음. 할 일·마일스톤·프로젝트 삭제 시 `task_issues` 를 알림보다 먼저(tasks 삭제 전에) 지운다 |
+| SCHEDULE-AC-41 | 트리의 이슈 | `GET /tree` 의 각 `TaskNode.issues: [{id, taskId, content, resolved}]`(id 순). 프론트는 `normalizeTree` 로 `issues` 가 빠진 응답(재시작 전 구버전 서버)에 빈 배열을 채워 화면이 깨지지 않게 하고, 이슈 패널은 저장 실패를 삼키지 않고 패널 아래에 문구로 드러낸다. 배치 조회 5회(프로젝트/마일스톤/할 일/알림/이슈 — 할 일이 없으면 뒤 둘 생략), 루프 내 단건 조회 없음. 할 일·마일스톤·프로젝트 삭제 시 `task_issues` 를 알림보다 먼저(tasks 삭제 전에) 지운다 |
 | SCHEDULE-AC-42 | 이슈 화면 | 할 일 행 **왼쪽의 `>`/`v` 화살표**(마일스톤과 같은 자리)로 행 아래 이슈 패널을 접고 펼친다(기본 접힘). 이름 옆 「이슈 N/M」 배지는 표시 전용(미해결/전체 — 미해결 있으면 주황, 전부 해결이면 회색, 없으면 생략). 체크=해결(`applyIssue` 옵티미스틱, 실패 시 재조회), 내용 클릭=수정, 삭제, 한 줄 입력=추가. 이슈는 달력·`collectCalendarEntries`·상태 필터에 관여하지 않는다 |

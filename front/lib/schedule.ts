@@ -66,6 +66,12 @@ export const SCHEDULE_COLORS = [
 
 export const MAX_MILESTONE_DEPTH = 5
 
+/** SCHEDULE-AC-09 — 생성 다이얼로그가 미리 고르는 색. 서버의 randomColor 와 같은 팔레트에서 뽑는다. */
+export function pickColor(random: () => number = Math.random): string {
+    const i = Math.min(SCHEDULE_COLORS.length - 1, Math.max(0, Math.floor(random() * SCHEDULE_COLORS.length)))
+    return SCHEDULE_COLORS[i]
+}
+
 export const STATUS_LABELS: Record<ScheduleStatus, string> = {
     NOT_STARTED: "시작전",
     IN_PROGRESS: "진행중",
@@ -191,6 +197,21 @@ export function nextStatus(status: ScheduleStatus): ScheduleStatus {
 }
 
 // ── SCHEDULE-AC-40 ~ 42 — 이슈사항 ─────────────────────────────────────────────
+
+/**
+ * SCHEDULE-AC-41 — 서버 응답 정규화. `issues` 가 빠진 할 일(아직 재시작하지 않은 구버전 서버)에
+ * 빈 배열을 채워 화면이 `issues.length` 에서 깨지지 않게 한다. 이슈 추가는 그때 서버 오류로 드러난다.
+ */
+export function normalizeTree(tree: ScheduleTree): ScheduleTree {
+    const task = (t: ScheduleTask): ScheduleTask => (Array.isArray(t.issues) ? t : { ...t, issues: [] })
+    const milestone = (m: ScheduleMilestone): ScheduleMilestone => ({
+        ...m, tasks: m.tasks.map(task), milestones: m.milestones.map(milestone),
+    })
+    return {
+        projects: tree.projects.map((p) => ({ ...p, tasks: p.tasks.map(task), milestones: p.milestones.map(milestone) })),
+        tasks: tree.tasks.map(task),
+    }
+}
 
 /** 할 일 행의 「이슈 N」 배지 — 미해결만 센다. */
 export function openIssueCount(issues: ScheduleIssue[]): number {

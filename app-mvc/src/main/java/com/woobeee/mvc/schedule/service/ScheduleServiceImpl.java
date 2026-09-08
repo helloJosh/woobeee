@@ -428,6 +428,13 @@ public class ScheduleServiceImpl implements ScheduleService {
         Long memberId = memberResolver.requireMemberId(loginId);
         validateTimes(r.startDate(), r.endDate(), r.startTime(), r.endTime());
         List<Integer> reminders = validateReminders(r.reminders(), r.startDate(), r.startTime());
+        // 생성 시 색을 고르면 그대로, 없으면 자동 배정 (SCHEDULE-AC-09) — 형식이 틀리면 수정과 같은 400 (AC-10)
+        String color = r.color();
+        if (color == null) {
+            color = ScheduleColors.randomColor();
+        } else if (!ScheduleColors.isValidHex(color)) {
+            throw ScheduleErrorCode.INVALID_COLOR.asException();
+        }
 
         // projectId 가 없으면 무소속 — 마일스톤 소속은 불가능하다 (SCHEDULE-AC-31)
         if (r.projectId() == null) {
@@ -436,7 +443,7 @@ public class ScheduleServiceImpl implements ScheduleService {
             }
             Tasks saved = taskRepository.save(
                     Tasks.create(memberId, null, null, r.name(), r.status(),
-                            r.startDate(), r.endDate(), r.startTime(), r.endTime(), ScheduleColors.randomColor()));
+                            r.startDate(), r.endDate(), r.startTime(), r.endTime(), color));
             saveReminders(saved.getId(), reminders);
             return TaskResponse.from(saved, reminders);
         }
@@ -448,7 +455,7 @@ public class ScheduleServiceImpl implements ScheduleService {
 
         Tasks saved = taskRepository.save(
                 Tasks.create(memberId, project.getId(), r.milestoneId(), r.name(), r.status(),
-                        r.startDate(), r.endDate(), r.startTime(), r.endTime(), ScheduleColors.randomColor()));
+                        r.startDate(), r.endDate(), r.startTime(), r.endTime(), color));
         saveReminders(saved.getId(), reminders);
         return TaskResponse.from(saved, reminders);
     }
