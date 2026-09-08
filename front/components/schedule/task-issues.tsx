@@ -93,7 +93,7 @@ export default function TaskIssues({ taskId, issues, cb }: {
     }
 
     return (
-        <div className="ml-7 mt-1 mb-2 rounded-md border border-dashed bg-muted/20 p-2">
+        <div className="ml-8 mt-1 mb-2 rounded-md border border-dashed bg-muted/20 p-2">
             {issues.length > 0 ? (
                 <ul className="space-y-0.5">
                     {issues.map((i) => <IssueRow key={i.id} issue={i} cb={cb} />)}

@@ -73,39 +73,36 @@ function AddMenu({ onAddTask, onAddMilestone, milestoneLabel }: {
     )
 }
 
-/** SCHEDULE-AC-42 — 「이슈 N」 토글. 미해결이 있으면 주황, 전부 해결이면 회색, 하나도 없으면 아이콘만. */
-function IssueToggle({ issues, open, onToggle }: { issues: ScheduleTask["issues"]; open: boolean; onToggle: () => void }) {
+/** SCHEDULE-AC-42 — 「이슈 N/M」 표시(미해결/전체). 미해결이 있으면 주황, 전부 해결이면 회색, 없으면 그리지 않는다. */
+function IssueCount({ issues }: { issues: ScheduleTask["issues"] }) {
+    if (issues.length === 0) return null
     const openCount = openIssueCount(issues)
-    if (issues.length === 0) {
-        return (
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" aria-label="이슈사항"
-                    aria-expanded={open} title="이슈사항 추가" onClick={onToggle}>
-                <MessageSquare className="h-4 w-4" />
-            </Button>
-        )
-    }
     return (
-        <button type="button" onClick={onToggle} aria-expanded={open} title={open ? "이슈 접기" : "이슈 펼치기"}>
-            <Badge variant="outline" className={`border-transparent ${
-                openCount > 0 ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground"
-            }`}>
-                <MessageSquare className="mr-1 h-3 w-3" />이슈 {openCount}/{issues.length}
-            </Badge>
-        </button>
+        <Badge variant="outline" className={`border-transparent ${
+            openCount > 0 ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground"
+        }`}>
+            <MessageSquare className="mr-1 h-3 w-3" />이슈 {openCount}/{issues.length}
+        </Badge>
     )
 }
 
 function TaskRow({ projectId, task, cb }: { projectId: number | null; task: ScheduleTask; cb: TreeCallbacks }) {
     const done = task.status === "DONE"
+    // 이슈 패널은 기본 접힘 — 마일스톤처럼 왼쪽 화살표로 접고 펼친다 (SCHEDULE-AC-42)
     const [issuesOpen, setIssuesOpen] = useState(false)
     return (
         <li>
             <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50">
+                <button type="button" onClick={() => setIssuesOpen(!issuesOpen)} className="text-muted-foreground"
+                        aria-expanded={issuesOpen} aria-label={issuesOpen ? "이슈 접기" : "이슈 펼치기"}
+                        title={issuesOpen ? "이슈 접기" : "이슈 펼치기"}>
+                    {issuesOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
                 <StatusBadge status={task.status} onClick={() => cb.onCycleTask(projectId, task)} />
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: task.color }} />
                 <span className={`flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}>{task.name}</span>
+                <IssueCount issues={task.issues} />
                 <span className="hidden text-xs text-muted-foreground sm:inline">{formatTaskRange(task.startDate, task.endDate, task.startTime, task.endTime)}</span>
-                <IssueToggle issues={task.issues} open={issuesOpen} onToggle={() => setIssuesOpen(!issuesOpen)} />
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-7 w-7"><MoreHorizontal className="h-4 w-4" /></Button>
