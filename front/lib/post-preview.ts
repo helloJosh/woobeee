@@ -1,19 +1,5 @@
-// front/lib/post-preview.ts — 홈 카드의 썸네일·요약. 글에 전용 필드가 없어 본문 마크다운에서 만든다.
+// front/lib/post-preview.ts — 홈 목록의 요약. 글에 전용 필드가 없어 본문 마크다운에서 만든다.
 // React-free: 컴포넌트는 값을 그리기만 한다.
-
-const MD_IMAGE = /!\[[^\]]*\]\(\s*(<[^>]*>|[^\s)]+)(?:\s+"[^"]*")?\s*\)/
-const HTML_IMG = /<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i
-
-/** 본문에서 먼저 나오는 이미지 URL — 마크다운 문법과 HTML img 둘 다 본다. 없으면 null. */
-export function firstImageUrl(markdown: string | null | undefined): string | null {
-    if (!markdown) return null
-    const md = MD_IMAGE.exec(markdown)
-    const html = HTML_IMG.exec(markdown)
-    const mdUrl = md ? md[1].replace(/^<|>$/g, "") : null
-    const htmlUrl = html ? (html[1] ?? html[2]) : null
-    if (mdUrl && htmlUrl) return md!.index <= html!.index ? mdUrl : htmlUrl
-    return mdUrl ?? htmlUrl ?? null
-}
 
 /**
  * 마크다운 기호를 걷어낸 본문 앞부분. 헤딩 줄과 코드블록은 통째로 빠지고, 링크·강조·인용·인라인 코드는
@@ -39,11 +25,4 @@ export function excerpt(markdown: string | null | undefined, maxChars: number): 
         .trim()
     if (text.length > maxChars) text = text.slice(0, maxChars) + "…"
     return text
-}
-
-/** 썸네일이 없는 카드의 그라데이션 색조. 카테고리 이름을 해시해 0~359 — 같은 카테고리는 같은 색. */
-export function placeholderHue(name: string): number {
-    let h = 0
-    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
-    return h % 360
 }

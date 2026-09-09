@@ -26,19 +26,24 @@
 
 ### B. 홈 화면
 
-우아한 기술블로그의 골격만 가져온다: 상단 카테고리 내비 → 큰 최신 글 1건 → 카드 그리드. 왼쪽 사이드바는 없앤다.
+> 2026-09-09 2차 — 사용자가 실제 우아한 홈 캡처를 보여 주며 **이미지 없는 두 열**로 바꿨다(1차의 히어로·카드
+> 그리드·상단 chips 는 폐기). 카테고리는 "옆에 숨기고 접을 수 있게".
 
-1. **카테고리 바** — 가로 chips: 「전체」 + 부모 카테고리. 부모를 고르면 그 아래 줄에 자식 chips(부모 자신 포함
-   「전체」). 선택은 `?category=<id>` 로 URL 에 남긴다. 그 아래 **인기 태그** 한 줄(`GET /api/back/tags?limit=20`), 클릭 = `?tag=<name>`.
-2. **검색** — 기존 헤더 검색을 `useRegisterHeaderControls` 로 등록. `?search=`.
-3. **히어로** — 카테고리·검색·태그 필터가 모두 비었을 때만, 첫 페이지 첫 글을 크게: 썸네일(좌·큰 화면) + 카테고리·태그 chip + 제목 + 요약 3줄 + 날짜·조회·좋아요.
-4. **카드 그리드** — 나머지 글(필터가 있으면 전부). `lg` 3열 / `md` 2열 / 그 아래 1열. 카드 = 16:9 썸네일, 카테고리 chip, 제목 2줄, 요약 2줄, 태그 chips, 날짜·조회·좋아요. 무한 스크롤은 `useInfinitePosts` 재사용(pageSize 12, `tag` 파라미터 추가).
-5. **썸네일·요약** — 글에 전용 필드가 없다. `lib/post-preview.ts`(React-free, 테스트):
-   - `firstImageUrl(markdown)`: `![alt](url)` 또는 `<img src>` 의 첫 URL. 없으면 `null`.
-   - `excerpt(markdown, maxChars)`: 코드블록·이미지·링크 문법·헤딩 기호·강조 기호·HTML 태그를 걷어낸 첫 문장들.
-   - `placeholderHue(categoryName)`: 카테고리 이름 해시 → 0~359. 컴포넌트가 그라데이션 타일에 쓴다.
-6. ADMIN 이면 상단 우측 「글쓰기」 버튼(`canManagePosts`).
-7. 삭제: `components/blog-page.tsx`, `components/post-list.tsx`, `components/sidebar.tsx`(다른 사용처 없음). 헤더 컨트롤의 사이드바 토글은 등록하는 곳이 없어지므로 헤더가 그리지 않는다.
+1. **왼쪽 — 글 세로 목록**(`post-list-item.tsx`): 한 글 = `2026. 09. 08.` + 카테고리명(작성자 필드가 없어 대신) →
+   큰 제목(2xl/3xl, 링크) → 요약 2줄 → 태그 chips. 항목 사이 구분선. 무한 스크롤(`useInfinitePosts`, pageSize 10,
+   `tag` 파라미터). 이미지·썸네일 없음.
+2. **오른쪽 — 사이드바**(`home-sidebar.tsx`, `lg` 이상 240px·sticky, 모바일은 목록 위):
+   - 「카테고리」 — 헤더 클릭으로 접고 펼침. **기본 접힘**, 상태는 `localStorage("home.categoriesOpen")`. 접힌 채로도
+     선택된 카테고리 이름을 헤더 옆에 보인다. 펼치면 「전체」 + 부모(글 수), 선택된 부모 아래에만 자식 목록
+     (`lib/category-nav.ts` 의 `activeParent`). 선택은 `?category=<id>`.
+   - 「태그」 — `GET /api/back/tags?limit=20` 을 `이름 (글 수)` 세로 목록으로. 클릭 = `?tag=<name>`, 다시 클릭 = 해제.
+3. **검색** — 기존 헤더 검색을 `useRegisterHeaderControls` 로 등록. `?search=`. 활성 필터(카테고리·검색·태그)는
+   목록 위에 × 달린 chip 으로 보여 한 번에 푼다.
+4. **요약** — `lib/post-preview.ts` 의 `excerpt(markdown, maxChars)`: 코드블록·이미지·링크 문법·헤딩·강조·HTML 을 걷어낸
+   본문 앞부분(테스트). 썸네일 함수(`firstImageUrl`·`placeholderHue`)는 2차에서 삭제.
+5. ADMIN 이면 목록 위 우측 「글쓰기」 버튼(`canManagePosts`).
+6. 삭제: `components/blog-page.tsx`, `components/post-list.tsx`, `components/sidebar.tsx`. 헤더 컨트롤의 사이드바 토글은
+   등록하는 곳이 없어지므로 헤더가 그리지 않는다.
 
 ### C. 태그 (백엔드)
 

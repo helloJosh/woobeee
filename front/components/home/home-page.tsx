@@ -1,14 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2, PenSquare, RefreshCw, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import CategoryBar from "@/components/home/category-bar"
-import HeroPost from "@/components/home/hero-post"
-import PostCard from "@/components/home/post-card"
-import TagChips from "@/components/home/tag-chips"
+import HomeSidebar from "@/components/home/home-sidebar"
+import PostListItem from "@/components/home/post-list-item"
 import MinimalScrollToTop from "@/components/minimal-scroll-to-top"
 import { useCategories } from "@/hooks/use-categories"
 import { useInfinitePosts } from "@/hooks/use-infinite-posts"
@@ -16,11 +14,11 @@ import { useRegisterHeaderControls } from "@/hooks/use-header-controls"
 import { tagsAPI, tokenManager, type PopularTag } from "@/lib/api"
 import { canManagePosts } from "@/lib/blog-admin"
 
-const PAGE_SIZE = 12
+const PAGE_SIZE = 10
 
 /**
- * 홈 = 기술블로그. 우아한 기술블로그의 골격: 상단 카테고리 내비 → 인기 태그 → 최신 글 1건 히어로 →
- * 카드 그리드(무한 스크롤). 필터(category·search·tag)는 전부 URL 쿼리에 산다 — 새로고침·공유에 살아남는다.
+ * 홈 = 기술블로그. 우아한 기술블로그의 두 열: 왼쪽은 글을 세로로(날짜·카테고리, 큰 제목, 요약, 태그 — 이미지 없음),
+ * 오른콝은 「카테고리」(접고 펼침)와 「태그」 목록. 필터(category·search·tag)는 전부 URL 쿼리에 산다.
  */
 export default function HomePage() {
     const router = useRouter()
@@ -71,28 +69,34 @@ export default function HomePage() {
     }, [update, tag])
 
     const unfiltered = category === null && !search && !tag
-    const hero = unfiltered && posts.length > 0 ? posts[0] : null
-    const gridPosts = useMemo(() => (hero ? posts.slice(1) : posts), [hero, posts])
-    const popularAsTags = useMemo(() => popularTags.map((t) => ({ id: t.id, name: t.name })), [popularTags])
+    const sidebar = (
+        <HomeSidebar
+            categories={categories} selectedCategory={category} onSelectCategory={(id) => update({ category: id })}
+            tags={popularTags} activeTag={tag} onSelectTag={selectTag}
+        />
+    )
 
     return (
-        <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
-            <div className="space-y-3">
-                <div className="flex items-start justify-between gap-4">
-                    <CategoryBar categories={categories} selectedId={category} onSelect={(id) => update({ category: id })} />
-                    {canWrite ? (
-                        <Button size="sm" className="shrink-0" onClick={() => router.push("/blog/write")}>
-                            <PenSquare className="mr-1.5 h-4 w-4" />글쓰기
-                        </Button>
-                    ) : null}
+        <main className="mx-auto max-w-6xl p-4 sm:p-6 lg:grid lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-16">
+          <div className="min-w-0 space-y-4">
+            {canWrite ? (
+                <div className="flex justify-end">
+                    <Button size="sm" onClick={() => router.push("/blog/write")}>
+                        <PenSquare className="mr-1.5 h-4 w-4" />글쓰기
+                    </Button>
                 </div>
-                {popularAsTags.length > 0 ? (
-                    <TagChips tags={popularAsTags} activeTag={tag} onSelect={selectTag} />
-                ) : null}
-            </div>
+            ) : null}
+            {/* 모바일에서는 사이드바 내용이 목록 위로 */}
+            <div className="lg:hidden">{sidebar}</div>
 
-            {(search || tag) ? (
+            {(search || tag || category !== null) ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    {category !== null ? (
+                        <button type="button" onClick={() => update({ category: null })}
+                                className="flex items-center gap-1 rounded-full border px-3 py-1 hover:bg-muted">
+                            카테고리: <span className="font-medium text-foreground">{categories.flatMap((c) => [c, ...(c.children ?? [])]).find((c) => c.id === category)?.name ?? category}</span> <X className="h-3.5 w-3.5" />
+                        </button>
+                    ) : null}
                     {search ? (
                         <button type="button" onClick={() => update({ search: null })}
                                 className="flex items-center gap-1 rounded-full border px-3 py-1 hover:bg-muted">
@@ -119,12 +123,10 @@ export default function HomePage() {
                 </Alert>
             ) : null}
 
-            {hero ? <HeroPost post={hero} onSelectTag={selectTag} /> : null}
-
-            {gridPosts.length > 0 ? (
-                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                    {gridPosts.map((post) => (
-                        <PostCard key={post.id} post={post} activeTag={tag} onSelectTag={selectTag} />
+            {posts.length > 0 ? (
+                <div className="divide-y">
+                    {posts.map((post) => (
+                        <PostListItem key={post.id} post={post} activeTag={tag} onSelectTag={selectTag} />
                     ))}
                 </div>
             ) : null}
@@ -148,6 +150,8 @@ export default function HomePage() {
             ) : null}
 
             <MinimalScrollToTop threshold={200} />
+          </div>
+          <div className="hidden lg:block">{sidebar}</div>
         </main>
     )
 }
