@@ -6,6 +6,7 @@ import { Loader2, PenSquare, RefreshCw, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import HomeSidebar from "@/components/home/home-sidebar"
+import TagBar from "@/components/home/tag-bar"
 import PostListItem from "@/components/home/post-list-item"
 import MinimalScrollToTop from "@/components/minimal-scroll-to-top"
 import { useCategories } from "@/hooks/use-categories"
@@ -36,7 +37,7 @@ export default function HomePage() {
     useEffect(() => {
         setCanWrite(canManagePosts(tokenManager.getRole()))
         let cancelled = false
-        tagsAPI.popular(20).then((t) => { if (!cancelled) setPopularTags(t) }).catch(() => { if (!cancelled) setPopularTags([]) })
+        tagsAPI.popular(50).then((t) => { if (!cancelled) setPopularTags(t) }).catch(() => { if (!cancelled) setPopularTags([]) })
         return () => { cancelled = true }
     }, [])
 
@@ -72,12 +73,15 @@ export default function HomePage() {
     const sidebar = (
         <HomeSidebar
             categories={categories} selectedCategory={category} onSelectCategory={(id) => update({ category: id })}
-            tags={popularTags} activeTag={tag} onSelectTag={selectTag}
+            tags={popularTags.slice(0, 20)} activeTag={tag} onSelectTag={selectTag}
         />
     )
 
     return (
-        <main className="mx-auto max-w-6xl p-4 sm:p-6 lg:grid lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-16">
+        <main className="mx-auto max-w-6xl p-4 sm:p-6">
+          {/* 상단 태그 알약 줄 — 태그로 구분해 본다. 사이드바 태그 목록은 글 수를 보인다 */}
+          <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
+          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-16">
           <div className="min-w-0 space-y-4">
             {canWrite ? (
                 <div className="flex justify-end">
@@ -152,6 +156,7 @@ export default function HomePage() {
             <MinimalScrollToTop threshold={200} />
           </div>
           <div className="hidden lg:block">{sidebar}</div>
+          </div>
         </main>
     )
 }
