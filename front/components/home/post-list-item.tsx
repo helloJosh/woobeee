@@ -19,7 +19,7 @@ export default function PostListItem({ post, activeTag, onSelectTag }: {
     onSelectTag: (name: string) => void
 }) {
     return (
-        <article className="space-y-3 py-10 first:pt-2">
+        <article className="space-y-3 py-10 first:pt-0">
             <p className="text-sm text-muted-foreground">
                 <time dateTime={new Date(post.createdAt).toISOString()}>{formatDate(post.createdAt)}</time>
                 <span className="ml-3 font-medium text-foreground/80">{post.categoryName}</span>

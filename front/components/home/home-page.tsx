@@ -78,18 +78,18 @@ export default function HomePage() {
     )
 
     return (
-        <main className="mx-auto max-w-6xl p-4 sm:p-6">
-          <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-16">
+        <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+          {/* 우아한 홈 구조: 전체 폭 가운데의 태그 알약 줄 → 큰 여백 → 두 열(글 목록 · 사이드바)이 같은 높이에서 시작 */}
+          {canWrite ? (
+              <div className="flex justify-end">
+                  <Button size="sm" onClick={() => router.push("/blog/write")}>
+                      <PenSquare className="mr-1.5 h-4 w-4" />글쓰기
+                  </Button>
+              </div>
+          ) : null}
+          <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
+          <div className="mt-10 sm:mt-20 lg:grid lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-12">
           <div className="min-w-0 space-y-4">
-            {/* 상단 태그 알약 줄 — 글 열 안에 두어 글 폭 기준으로 가운데 정렬된다(사이드바 폭에 끌리지 않게) */}
-            <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
-            {canWrite ? (
-                <div className="flex justify-end">
-                    <Button size="sm" onClick={() => router.push("/blog/write")}>
-                        <PenSquare className="mr-1.5 h-4 w-4" />글쓰기
-                    </Button>
-                </div>
-            ) : null}
             {/* 모바일에서는 사이드바 내용이 목록 위로 */}
             <div className="lg:hidden">{sidebar}</div>
 
