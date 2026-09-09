@@ -19,7 +19,7 @@ function Pill({ active, onClick, children, label }: { active: boolean; onClick: 
     )
 }
 
-/** 상단 태그 줄 — 우아한 기술블로그의 알약 내비. 첫 칸 「-」은 전체(태그 해제). 전체 폭 가운데 정렬, 줄바꿈. */
+/** 상단 태그 줄 — 우아한 기술블로그의 알약 내비. 첫 칸 「-」은 전체(태그 해제). 전체 폭 가운데 정렬, 줄바꿈. 휴대폰 폭에서는 숨기고 서랍(≡)에서 고른다. */
 export default function TagBar({ tags, activeTag, onSelectTag, onClear }: {
     tags: PopularTag[]
     activeTag: string | null
@@ -28,7 +28,7 @@ export default function TagBar({ tags, activeTag, onSelectTag, onClear }: {
 }) {
     if (tags.length === 0) return null
     return (
-        <nav aria-label="태그" className="mx-auto flex max-w-3xl flex-wrap justify-center gap-x-2 gap-y-2.5 py-6 sm:py-10">
+        <nav aria-label="태그" className="mx-auto hidden max-w-3xl flex-wrap justify-center gap-x-2 gap-y-2.5 py-6 sm:py-10 lg:flex">
             <Pill active={activeTag === null} onClick={onClear} label="전체">-</Pill>
             {tags.map((t) => (
                 <Pill key={t.id} active={activeTag !== null && activeTag.toLowerCase() === t.name.toLowerCase()}

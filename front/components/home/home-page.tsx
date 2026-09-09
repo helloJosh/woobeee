@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Loader2, PenSquare, RefreshCw, X } from "lucide-react"
+import { Loader2, Menu, PenSquare, RefreshCw, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import HomeSidebar from "@/components/home/home-sidebar"
 import TagBar from "@/components/home/tag-bar"
 import PostListItem from "@/components/home/post-list-item"
@@ -90,8 +91,20 @@ export default function HomePage() {
           <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
           <div className="mt-10 sm:mt-20 lg:grid lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-12">
           <div className="min-w-0 space-y-4">
-            {/* 모바일에서는 사이드바 내용이 목록 위로 */}
-            <div className="lg:hidden">{sidebar}</div>
+            {/* 휴대폰 폭: 목록만 보이고, 카테고리·태그는 ≡ 서랍에서 고른다(우아한 모바일 홈처럼) */}
+            <div className="flex justify-end lg:hidden">
+                <Sheet>
+                    <SheetTrigger asChild>
+                        <Button variant="ghost" size="sm" aria-label="카테고리·태그 열기">
+                            <Menu className="mr-1.5 h-4 w-4" />카테고리 · 태그
+                        </Button>
+                    </SheetTrigger>
+                    <SheetContent side="right" className="w-[280px] overflow-y-auto">
+                        <SheetHeader><SheetTitle className="text-left">둘러보기</SheetTitle></SheetHeader>
+                        <div className="mt-6">{sidebar}</div>
+                    </SheetContent>
+                </Sheet>
+            </div>
 
             {(search || tag || category !== null) ? (
                 <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
