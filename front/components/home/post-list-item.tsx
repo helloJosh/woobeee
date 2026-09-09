@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import TagChips from "@/components/home/tag-chips"
 import type { Post } from "@/lib/types"
 
 function formatDate(value: Date | string | undefined): string {
@@ -12,12 +11,8 @@ function formatDate(value: Date | string | undefined): string {
     return `${d.getFullYear()}. ${mm}. ${dd}.`
 }
 
-/** 글 한 줄 — 날짜·카테고리, 큰 제목, 작성자가 적은 설명(없으면 생략), 태그. 본문 요약·이미지 없음. */
-export default function PostListItem({ post, activeTag, onSelectTag }: {
-    post: Post
-    activeTag: string | null
-    onSelectTag: (name: string) => void
-}) {
+/** 글 한 줄 — 날짜·카테고리, 큰 제목, 작성자가 적은 설명(없으면 생략). 태그·본문 요약·이미지 없음(태그는 상단 알약 줄과 사이드바에서만). */
+export default function PostListItem({ post }: { post: Post }) {
     return (
         <article className="space-y-3 py-10 first:pt-0">
             <p className="text-sm text-muted-foreground">
@@ -30,7 +25,6 @@ export default function PostListItem({ post, activeTag, onSelectTag }: {
             {post.description ? (
                 <p className="text-base leading-relaxed text-muted-foreground">{post.description}</p>
             ) : null}
-            <TagChips tags={post.tags} activeTag={activeTag} onSelect={onSelectTag} />
         </article>
     )
 }

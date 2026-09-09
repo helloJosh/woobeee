@@ -130,7 +130,7 @@ export default function HomePage() {
             {posts.length > 0 ? (
                 <div className="divide-y">
                     {posts.map((post) => (
-                        <PostListItem key={post.id} post={post} activeTag={tag} onSelectTag={selectTag} />
+                        <PostListItem key={post.id} post={post} />
                     ))}
                 </div>
             ) : null}
