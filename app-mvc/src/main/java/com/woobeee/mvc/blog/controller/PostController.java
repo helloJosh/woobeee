@@ -26,16 +26,17 @@ public class PostController {
     private final PostService postService;
 
     @GetMapping
-    @Operation(summary = "전체 게시글 조회 API", description = "검색어, 카테고리, 페이지 조건으로 게시글 목록을 조회합니다.")
+    @Operation(summary = "전체 게시글 조회 API", description = "검색어, 카테고리, 태그, 페이지 조건으로 게시글 목록을 조회합니다.")
     public ApiResponse<GetPostsResponse> getPosts(
             @RequestParam(value = "q", required = false) String q,
             @RequestParam(value = "categoryId", required = false) Long categoryId,
+            @RequestParam(value = "tag", required = false) String tag,
             @RequestParam(value = "page", defaultValue = "0") Integer page,
             @RequestParam(value = "size", defaultValue = "5") Integer size,
             @RequestHeader(name = "loginId", required = false) String loginId,
             @RequestHeader(name = "Accept-Language", defaultValue = "ko-KR") String locale
     ) {
-        GetPostsResponse response = postService.getAllPost(q, locale, categoryId, new CustomPageable(page, size));
+        GetPostsResponse response = postService.getAllPost(q, locale, categoryId, tag, new CustomPageable(page, size));
         return ApiResponse.success(response, "Posts retrieved");
     }
 

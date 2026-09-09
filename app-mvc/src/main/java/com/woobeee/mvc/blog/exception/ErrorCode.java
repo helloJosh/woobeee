@@ -13,6 +13,7 @@ public enum ErrorCode {
     post_notFound,
     post_imageUploadError,
     post_imageNotFound,
+    post_invalidTags,
 
     api_idempotencyKeyConflictFuckYouStopTryingToMessWithMyServer,
     api_idempotencyKeyConflict

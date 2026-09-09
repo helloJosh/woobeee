@@ -30,6 +30,19 @@ public class AuthControllerAdvice {
 //        );
 //    }
 
+    /** 태그 규칙 위반 등 요청 값 오류 (BLOG-AC-18). */
+    @ExceptionHandler({
+            CustomBadRequestException.class
+    })
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<LocalDateTime> badRequestExceptionHandler(Exception ex) {
+        log.debug(ex.getMessage());
+        return ApiResponse.fail(
+                HttpStatus.BAD_REQUEST,
+                ex.getMessage()
+        );
+    }
+
     @ExceptionHandler({
             CustomAuthenticationException.class
     })

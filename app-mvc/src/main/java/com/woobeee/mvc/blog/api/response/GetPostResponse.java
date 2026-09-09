@@ -3,6 +3,7 @@ package com.woobeee.mvc.blog.api.response;
 import lombok.Builder;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Builder
 public record GetPostResponse(
@@ -14,6 +15,7 @@ public record GetPostResponse(
         Long views,
         Long likes,
         Boolean isLiked,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        List<TagResponse> tags
 ) {
 }

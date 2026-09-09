@@ -19,7 +19,8 @@ public record GetPostsResponse(
             Long categoryId,
             Long views,
             Long likes,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            List<TagResponse> tags
     ) {
     }
 }

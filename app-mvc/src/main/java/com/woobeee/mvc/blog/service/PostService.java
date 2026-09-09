@@ -28,7 +28,7 @@ public interface PostService {
     );
 
     void deletePost(Long postId, String loginId);
-    GetPostsResponse getAllPost(String q, String locale, Long categoryId, Pageable pageable);
+    GetPostsResponse getAllPost(String q, String locale, Long categoryId, String tag, Pageable pageable);
     GetPostResponse getPost(Long postId, String locale, String loginId, HttpServletRequest request);
 
 }

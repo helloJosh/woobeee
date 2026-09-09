@@ -2,20 +2,17 @@ package com.woobeee.mvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.woobeee.mvc._common.config.QuerydslConfig;
 import jakarta.persistence.EntityManagerFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 
 @SpringJUnitConfig
 @EnableAutoConfiguration
 @EntityScan(basePackages = "com.woobeee.mvc")
-@Import(QuerydslConfig.class)
 @TestPropertySource(properties = {
         "spring.datasource.url=jdbc:postgresql://localhost:9432/market",
         "spring.datasource.username=root",

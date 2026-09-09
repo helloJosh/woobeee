@@ -4,8 +4,11 @@ package com.woobeee.mvc.blog.service;
 import com.woobeee.mvc.blog.api.request.PostPostRequest;
 import com.woobeee.mvc.blog.api.response.GetPostResponse;
 import com.woobeee.mvc.blog.api.response.GetPostsResponse;
+import com.woobeee.mvc.blog.api.response.TagResponse;
 import com.woobeee.mvc.blog.entity.Categories;
+import com.woobeee.mvc.blog.entity.PostTags;
 import com.woobeee.mvc.blog.entity.Posts;
+import com.woobeee.mvc.blog.entity.Tags;
 import com.woobeee.mvc.blog.exception.CustomAuthenticationException;
 import com.woobeee.mvc.blog.exception.CustomInternalServerException;
 import com.woobeee.mvc.blog.exception.CustomNotFoundException;
@@ -13,6 +16,8 @@ import com.woobeee.mvc.blog.exception.ErrorCode;
 import com.woobeee.mvc.blog.repository.CategoryRepository;
 import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
+import com.woobeee.mvc.blog.repository.PostTagRepository;
+import com.woobeee.mvc.blog.repository.TagRepository;
 import com.woobeee.mvc.blog.support.ProgressInputStream;
 import com.woobeee.mvc.blog.support.RedisSupport;
 import com.woobeee.mvc._common.storage.PresignedUrlFactory;
@@ -35,7 +40,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -48,6 +55,8 @@ public class PostServiceImpl implements PostService {
     private final PostRepository postRepository;
     private final CategoryRepository categoryRepository;
     private final LikeRepository likeRepository;
+    private final TagRepository tagRepository;
+    private final PostTagRepository postTagRepository;
     private final AuthMemberResolver authMemberResolver;
 
     private final RedisSupport redisSupport;
@@ -81,7 +90,9 @@ public class PostServiceImpl implements PostService {
                 memberIdentity.memberId()
         );
 
+        List<String> tags = TagNormalizer.normalize(request.tags());
         post = postRepository.save(post);
+        linkTags(post.getId(), tags);
 
         uploadAttachments(post.getId(), files);
         postRepository.save(post);
@@ -106,6 +117,7 @@ public class PostServiceImpl implements PostService {
             throw new CustomAuthenticationException(ErrorCode.comment_needAuthentication);
         }
 
+        List<String> tags = TagNormalizer.normalize(request.tags());
         post.updateContent(
                 request.titleKo(),
                 request.titleEn(),
@@ -113,9 +125,55 @@ public class PostServiceImpl implements PostService {
                 readMarkdown(markdownEn),
                 request.categoryId()
         );
+        // BLOG-AC-19 — 집합 교체
+        postTagRepository.deleteAllForPost(post.getId());
+        linkTags(post.getId(), tags);
 
         uploadAttachments(post.getId(), files);
         postRepository.save(post);
+    }
+
+    /**
+     * BLOG-AC-19 — 이름을 소문자로 비교해 있는 태그는 재사용, 없는 이름은 새로 만들고(표기는 입력 그대로)
+     * 글-태그 연결을 만든다. 연결 순서는 입력 순서다.
+     */
+    private void linkTags(Long postId, List<String> names) {
+        if (names.isEmpty()) {
+            return;
+        }
+        List<String> lower = names.stream().map(String::toLowerCase).toList();
+        Map<String, Tags> byLower = new HashMap<>();
+        for (Tags t : tagRepository.findAllByLowerNames(lower)) {
+            byLower.put(t.getName().toLowerCase(), t);
+        }
+        List<Tags> missing = new ArrayList<>();
+        for (String name : names) {
+            if (!byLower.containsKey(name.toLowerCase())) {
+                missing.add(Tags.create(name));
+            }
+        }
+        if (!missing.isEmpty()) {
+            for (Tags t : tagRepository.saveAll(missing)) {
+                byLower.put(t.getName().toLowerCase(), t);
+            }
+        }
+        List<PostTags> links = new ArrayList<>();
+        for (String name : names) {
+            links.add(PostTags.create(postId, byLower.get(name.toLowerCase()).getId()));
+        }
+        postTagRepository.saveAll(links);
+    }
+
+    /** BLOG-AC-20 — 글 id 를 모아 한 번에. 글이 없으면 조회하지 않는다. */
+    private Map<Long, List<TagResponse>> tagsByPost(List<Long> postIds) {
+        Map<Long, List<TagResponse>> out = new HashMap<>();
+        if (postIds.isEmpty()) {
+            return out;
+        }
+        for (TagRepository.PostTagRow row : tagRepository.findAllForPosts(postIds)) {
+            out.computeIfAbsent(row.getPostId(), k -> new ArrayList<>()).add(new TagResponse(row.getTagId(), row.getName()));
+        }
+        return out;
     }
 
     @SneakyThrows
@@ -182,6 +240,8 @@ public class PostServiceImpl implements PostService {
             throw new CustomAuthenticationException(ErrorCode.comment_needAuthentication);
         }
 
+        // FK 가 없으므로 연결을 먼저 지운다 (BLOG-AC-19)
+        postTagRepository.deleteAllForPost(post.getId());
         postRepository.delete(post);
     }
 
@@ -224,7 +284,8 @@ public class PostServiceImpl implements PostService {
                 redisAfter,
                 likeCount,
                 isLiked,
-                post.getCreatedAt()
+                post.getCreatedAt(),
+                tagsByPost(List.of(post.getId())).getOrDefault(post.getId(), List.of())
         );
     }
 //
@@ -266,10 +327,11 @@ public class PostServiceImpl implements PostService {
 
     @Override
     @Transactional(readOnly = true)
-    public GetPostsResponse getAllPost(String q, String locale, Long categoryId, Pageable pageable) {
+    public GetPostsResponse getAllPost(String q, String locale, Long categoryId, String tag, Pageable pageable) {
         Page<Posts> posts;
         List<Long> categories = categoryId == null ? null : findAllChildIdsIncludingSelf(categoryId);
-        posts = postRepository.searchPosts(categories, q, locale, pageable);
+        posts = postRepository.searchPosts(categories, q, locale, tag, pageable);
+        Map<Long, List<TagResponse>> tags = tagsByPost(posts.getContent().stream().map(Posts::getId).toList());
 
         List<GetPostsResponse.PostContent> contents = posts.getContent().stream().map(post -> {
             String title = locale.equalsIgnoreCase("en") ? post.getTitleEn() : post.getTitleKo();
@@ -293,7 +355,8 @@ public class PostServiceImpl implements PostService {
                     post.getCategoryId(),
                     redisAfter,
                     likeCount,
-                    post.getCreatedAt()
+                    post.getCreatedAt(),
+                    tags.getOrDefault(post.getId(), List.of())
             );
         }).toList();
 

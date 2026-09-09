@@ -1,6 +1,5 @@
 package com.woobeee.mvc;
 
-import com.querydsl.jpa.impl.JPAQueryFactory;
 import com.woobeee.core.token.TokenStore;
 import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.AuthService;
@@ -9,6 +8,8 @@ import com.woobeee.mvc.blog.repository.CategoryRepository;
 import com.woobeee.mvc.blog.repository.CommentRepository;
 import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
+import com.woobeee.mvc.blog.repository.PostTagRepository;
+import com.woobeee.mvc.blog.repository.TagRepository;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
 import com.woobeee.mvc.schedule.repository.TaskIssueRepository;
@@ -52,7 +53,10 @@ class WoobeeeMvcApplicationTests {
     private LikeRepository likeRepository;
 
     @MockitoBean
-    private JPAQueryFactory jpaQueryFactory;
+    private TagRepository tagRepository;
+
+    @MockitoBean
+    private PostTagRepository postTagRepository;
 
     @MockitoBean
     private ProjectRepository projectRepository;

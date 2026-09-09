@@ -6,6 +6,11 @@ import com.woobeee.mvc.blog.exception.CustomAuthenticationException;
 import com.woobeee.mvc.blog.repository.CategoryRepository;
 import com.woobeee.mvc.blog.repository.LikeRepository;
 import com.woobeee.mvc.blog.repository.PostRepository;
+import com.woobeee.mvc.blog.repository.PostTagRepository;
+import com.woobeee.mvc.blog.repository.TagRepository;
+import com.woobeee.mvc.blog.entity.PostTags;
+import com.woobeee.mvc.blog.entity.Tags;
+import com.woobeee.mvc.blog.api.response.TagResponse;
 import com.woobeee.mvc.blog.support.RedisSupport;
 import com.woobeee.mvc.blog.api.response.GetPostResponse;
 import com.woobeee.mvc.blog.api.response.GetPostsResponse;
@@ -30,6 +35,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
 import org.mockito.ArgumentCaptor;
 
 @ExtendWith(MockitoExtension.class)
@@ -42,6 +53,12 @@ class PostServiceImplTest {
 
     @Mock
     private LikeRepository likeRepository;
+
+    @Mock
+    private TagRepository tagRepository;
+
+    @Mock
+    private PostTagRepository postTagRepository;
 
     @Mock
     private AuthMemberResolver authMemberResolver;
@@ -77,7 +94,7 @@ class PostServiceImplTest {
 
         postService.updatePost(
                 42L,
-                new PostPostRequest("new-ko", "new-en", 5L),
+                new PostPostRequest("new-ko", "new-en", 5L, null),
                 "admin@example.com",
                 new MockMultipartFile("markdownEn", "en.md", "text/markdown", "# new en".getBytes(StandardCharsets.UTF_8)),
                 new MockMultipartFile("markdownKr", "kr.md", "text/markdown", "# new kr".getBytes(StandardCharsets.UTF_8)),
@@ -101,7 +118,7 @@ class PostServiceImplTest {
 
         assertThatThrownBy(() -> postService.updatePost(
                 42L,
-                new PostPostRequest("new-ko", "new-en", 5L),
+                new PostPostRequest("new-ko", "new-en", 5L, null),
                 "other@example.com",
                 null,
                 null,
@@ -121,7 +138,7 @@ class PostServiceImplTest {
 
         postService.updatePost(
                 42L,
-                new PostPostRequest("new-ko", "new-en", 5L),
+                new PostPostRequest("new-ko", "new-en", 5L, null),
                 "admin@example.com",
                 null,
                 null,
@@ -252,11 +269,11 @@ class PostServiceImplTest {
         stubPresigner(SIGNED);
         Posts post = postWithOneImage("a.png");
 
-        when(postRepository.searchPosts(null, null, "ko", Pageable.unpaged()))
+        when(postRepository.searchPosts(null, null, "ko", null, Pageable.unpaged()))
                 .thenReturn(new PageImpl<>(List.of(post)));
         when(categoryRepository.findById(1L)).thenReturn(Optional.empty());
 
-        GetPostsResponse response = postService.getAllPost(null, "ko", null, Pageable.unpaged());
+        GetPostsResponse response = postService.getAllPost(null, "ko", null, null, Pageable.unpaged());
 
         assertThat(response.contents()).hasSize(1);
         assertThat(response.contents().getFirst().content())
@@ -266,4 +283,120 @@ class PostServiceImplTest {
 
 
 
+    /* ===== BLOG-AC-19/20 — 태그 ===== */
+
+    private Tags storedTag(long id, String name) {
+        Tags t = Tags.create(name);
+        ReflectionTestUtils.setField(t, "id", id);
+        return t;
+    }
+
+    private void adminLoggedIn() {
+        when(authMemberResolver.requireByLoginId("admin@example.com"))
+                .thenReturn(new AuthMemberResolver.MemberIdentity(3L, "admin@example.com"));
+    }
+
+    /** BLOG-AC-19 — 저장: 있는 태그(대소문자 무시)는 재사용, 없는 이름은 새로 만들고, 글-태그 연결을 만든다. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void savePostReusesExistingTagsAndCreatesTheMissingOnes() {
+        adminLoggedIn();
+        when(postRepository.save(any(Posts.class))).thenAnswer(inv -> {
+            Posts p = inv.getArgument(0);
+            if (p.getId() == null) ReflectionTestUtils.setField(p, "id", 42L);
+            return p;
+        });
+        when(tagRepository.findAllByLowerNames(List.of("spring", "kafka")))
+                .thenReturn(List.of(storedTag(1L, "Spring")));
+        when(tagRepository.saveAll(anyList())).thenAnswer(inv -> {
+            List<Tags> fresh = inv.getArgument(0);
+            ReflectionTestUtils.setField(fresh.get(0), "id", 2L);
+            return fresh;
+        });
+
+        postService.savePost(new PostPostRequest("t", "t", 1L, List.of(" spring", "Kafka")),
+                "admin@example.com", null, null, null);
+
+        verify(tagRepository).saveAll(argThat((List<Tags> l) -> l.size() == 1 && l.get(0).getName().equals("Kafka")));
+        verify(postTagRepository).saveAll(argThat((List<PostTags> l) ->
+                l.size() == 2 && l.stream().allMatch(pt -> pt.getPostId().equals(42L))
+                        && l.stream().map(PostTags::getTagId).toList().equals(List.of(1L, 2L))));
+    }
+
+    /** BLOG-AC-19 — 태그 없이 저장하면 태그 저장소를 건드리지 않는다. */
+    @Test
+    void savePostWithoutTagsTouchesNoTagTables() {
+        adminLoggedIn();
+        when(postRepository.save(any(Posts.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        postService.savePost(new PostPostRequest("t", "t", 1L, null), "admin@example.com", null, null, null);
+
+        verify(tagRepository, never()).findAllByLowerNames(anyList());
+        verify(postTagRepository, never()).saveAll(anyList());
+    }
+
+    /** BLOG-AC-19 — 수정은 집합 교체: 기존 연결을 지우고 다시 만든다. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void updatePostReplacesTheWholeTagSet() {
+        Posts post = existingPost(42L, 3L);
+        adminLoggedIn();
+        when(postRepository.findById(42L)).thenReturn(Optional.of(post));
+        when(tagRepository.findAllByLowerNames(List.of("jpa"))).thenReturn(List.of(storedTag(7L, "JPA")));
+
+        postService.updatePost(42L, new PostPostRequest("n", "n", 1L, List.of("JPA")), "admin@example.com", null, null, null);
+
+        var order = inOrder(postTagRepository);
+        order.verify(postTagRepository).deleteAllForPost(42L);
+        order.verify(postTagRepository).saveAll(argThat((List<PostTags> l) -> l.size() == 1 && l.get(0).getTagId().equals(7L)));
+        verify(tagRepository, never()).saveAll(anyList());
+    }
+
+    /** BLOG-AC-19 — 삭제는 연결부터 지운다(FK 가 없으므로 애플리케이션이 캐스케이드한다). */
+    @Test
+    void deletePostRemovesItsTagLinksFirst() {
+        Posts post = existingPost(42L, 3L);
+        adminLoggedIn();
+        when(postRepository.findById(42L)).thenReturn(Optional.of(post));
+
+        postService.deletePost(42L, "admin@example.com");
+
+        var order = inOrder(postTagRepository, postRepository);
+        order.verify(postTagRepository).deleteAllForPost(42L);
+        order.verify(postRepository).delete(post);
+    }
+
+    /** BLOG-AC-20 — 목록의 태그는 글 id 를 모아 한 번에 가져와 각 글에 붙인다. */
+    @Test
+    void theListResponseCarriesTagsFromOneBatchQuery() {
+        Posts a = existingPost(1L, 3L);
+        Posts b = existingPost(2L, 3L);
+        when(postRepository.searchPosts(null, null, "ko", "spring", Pageable.unpaged()))
+                .thenReturn(new PageImpl<>(List.of(a, b)));
+        when(categoryRepository.findById(1L)).thenReturn(Optional.empty());
+        when(tagRepository.findAllForPosts(List.of(1L, 2L))).thenReturn(List.of(
+                new TagRepository.PostTagRowResult(1L, 10L, "Kafka"),
+                new TagRepository.PostTagRowResult(1L, 11L, "Spring")));
+
+        GetPostsResponse response = postService.getAllPost(null, "ko", null, "spring", Pageable.unpaged());
+
+        assertThat(response.contents().get(0).tags()).extracting(TagResponse::name).containsExactly("Kafka", "Spring");
+        assertThat(response.contents().get(1).tags()).isEmpty();
+        verify(tagRepository).findAllForPosts(List.of(1L, 2L));
+    }
+
+    /** BLOG-AC-20 — 상세도 태그를 싣는다. */
+    @Test
+    void theDetailResponseCarriesTags() {
+        Posts post = existingPost(42L, 3L);
+        when(postRepository.findById(42L)).thenReturn(Optional.of(post));
+        when(categoryRepository.findById(1L)).thenReturn(Optional.empty());
+        when(tagRepository.findAllForPosts(List.of(42L)))
+                .thenReturn(List.of(new TagRepository.PostTagRowResult(42L, 10L, "Kafka")));
+
+        GetPostResponse response = postService.getPost(42L, "ko", null, mock(HttpServletRequest.class));
+
+        assertThat(response.tags()).extracting(TagResponse::id, TagResponse::name)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(10L, "Kafka"));
+    }
 }
