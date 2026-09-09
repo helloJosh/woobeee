@@ -31,7 +31,7 @@
 
 0. **상단 태그 알약 줄**(`tag-bar.tsx`, 3차) — 사용자가 우아한 홈의 상단 알약 내비를 가리키며 "태그로 구분"을 요청. 인기 태그 50개를 작은 알약(text-xs)으로 **글 열 안에서** 가운데 정렬·줄바꿈(사이드바 폭에 끌리지 않게). 첫 칸 「-」 = 전체(태그 해제), 활성 태그는 채움. 사이드바 「태그」는 상위 20개에 글 수를 함께 보인다.
 1. **왼쪽 — 글 세로 목록**(`post-list-item.tsx`): 한 글 = `2026. 09. 08.` + 카테고리명(작성자 필드가 없어 대신) →
-   큰 제목(2xl/3xl, 링크) → 요약 2줄 → 태그 chips. 항목 사이 구분선. 무한 스크롤(`useInfinitePosts`, pageSize 10,
+   큰 제목(2xl/3xl, 링크) → 작성자가 적은 설명(없으면 생략, 5차 — 본문 요약 표시는 폐기) → 태그 chips. 항목 사이 구분선. 무한 스크롤(`useInfinitePosts`, pageSize 10,
    `tag` 파라미터). 이미지·썸네일 없음.
 2. **오른쪽 — 사이드바**(`home-sidebar.tsx`, `lg` 이상 240px·sticky, 모바일은 목록 위):
    - 「카테고리」 — 헤더 클릭으로 접고 펼침. **기본 접힘**, 상태는 `localStorage("home.categoriesOpen")`. 접힌 채로도
@@ -40,8 +40,7 @@
    - 「태그」 — `GET /api/back/tags?limit=20` 을 `이름 (글 수)` 세로 목록으로. 클릭 = `?tag=<name>`, 다시 클릭 = 해제.
 3. **검색** — 기존 헤더 검색을 `useRegisterHeaderControls` 로 등록. `?search=`. 활성 필터(카테고리·검색·태그)는
    목록 위에 × 달린 chip 으로 보여 한 번에 푼다.
-4. **요약** — `lib/post-preview.ts` 의 `excerpt(markdown, maxChars)`: 코드블록·이미지·링크 문법·헤딩·강조·HTML 을 걷어낸
-   본문 앞부분(테스트). 썸네일 함수(`firstImageUrl`·`placeholderHue`)는 2차에서 삭제.
+4. **요약 없음** — 목록은 본문에서 아무것도 뽑지 않는다(5차, 사용자 요청 "무조건 description 만"). `lib/post-preview.ts` 는 삭제.
 5. ADMIN 이면 목록 위 우측 「글쓰기」 버튼(`canManagePosts`).
 6. 삭제: `components/blog-page.tsx`, `components/post-list.tsx`, `components/sidebar.tsx`. 헤더 컨트롤의 사이드바 토글은
    등록하는 곳이 없어지므로 헤더가 그리지 않는다.
@@ -67,7 +66,7 @@
 사용자 요청: "글 description 을 적어둘 수 있게, 제목 아래 description 이 나오게". 제목과 같은 언어별 필드
 `description_ko/description_en VARCHAR(300)`(V14). 요청 `descriptionKo/descriptionEn`(선택), 빈 값은 null.
 응답 `description` 은 locale 의 것, 영어가 없으면 한국어. 목록 항목과 상세는 제목 아래에 설명을 보이고,
-목록은 설명이 없으면 본문 요약(`summaryOf`)으로 대체한다. 에디터는 각 언어 탭의 제목 아래 한 줄 입력.
+목록은 설명이 없으면 그 줄을 비운다(5차 — 처음의 본문 요약 대체는 폐기). 에디터는 각 언어 탭의 제목 아래 한 줄 입력.
 
 ### D. 에디터
 

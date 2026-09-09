@@ -2,7 +2,6 @@
 
 import Link from "next/link"
 import TagChips from "@/components/home/tag-chips"
-import { summaryOf } from "@/lib/post-preview"
 import type { Post } from "@/lib/types"
 
 function formatDate(value: Date | string | undefined): string {
@@ -13,7 +12,7 @@ function formatDate(value: Date | string | undefined): string {
     return `${d.getFullYear()}. ${mm}. ${dd}.`
 }
 
-/** 글 한 줄 — 날짜·카테고리, 큰 제목, 요약, 태그. 이미지 없음. */
+/** 글 한 줄 — 날짜·카테고리, 큰 제목, 작성자가 적은 설명(없으면 생략), 태그. 본문 요약·이미지 없음. */
 export default function PostListItem({ post, activeTag, onSelectTag }: {
     post: Post
     activeTag: string | null
@@ -28,7 +27,9 @@ export default function PostListItem({ post, activeTag, onSelectTag }: {
             <h2 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
                 <Link href={`/blog/${post.id}`} className="hover:underline decoration-2 underline-offset-4">{post.title}</Link>
             </h2>
-            <p className="line-clamp-2 text-base leading-relaxed text-muted-foreground">{summaryOf(post.description, post.content, 220)}</p>
+            {post.description ? (
+                <p className="text-base leading-relaxed text-muted-foreground">{post.description}</p>
+            ) : null}
             <TagChips tags={post.tags} activeTag={activeTag} onSelect={onSelectTag} />
         </article>
     )
