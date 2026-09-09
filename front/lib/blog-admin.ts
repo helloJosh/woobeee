@@ -19,6 +19,22 @@ export interface PostDraft {
 export const MAX_TAGS = 10
 export const MAX_TAG_LENGTH = 30
 
+export const MAX_TAG_SUGGESTIONS = 8
+
+/**
+ * 에디터 자동완성 — 기존 태그 중 입력과 대소문자 무시 부분일치하는 것. 이미 고른 태그는 빼고,
+ * 앞글자 일치를 먼저 둔다(그 안에서는 원래 순서 = 인기순). 빈 입력은 빈 목록, 최대 8개.
+ */
+export const tagSuggestions = (existing: string[], draft: string, chosen: string[]): string[] => {
+    const q = draft.trim().toLowerCase()
+    if (!q) return []
+    const taken = new Set(chosen.map((t) => t.toLowerCase()))
+    const hits = existing.filter((t) => !taken.has(t.toLowerCase()) && t.toLowerCase().includes(q))
+    const starts = hits.filter((t) => t.toLowerCase().startsWith(q))
+    const rest = hits.filter((t) => !t.toLowerCase().startsWith(q))
+    return [...starts, ...rest].slice(0, MAX_TAG_SUGGESTIONS)
+}
+
 /** BLOG-AC-18 — trim, 빈 값 제거, 대소문자 무시 중복 제거(첫 표기 유지). 상한 검사는 validatePostDraft 가 한다. */
 export const normalizeTags = (raw: string[] | undefined): string[] => {
     const out: string[] = []

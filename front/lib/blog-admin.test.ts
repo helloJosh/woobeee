@@ -17,6 +17,7 @@ import {
     normalizeTags,
     MAX_TAGS,
     MAX_TAG_LENGTH,
+    tagSuggestions,
 } from "./blog-admin"
 
 const draft = (overrides: Partial<PostDraft> = {}): PostDraft => ({
@@ -366,5 +367,26 @@ describe("validatePostDraft with tags", () => {
         expect(validatePostDraft(draft({ tags: eleven }))).toContain("태그는 최대 10개까지입니다.")
         expect(validatePostDraft(draft({ tags: ["a".repeat(31)] }))).toContain("태그는 30자까지입니다.")
         expect(validatePostDraft(draft({ tags: ["ok"] }))).toEqual([])
+    })
+})
+
+// 에디터 태그 자동완성 — 기존 태그를 재사용하게 보여 준다(BLOG-AC-19 의 재사용을 눈에 띄게)
+describe("tagSuggestions", () => {
+    const existing = ["Spring", "Spring Boot", "Kafka", "JPA", "spring-security"]
+
+    it("입력을 대소문자 무시 부분일치로 걸러 준다", () => {
+        expect(tagSuggestions(existing, "spr", [])).toEqual(["Spring", "Spring Boot", "spring-security"])
+        expect(tagSuggestions(existing, "KAF", [])).toEqual(["Kafka"])
+    })
+
+    it("이미 고른 태그는 빼고, 앞글자 일치를 먼저 둔다", () => {
+        expect(tagSuggestions(existing, "sp", ["Spring"])).toEqual(["Spring Boot", "spring-security"])
+        expect(tagSuggestions(["a-ring", "ring", "Ring road"], "ring", [])).toEqual(["ring", "Ring road", "a-ring"])
+    })
+
+    it("빈 입력은 빈 목록, 최대 8개", () => {
+        expect(tagSuggestions(existing, "  ", [])).toEqual([])
+        const many = Array.from({ length: 12 }, (_, i) => `tag${i}`)
+        expect(tagSuggestions(many, "tag", [])).toHaveLength(8)
     })
 })

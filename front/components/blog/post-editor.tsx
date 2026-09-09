@@ -16,13 +16,14 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { useCategories } from "@/hooks/use-categories"
-import { AUTH_EXPIRED_MESSAGE, postsAPI, tokenManager } from "@/lib/api"
+import { AUTH_EXPIRED_MESSAGE, postsAPI, tagsAPI, tokenManager } from "@/lib/api"
 import {
     buildPostFormData,
     canManagePosts,
     normalizeTags,
     MAX_TAGS,
     MAX_TAG_LENGTH,
+    tagSuggestions,
     collectDroppedImages,
     flattenCategories,
     insertSnippet,
@@ -117,6 +118,20 @@ export default function PostEditor({ postId }: PostEditorProps) {
     // 태그 — chips 로 관리하고 저장 시 request JSON 에 실린다 (BLOG-AC-18)
     const [tags, setTags] = useState<string[]>([])
     const [tagDraft, setTagDraft] = useState("")
+    // 기존 태그(인기순) — 자동완성으로 재사용을 유도한다. 없는 이름은 서버가 새로 만든다 (BLOG-AC-19)
+    const [existingTags, setExistingTags] = useState<string[]>([])
+    useEffect(() => {
+        let cancelled = false
+        tagsAPI.popular(200)
+            .then((list) => { if (!cancelled) setExistingTags(list.map((t) => t.name)) })
+            .catch(() => { if (!cancelled) setExistingTags([]) })
+        return () => { cancelled = true }
+    }, [])
+    const suggestions = tagSuggestions(existingTags, tagDraft, tags)
+    const addTag = (name: string) => {
+        setTags(normalizeTags([...tags, name]))
+        setTagDraft("")
+    }
     const [markdownKo, setMarkdownKo] = useState("")
     const [markdownEn, setMarkdownEn] = useState("")
     const [loading, setLoading] = useState(Boolean(postId))
@@ -328,25 +343,47 @@ export default function PostEditor({ postId }: PostEditorProps) {
                                     onClick={() => setTags(tags.filter((x) => x !== t))}>×</button>
                         </span>
                     ))}
-                    <input
-                        aria-label="태그 추가"
-                        className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 text-sm outline-none"
-                        placeholder={tags.length >= MAX_TAGS ? `태그는 ${MAX_TAGS}개까지` : "태그 입력 후 Enter"}
-                        value={tagDraft}
-                        maxLength={MAX_TAG_LENGTH}
-                        disabled={tags.length >= MAX_TAGS}
-                        onChange={(e) => setTagDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter" || e.key === ",") {
-                                e.preventDefault()
-                                setTags(normalizeTags([...tags, tagDraft]))
-                                setTagDraft("")
-                            } else if (e.key === "Backspace" && tagDraft === "" && tags.length > 0) {
-                                setTags(tags.slice(0, -1))
-                            }
-                        }}
-                        onBlur={() => { if (tagDraft.trim()) { setTags(normalizeTags([...tags, tagDraft])); setTagDraft("") } }}
-                    />
+                    <div className="relative min-w-[8rem] flex-1">
+                        <input
+                            aria-label="태그 추가"
+                            aria-autocomplete="list"
+                            aria-expanded={suggestions.length > 0}
+                            className="w-full bg-transparent px-1 py-1 text-sm outline-none"
+                            placeholder={tags.length >= MAX_TAGS ? `태그는 ${MAX_TAGS}개까지` : "태그 입력 후 Enter — 기존 태그는 자동완성"}
+                            value={tagDraft}
+                            maxLength={MAX_TAG_LENGTH}
+                            disabled={tags.length >= MAX_TAGS}
+                            onChange={(e) => setTagDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === ",") {
+                                    e.preventDefault()
+                                    // 입력과 대소문자만 다른 기존 태그가 있으면 그 표기를 쓴다 — 서버도 같은 태그로 본다
+                                    const exact = suggestions.find((s) => s.toLowerCase() === tagDraft.trim().toLowerCase())
+                                    addTag(exact ?? tagDraft)
+                                } else if (e.key === "Backspace" && tagDraft === "" && tags.length > 0) {
+                                    setTags(tags.slice(0, -1))
+                                } else if (e.key === "Escape") {
+                                    setTagDraft("")
+                                }
+                            }}
+                            onBlur={() => { if (tagDraft.trim()) addTag(tagDraft) }}
+                        />
+                        {suggestions.length > 0 ? (
+                            <ul role="listbox" aria-label="기존 태그"
+                                className="absolute left-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-md border bg-popover p-1 text-sm shadow-md">
+                                {suggestions.map((s) => (
+                                    <li key={s} role="option" aria-selected={false}>
+                                        <button type="button" className="w-full rounded px-2 py-1 text-left hover:bg-muted"
+                                                onMouseDown={(e) => e.preventDefault() /* input blur 전에 클릭을 받는다 */}
+                                                onClick={() => addTag(s)}>
+                                            #{s}
+                                        </button>
+                                    </li>
+                                ))}
+                                <li className="px-2 pt-1 text-[11px] text-muted-foreground">없는 이름은 Enter 로 새 태그가 됩니다</li>
+                            </ul>
+                        ) : null}
+                    </div>
                     <span className="text-xs text-muted-foreground">{tags.length}/{MAX_TAGS}</span>
                 </div>
             </div>
