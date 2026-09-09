@@ -14,6 +14,9 @@ import {
     uniqueFileName,
     uploadProgressLabel,
     validatePostDraft,
+    normalizeTags,
+    MAX_TAGS,
+    MAX_TAG_LENGTH,
 } from "./blog-admin"
 
 const draft = (overrides: Partial<PostDraft> = {}): PostDraft => ({
@@ -107,7 +110,16 @@ describe("buildPostFormData", () => {
             titleKo: "제목",
             titleEn: "Title",
             categoryId: 3,
+            tags: [],
         })
+    })
+
+    // BLOG-AC-18 — 태그는 정규화된 목록으로 request JSON 에 실린다
+    it("태그를 정규화해 request 파트에 싣는다", async () => {
+        const form = buildPostFormData(draft({ tags: [" Spring ", "spring", "Kafka"] }))
+
+        const request = form.get("request") as Blob
+        expect(JSON.parse(await request.text()).tags).toEqual(["Spring", "Kafka"])
     })
 
     it("영어 제목이 비면 한국어 제목으로 채운다", async () => {
@@ -332,5 +344,27 @@ describe("toPlaceholderMarkdown", () => {
         const content = "![a](/api/back/posts/3/images/%E0%A4%A.png)"
 
         expect(toPlaceholderMarkdown(content, 3)).toBe(content)
+    })
+})
+
+// BLOG-AC-18 — 서버 TagNormalizer 와 같은 규칙
+describe("normalizeTags", () => {
+    it("trim·빈 값 제거·대소문자 무시 중복 제거(첫 표기 유지)", () => {
+        expect(normalizeTags([" Spring ", "", "  ", "spring", "Kafka", "KAFKA"])).toEqual(["Spring", "Kafka"])
+        expect(normalizeTags(undefined)).toEqual([])
+    })
+
+    it("상한은 서버와 같다: 10개, 30자", () => {
+        expect(MAX_TAGS).toBe(10)
+        expect(MAX_TAG_LENGTH).toBe(30)
+    })
+})
+
+describe("validatePostDraft with tags", () => {
+    it("11개째 태그와 31자 태그는 오류다", () => {
+        const eleven = Array.from({ length: 11 }, (_, i) => `t${i}`)
+        expect(validatePostDraft(draft({ tags: eleven }))).toContain("태그는 최대 10개까지입니다.")
+        expect(validatePostDraft(draft({ tags: ["a".repeat(31)] }))).toContain("태그는 30자까지입니다.")
+        expect(validatePostDraft(draft({ tags: ["ok"] }))).toEqual([])
     })
 })

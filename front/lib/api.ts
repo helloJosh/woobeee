@@ -647,6 +647,24 @@ export const categoryAPI = {
     }
 }
 
+/** BLOG-AC-22 — 인기 태그(글 수 내림차순). 공개 GET. */
+export interface PopularTag {
+    id: number
+    name: string
+    count: number
+}
+
+export const tagsAPI = {
+    popular: async (limit = 20): Promise<PopularTag[]> => {
+        const response = await apiRequest(`/api/back/tags?limit=${limit}`, { method: "GET" }, true, { suppressAlert: true })
+        const json: ApiResponse<PopularTag[]> = await response.json()
+        if (!isApiSuccessful(json)) {
+            throw new Error(json.header?.message || "태그를 가져오는데 실패했습니다.")
+        }
+        return json.data ?? []
+    },
+}
+
 export const postsAPI = {
     getPosts: async (params: PostsParams = {}): Promise<GetPostsResponse> => {
         const searchParams = new URLSearchParams()
@@ -658,6 +676,9 @@ export const postsAPI = {
         }
         if (params.categoryId !== undefined && params.categoryId !== null) {
             searchParams.append("categoryId", String(params.categoryId))
+        }
+        if (params.tag && params.tag.trim() !== "") {
+            searchParams.append("tag", params.tag.trim())
         }
 
         const response = await apiRequest(`/api/back/posts?${searchParams.toString()}`, {

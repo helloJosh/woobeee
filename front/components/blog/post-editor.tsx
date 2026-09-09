@@ -20,6 +20,9 @@ import { AUTH_EXPIRED_MESSAGE, postsAPI, tokenManager } from "@/lib/api"
 import {
     buildPostFormData,
     canManagePosts,
+    normalizeTags,
+    MAX_TAGS,
+    MAX_TAG_LENGTH,
     collectDroppedImages,
     flattenCategories,
     insertSnippet,
@@ -111,6 +114,9 @@ export default function PostEditor({ postId }: PostEditorProps) {
     const [titleKo, setTitleKo] = useState("")
     const [titleEn, setTitleEn] = useState("")
     const [categoryId, setCategoryId] = useState<number | null>(null)
+    // 태그 — chips 로 관리하고 저장 시 request JSON 에 실린다 (BLOG-AC-18)
+    const [tags, setTags] = useState<string[]>([])
+    const [tagDraft, setTagDraft] = useState("")
     const [markdownKo, setMarkdownKo] = useState("")
     const [markdownEn, setMarkdownEn] = useState("")
     const [loading, setLoading] = useState(Boolean(postId))
@@ -156,7 +162,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
         const allowed = canManagePosts(tokenManager.getRole())
         setAuthorized(allowed)
         if (!allowed) {
-            router.replace("/blog")
+            router.replace("/")
         }
     }, [router])
 
@@ -177,6 +183,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
                 setTitleKo(ko.title ?? "")
                 setTitleEn(en.title ?? "")
                 setCategoryId(ko.categoryId ?? null)
+                setTags((ko.tags ?? []).map((t) => t.name))
                 // 조회 응답은 `${파일명}` 이 해석된 상태다. 되돌려 놓지 않으면 저장이
                 // 해석된 경로를 원문에 구워 버린다(BLOG-AC-14/17).
                 setMarkdownKo(toPlaceholderMarkdown(ko.content ?? "", postId))
@@ -208,6 +215,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
             titleKo,
             titleEn,
             categoryId,
+            tags,
             markdownKo: resolved.markdownKo,
             markdownEn: resolved.markdownEn,
             attachments: resolved.attachments,
@@ -229,7 +237,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
                 router.push(`/blog/${postId}`)
             } else {
                 await postsAPI.createPost(form, onProgress)
-                router.push("/blog")
+                router.push("/")
             }
         } catch (error) {
             setErrors([error instanceof Error ? error.message : "저장에 실패했습니다."])
@@ -294,7 +302,7 @@ export default function PostEditor({ postId }: PostEditorProps) {
                 </div>
             )}
 
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
                 <Select
                     value={categoryId === null ? undefined : String(categoryId)}
                     onValueChange={(value) => setCategoryId(Number(value))}
@@ -310,6 +318,37 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         ))}
                     </SelectContent>
                 </Select>
+
+                {/* 태그 입력: Enter 또는 쉼표로 추가, × 로 제거. 규칙은 normalizeTags/validatePostDraft (BLOG-AC-18) */}
+                <div className="flex min-w-[16rem] flex-1 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1">
+                    {tags.map((t) => (
+                        <span key={t.toLowerCase()} className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+                            #{t}
+                            <button type="button" aria-label={`태그 ${t} 제거`} className="text-muted-foreground hover:text-foreground"
+                                    onClick={() => setTags(tags.filter((x) => x !== t))}>×</button>
+                        </span>
+                    ))}
+                    <input
+                        aria-label="태그 추가"
+                        className="min-w-[8rem] flex-1 bg-transparent px-1 py-1 text-sm outline-none"
+                        placeholder={tags.length >= MAX_TAGS ? `태그는 ${MAX_TAGS}개까지` : "태그 입력 후 Enter"}
+                        value={tagDraft}
+                        maxLength={MAX_TAG_LENGTH}
+                        disabled={tags.length >= MAX_TAGS}
+                        onChange={(e) => setTagDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === ",") {
+                                e.preventDefault()
+                                setTags(normalizeTags([...tags, tagDraft]))
+                                setTagDraft("")
+                            } else if (e.key === "Backspace" && tagDraft === "" && tags.length > 0) {
+                                setTags(tags.slice(0, -1))
+                            }
+                        }}
+                        onBlur={() => { if (tagDraft.trim()) { setTags(normalizeTags([...tags, tagDraft])); setTagDraft("") } }}
+                    />
+                    <span className="text-xs text-muted-foreground">{tags.length}/{MAX_TAGS}</span>
+                </div>
             </div>
 
             <Tabs defaultValue="ko">

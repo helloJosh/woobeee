@@ -42,11 +42,12 @@
 
 | 메서드 | 경로 | 설명 | 권한 |
 | --- | --- | --- | --- |
-| GET | `/api/back/posts` | 게시글 목록 (검색·카테고리·페이징, `Accept-Language` 로 ko/en, `${파일명}` 치환) | 공개 |
-| GET | `/api/back/posts/{postId}` | 게시글 상세 (조회수 증가, `${파일명}` → 이미지 엔드포인트 상대 경로 치환) | 공개 |
-| POST | `/api/back/posts` | 게시글 작성 (multipart: `request` JSON + `markdownKr`/`markdownEn` + `file`*) | **ADMIN** |
-| PUT | `/api/back/posts/{postId}` | 게시글 수정 (같은 multipart 계약, 마크다운 파트 없으면 본문 보존) | **ADMIN** + 작성자 본인 |
-| DELETE | `/api/back/posts/{postId}` | 게시글 삭제 | **ADMIN** + 작성자 본인 |
+| GET | `/api/back/posts` | 게시글 목록 (검색 `q`·카테고리 `categoryId`·태그 `tag`(대소문자 무시)·페이징, `Accept-Language` 로 ko/en, `${파일명}` 치환, 각 글에 `tags`) | 공개 |
+| GET | `/api/back/posts/{postId}` | 게시글 상세 (조회수 증가, `${파일명}` → 이미지 엔드포인트 상대 경로 치환, `tags`) | 공개 |
+| POST | `/api/back/posts` | 게시글 작성 (multipart: `request` JSON(`titleKo`,`titleEn`,`categoryId`,`tags[]` ≤10개·30자) + `markdownKr`/`markdownEn` + `file`*) | **ADMIN** |
+| PUT | `/api/back/posts/{postId}` | 게시글 수정 (같은 multipart 계약, 마크다운 파트 없으면 본문 보존, `tags` 는 집합 교체) | **ADMIN** + 작성자 본인 |
+| DELETE | `/api/back/posts/{postId}` | 게시글 삭제 (태그 연결 캐스케이드) | **ADMIN** + 작성자 본인 |
+| GET | `/api/back/tags` | 인기 태그 (`limit` 기본 20 — 글 수 내림차순, 글 있는 태그만) | 공개 |
 | GET | `/api/back/categories` | 카테고리 트리 조회 | 공개 |
 | POST | `/api/back/categories/{parentId}` | 카테고리 생성 | **ADMIN** |
 | DELETE | `/api/back/categories/{categoryId}` | 카테고리 삭제 | **ADMIN** |

@@ -44,7 +44,7 @@
   - 단순 조회(PK/단일 컬럼)는 Spring Data 파생 메서드.
   - 그 외 커스텀 조회(동적 조건·검색·집계·조인/서브쿼리·목록)는 **네이티브 SQL**(`@Query(nativeQuery = true)`).
   - 네이티브 쿼리는 **N+1을 해결한 형태**로 쓴다: 조인으로 한 번에, 또는 식별자를 모아 배치(IN) 조회. 루프 안 단건 조회 금지. 값은 바인딩 파라미터로만.
-  - QueryDSL은 신규 사용 금지. `app-mvc`의 `blog/repository/PostQueryRepositoryImpl` 이 유일한 잔존 사용처이며 네이티브 SQL 전환 대상이다.
+  - QueryDSL은 쓰지 않는다. 마지막 잔존처였던 `blog/repository/PostQueryRepositoryImpl` 도 2026-09-09 에 네이티브 SQL 로 전환했고 의존을 걷어냈다.
 - **스키마는 Flyway가 단일 소스**다. `app-mvc/src/main/resources/db/migration/` 에 `V<n>__<name>.sql` 을 추가한다. JPA는 `validate` 전용이므로 엔티티만 바꾸면 부팅이 실패한다 — 마이그레이션을 함께 쓰고 `SchemaValidationTest` 를 통과시켜야 한다.
 - **app-webflux에서 블로킹 호출 금지**. Redis는 `ReactiveStringRedisTemplate`, DB는 R2DBC. core의 `RedisTokenStore`(블로킹)는 app-mvc 전용이다.
 - **토큰 계약을 바꿀 때는 양쪽을 함께 본다.** `core`의 `AuthTokenType` 키 규칙과 `TokenMetadata` 필드가 app-mvc(발급)와 app-webflux(검증)의 유일한 접점이다. `AuthTokenTypeTest` 가 이를 고정한다.
@@ -132,7 +132,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 앱 | 도메인 | 베이스 경로 | 비고 |
 | --- | --- | --- | --- |
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
-| app-mvc | blog | `/api/back/posts`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용 |
+| app-mvc | blog | `/api/back/posts`, `/api/back/tags`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/태그/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용, 태그는 글쓰기 안에서만 생성 |
 | app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
 | app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
@@ -159,8 +159,7 @@ cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록�
 | 고아 오브젝트 정리 | `profiles/` 의 고아 발생 경로는 사라졌다 — presigned 발급이 없어졌고 업로드가 앱을 거치며 즉시 컬럼에 등록되기 때문이다. 남은 경로는 **교체 시 이전 오브젝트 삭제 실패**뿐이다(의도적으로 조용히 넘긴다: 삭제가 프로필을 깨뜨리면 안 된다). 글 첨부(`{postId}/`)는 글이 지워져도 오브젝트가 남으므로 여전히 lifecycle 정책이 필요하다 |
 | 게임 머니 증감 | `members.game_money` 는 항상 0이다. 증감 계약은 game spec에서 설계 |
 | front 취약점 | 이관한 `package-lock.json` 기준 `npm audit` 17건(high 13, moderate 4). 전신 리포에서 그대로 넘어온 것 |
-| QueryDSL 잔존 | `blog/repository/PostQueryRepositoryImpl` 을 네이티브 SQL로 전환 |
-| blog AC 미작성 | `docs/blog/PRD.md` 의 인수 기준 표가 비어 있어 blog 테스트가 없다 |
+| blog AC 일부 미작성 | `docs/blog/PRD.md` 의 BLOG-AC-05·06(댓글·좋아요)은 아직 테스트가 없다. 목록·태그(AC-01~04, 18~22)는 `PostRepositoryTest`(실 Postgres)·`PostServiceImplTest` 로 고정됐다 |
 | 이관 문서 잔여 언급 | `docs/ARCHITECTURE.md` 에 product/cart 절이 크게 남아 있고, 존재하지 않는 `docs/cart/` 로 가는 ADR 링크 두 개와 존재하지 않는 `.codex/settings.json` 참조, 그리고 클래스명과 다른 blog 엔티티 이름(`Post` vs `Posts`)이 있다. `docs/<domain>/adr/` 은 `auth`·`blog` 에만 있다 |
 | 자잘한 미고정 | `auth-redirect.ts` 의 `startsWith("//")` 는 정규화 검사에 가려져 지워도 통과한다(중복일 뿐, 정규화 검사를 지워도 된다는 뜻이 아니다). `dodge-engine.ts` 가 Java 는 package-private 로 둔 이음매를 export 한다. `getBrowserLocale` 을 아무도 import 하지 않아 `en` 메시지 블록 전체가 런타임에 도달 불가다. `ErrorPayload.status` 는 채워지지만 읽는 곳이 없다. 경주 테스트 두 개가 각각 500ms 를 타임아웃으로 쓴다 |
 | 3B·6B 잔여 (모두 사용자가 밟을 수 없음) | 스냅샷 브로드캐스트가 게임 모니터를 쥔 채 팬아웃한다. 이미 접속 중인 멤버가 새 세션으로 JOIN 하면 방 전체에 상태가 다시 나간다. 라우트 미스의 404 와 `GameAuthWebFilter` 안에서 난 오류는 봉투를 타지 않는다. `broadcastRoomState` 가 던지면 방금 입장한 참가자가 자기 ROOM_STATE 확인을 못 받는다 |
@@ -187,8 +186,8 @@ G3 — 게임이 끝나도 방이 `FINISHED` 로 가지 않음 — 도 있었으
 고정해 뒀다 — 메모가 아니라 실행 가능한 할 일이다. **테스트는 다섯 개다**: G2 만 결과가 게임
 종류에 따라 다르므로 둘로 나뉜다(오목은 정적 누수, 장애물피하기는 이미 사라진 방의 결과 행을
 쓰는 능동적 오염). 다섯 테스트 모두 `@Tag("known-gap")` 을 달고 있고, 기본 `./mvnw test`
-에서는 제외된다(그래서 위 기본 검증 명령은 계속 459개 그린을 유지한다 — core 6 / app-mvc 152 /
-app-webflux 301. 포함해서 돌리면 464개 중 459개 통과, 5개 실패다). 루트 `pom.xml` 의
+에서는 제외된다(그래서 위 기본 검증 명령은 계속 480개 그린을 유지한다 — core 6 / app-mvc 173 /
+app-webflux 301. 포함해서 돌리면 485개 중 480개 통과, 5개 실패다). 루트 `pom.xml` 의
 `known.gap.excludedGroups` 프로퍼티(기본값 `known-gap`)가 surefire의 `excludedGroups` 를
 구동한다.
 

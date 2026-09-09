@@ -178,6 +178,7 @@ import { ko } from "date-fns/locale"
 import { ArrowLeft, Eye, Heart, MessageCircle, Pencil, Share2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import MarkdownView from "@/components/markdown-view"
 import { useRouter } from "next/navigation"
@@ -212,7 +213,7 @@ export default function PostDetail({ postId }: PostDetailProps) {
     setDeleting(true)
     try {
       await postsAPI.deletePost(postId)
-      router.push("/blog")
+      router.push("/")
     } catch (e) {
       alert(e instanceof Error ? e.message : "삭제에 실패했습니다.")
       setDeleting(false)
@@ -315,7 +316,16 @@ export default function PostDetail({ postId }: PostDetailProps) {
         <Card>
           <CardHeader>
             <div className="space-y-4">
-              <Badge variant="outline">{post.categoryName}</Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{post.categoryName}</Badge>
+                {/* 태그 chip — 홈을 그 태그로 필터한다 (BLOG-AC-20/21) */}
+                {(post.tags ?? []).map((t) => (
+                    <Link key={t.id} href={`/?tag=${encodeURIComponent(t.name)}`}
+                          className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted">
+                      #{t.name}
+                    </Link>
+                ))}
+              </div>
               <h1 className="text-3xl font-bold">{post.title}</h1>
 
               <div className="flex items-center justify-between text-sm text-muted-foreground">

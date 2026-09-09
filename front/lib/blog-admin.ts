@@ -11,6 +11,27 @@ export interface PostDraft {
     markdownKo: string
     markdownEn: string
     attachments?: PendingImage[]
+    /** 태그 이름 — 저장 시 normalizeTags 를 거친다 (BLOG-AC-18). */
+    tags?: string[]
+}
+
+// 서버 TagNormalizer 와 같은 상한
+export const MAX_TAGS = 10
+export const MAX_TAG_LENGTH = 30
+
+/** BLOG-AC-18 — trim, 빈 값 제거, 대소문자 무시 중복 제거(첫 표기 유지). 상한 검사는 validatePostDraft 가 한다. */
+export const normalizeTags = (raw: string[] | undefined): string[] => {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const item of raw ?? []) {
+        const name = item.trim()
+        if (!name) continue
+        const key = name.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push(name)
+    }
+    return out
 }
 
 /**
@@ -38,6 +59,13 @@ export const validatePostDraft = (draft: PostDraft): string[] => {
     }
     if (!draft.markdownKo.trim()) {
         errors.push("본문을 입력해 주세요.")
+    }
+    const tags = normalizeTags(draft.tags)
+    if (tags.length > MAX_TAGS) {
+        errors.push(`태그는 최대 ${MAX_TAGS}개까지입니다.`)
+    }
+    if (tags.some((t) => t.length > MAX_TAG_LENGTH)) {
+        errors.push(`태그는 ${MAX_TAG_LENGTH}자까지입니다.`)
     }
     return errors
 }
@@ -71,7 +99,7 @@ export const buildPostFormData = (draft: PostDraft): FormData => {
     form.append(
         "request",
         new Blob(
-            [JSON.stringify({ titleKo, titleEn, categoryId: draft.categoryId })],
+            [JSON.stringify({ titleKo, titleEn, categoryId: draft.categoryId, tags: normalizeTags(draft.tags) })],
             { type: "application/json" },
         ),
     )

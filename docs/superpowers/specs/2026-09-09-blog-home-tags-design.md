@@ -16,7 +16,7 @@
 | 경로 | 전 | 후 |
 | --- | --- | --- |
 | `/` | 게임 허브 | **블로그 홈**(`components/home/home-page.tsx`) |
-| `/blog` | 블로그 목록 | `/` 로 리다이렉트 — `category`·`search`·`tag` 쿼리를 그대로 옮긴다(서버 컴포넌트 `redirect`) |
+| `/blog` | 블로그 목록 | `/` 로 **307** 리다이렉트 — `category`·`search`·`tag` 쿼리만 옮긴다(`front/middleware.ts`, matcher `/blog`). 페이지 안의 `redirect()` 는 레이아웃 스트리밍 뒤라 meta refresh 로 떨어져 크롤러가 200 을 보기 때문에 미들웨어로 뺐다 |
 | `/blog/[id]`, `/blog/write` | 그대로 | 그대로 |
 | `/game` | `/` 로 리다이렉트 | **게임 허브** |
 

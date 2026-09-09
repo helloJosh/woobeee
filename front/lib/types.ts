@@ -68,6 +68,12 @@ export interface ApiHeader {
   resultCode?: number
 }
 
+/** 글 태그 — 서버 TagResponse 와 1:1 (BLOG-AC-20). */
+export interface Tag {
+  id: number
+  name: string
+}
+
 export interface Post {
   id: number
   title: string
@@ -78,6 +84,7 @@ export interface Post {
   views: number
   likes: number
   createdAt: Date
+  tags?: Tag[]
 }
 
 export interface GetPostsResponse {
@@ -90,6 +97,7 @@ export interface PostsParams {
   size?: number
   categoryId?: number
   q?: string // 검색어
+  tag?: string // 태그 이름 — 대소문자 무시 (BLOG-AC-21)
 }
 
 export interface GetPostResponse {
@@ -102,6 +110,7 @@ export interface GetPostResponse {
   likes: number
   isLiked: boolean
   createdAt: Date
+  tags?: Tag[]
 }
 
 export interface GetCommentResponse {

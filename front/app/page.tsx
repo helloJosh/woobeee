@@ -1,7 +1,12 @@
-import GameHub from "@/components/game/game-hub"
+import { Suspense } from "react"
+import HomePage from "@/components/home/home-page"
 
-// 게임 허브가 곧 메인 화면이다. 랜딩과 허브를 따로 두던 구조를 접었다 —
-// 허브 UI 자체는 components/game/game-hub.tsx 에 있고, /game 은 여기로 리다이렉트한다.
-export default function HomePage() {
-    return <GameHub />
+// 홈은 기술블로그다. 게임 허브는 /game 으로 내려갔다(스펙 2026-09-09).
+// HomePage 가 useSearchParams 를 읽으므로 Suspense 경계가 필요하다.
+export default function RootPage() {
+    return (
+        <Suspense fallback={null}>
+            <HomePage />
+        </Suspense>
+    )
 }

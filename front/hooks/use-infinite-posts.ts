@@ -8,6 +8,8 @@ import  {mockPostResponseApi , mockPostResponseApiWithCategory, mockPostResponse
 interface UseInfinitePostsProps {
     categoryId?: number
     search?: string
+    /** 태그 이름 필터 (BLOG-AC-21). */
+    tag?: string
     pageSize?: number
     enabled?: boolean
 }
@@ -15,6 +17,7 @@ interface UseInfinitePostsProps {
 export function useInfinitePosts ({
                                       categoryId,
                                       search,
+                                      tag,
                                       pageSize = 5,
                                       enabled = true
 }: UseInfinitePostsProps = {})
@@ -44,7 +47,7 @@ export function useInfinitePosts ({
         }
 
         resetAndLoad()
-    }, [categoryId, search, enabled, pageSize])
+    }, [categoryId, search, tag, enabled, pageSize])
 
     // 포스트 로드 함수
     const loadPosts = useCallback(
@@ -58,12 +61,14 @@ export function useInfinitePosts ({
                 const q = (search ?? "").trim()
                 const hasCategory = typeof categoryId === "number" && !Number.isNaN(categoryId)
                 const hasSearch = q.length > 0
+                const t = (tag ?? "").trim()
 
                 const params: PostsParams = {
                     page,
                     size: pageSize,
                     ...(hasCategory && { categoryId }),
                     ...(hasSearch && { q }),
+                    ...(t.length > 0 && { tag: t }),
                 }
 
                 let response: GetPostsResponse
@@ -108,7 +113,7 @@ export function useInfinitePosts ({
                 isInitialLoad.current = false
             }
         },
-        [categoryId, search, pageSize, loading],
+        [categoryId, search, tag, pageSize, loading],
     )
 
     // 다음 페이지 로드

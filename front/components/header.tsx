@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Menu, Home, Sun, Moon, Github, Mail, LogIn, Newspaper, CalendarDays} from "lucide-react"
+import {Search, Sun, Moon, Github, Mail, LogIn, Newspaper, CalendarDays, Gamepad2} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -32,9 +32,9 @@ function useDebounce(value: string, delay: number) {
 }
 
 export default function Header() {
-  // /blog처럼 사이드바·검색을 갖는 페이지가 마운트돼 있을 때만 채워진다.
-  // 다른 라우트에서는 모두 undefined라서 아래 조건부 렌더링이 탭 두 개만 남긴다.
-  const { onToggleSidebar, searchQuery: searchQueryProp, onSearchChange } = useHeaderControls()
+  // 홈(블로그)처럼 검색을 갖는 페이지가 마운트돼 있을 때만 채워진다.
+  // 다른 라우트에서는 undefined라서 아래 조건부 렌더링이 탭만 남긴다.
+  const { searchQuery: searchQueryProp, onSearchChange } = useHeaderControls()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
@@ -82,22 +82,17 @@ export default function Header() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 items-center px-4">
           <div className="flex items-center gap-4">
-            {onToggleSidebar ? (
-                <Button variant="ghost" size="icon" onClick={onToggleSidebar} className="md:hidden">
-                  <Menu className="h-5 w-5" />
-                </Button>
-            ) : null}
-
+            {/* 상단탭: 홈(기술블로그) · 게임 · 일정(로그인 시). 마이페이지는 오른쪽 아바타가 가리킨다. */}
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/">
-                <Home className="h-4 w-4" />
-                <span className="hidden sm:inline">홈</span>
+                <Newspaper className="h-4 w-4" />
+                <span className="hidden sm:inline">기술블로그</span>
               </Link>
             </Button>
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
-              <Link href="/blog">
-                <Newspaper className="h-4 w-4" />
-                <span className="hidden sm:inline">기술블로그</span>
+              <Link href="/game">
+                <Gamepad2 className="h-4 w-4" />
+                <span className="hidden sm:inline">게임</span>
               </Link>
             </Button>
             {isAuthenticated ? (

@@ -102,7 +102,7 @@ art-market-place
 
 - Controller: `PostController`, `CategoryController`, `CommentController`, `LikeController`
 - Service: 각 도메인별 interface/implementation 분리
-- Repository: 단순 CRUD는 Spring Data JPA, 검색/집계 조회는 로우 쿼리(Native SQL, 기존 QueryDSL fragment는 마이그레이션 대상)
+- Repository: 단순 CRUD는 Spring Data JPA, 검색/집계 조회는 로우 쿼리(Native SQL — `PostQueryRepositoryImpl` 은 `EntityManager` 네이티브 쿼리, QueryDSL 은 2026-09-09 제거)
 - Entity: `Posts`, `Categories`, `Comments`, `Likes`
 - Support: 페이징, Redis 지원, 업로드 진행 스트림
 
@@ -136,7 +136,6 @@ art-market-place
 - `AccessTokenLoginIdHeaderFilter`: access token 기반 loginId 헤더 주입
 - `MutableHttpServletRequest`: 요청 헤더 조작을 위한 wrapper
 - `CorsConfig`: `/api/**` 요청에 대해 로컬 프론트 개발 서버와 운영 도메인의 CORS를 허용
-- `QuerydslConfig`: 기존 QueryDSL 조회용 `JPAQueryFactory` 제공. 로우 쿼리 마이그레이션 완료 후 제거 예정(ADR-001).
 
 ## 데이터 저장소
 
@@ -147,7 +146,7 @@ art-market-place
 ## 쿼리 구현 규칙
 
 - 단순 조회는 Spring Data JPA 파생 메서드로 유지한다.
-- 그 외 모든 커스텀 조회(동적 조건, 검색, 집계, 조인/서브쿼리, 목록)는 로우 쿼리(Native SQL)로 작성한다. QueryDSL은 더 이상 사용하지 않으며 기존 fragment는 마이그레이션 대상이다.
+- 그 외 모든 커스텀 조회(동적 조건, 검색, 집계, 조인/서브쿼리, 목록)는 로우 쿼리(Native SQL)로 작성한다. QueryDSL은 사용하지 않는다(의존 제거됨).
 - 로우 쿼리는 N+1을 해결한 형태(조인 일괄 조회 또는 식별자 배치 IN 조회)로 작성하고, 값은 바인딩 파라미터로만 주입한다.
 - 상세 정책: `docs/_global/adr/ADR-001-postgresql.md`.
 
