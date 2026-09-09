@@ -79,10 +79,10 @@ export default function HomePage() {
 
     return (
         <main className="mx-auto max-w-6xl p-4 sm:p-6">
-          {/* 상단 태그 알약 줄 — 태그로 구분해 본다. 사이드바 태그 목록은 글 수를 보인다 */}
-          <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
           <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_240px] lg:gap-16">
           <div className="min-w-0 space-y-4">
+            {/* 상단 태그 알약 줄 — 글 열 안에 두어 글 폭 기준으로 가운데 정렬된다(사이드바 폭에 끌리지 않게) */}
+            <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
             {canWrite ? (
                 <div className="flex justify-end">
                     <Button size="sm" onClick={() => router.push("/blog/write")}>
