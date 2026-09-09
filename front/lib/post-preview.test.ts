@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { excerpt } from "./post-preview"
+import { excerpt, summaryOf } from "./post-preview"
 
 // 홈 목록의 요약은 본문 마크다운에서 만든다 — 글에 전용 필드가 없다.
 describe("excerpt", () => {
@@ -27,5 +27,15 @@ describe("excerpt", () => {
         expect(excerpt("", 100)).toBe("")
         expect(excerpt(null, 100)).toBe("")
         expect(excerpt("![only](https://x/a.png)", 100)).toBe("")
+    })
+})
+
+// BLOG-AC-23 — 목록의 제목 아래 줄: 작성자가 적은 설명이 있으면 그것, 없으면 본문 요약
+describe("summaryOf", () => {
+    it("설명이 있으면 설명을 그대로, 없거나 비면 본문 요약", () => {
+        expect(summaryOf("직접 쓴 설명", "# 제목\n\n본문 첫 문장.", 100)).toBe("직접 쓴 설명")
+        expect(summaryOf(null, "# 제목\n\n본문 첫 문장.", 100)).toBe("본문 첫 문장.")
+        expect(summaryOf("   ", "본문", 100)).toBe("본문")
+        expect(summaryOf(undefined, "", 100)).toBe("")
     })
 })

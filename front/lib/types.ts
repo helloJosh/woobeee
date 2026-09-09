@@ -77,6 +77,8 @@ export interface Tag {
 export interface Post {
   id: number
   title: string
+  /** 작성자가 적은 한 줄 설명 — 없으면 null (BLOG-AC-23). */
+  description?: string | null
   content: string
   categoryName: string
   categoryId: number
@@ -103,6 +105,7 @@ export interface PostsParams {
 export interface GetPostResponse {
   id: number
   title: string
+  description?: string | null
   content: string
   categoryName : string
   categoryId : number

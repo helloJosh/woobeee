@@ -9,6 +9,7 @@ import java.util.List;
 public record GetPostResponse(
         Long id,
         String title,
+        String description,
         String content,
         String categoryName,
         Long categoryId,

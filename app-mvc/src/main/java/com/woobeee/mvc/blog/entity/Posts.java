@@ -27,6 +27,13 @@ public class Posts {
     @Setter
     private String textEn;
 
+    /** 한 줄 설명 — 제목처럼 언어별, 선택 (BLOG-AC-23). 빈 값은 null 로 정규화한다. */
+    @Column(length = 300)
+    private String descriptionKo;
+
+    @Column(length = 300)
+    private String descriptionEn;
+
     @Builder.Default
     private Long views = 0L;
 
@@ -50,6 +57,12 @@ public class Posts {
         this.categoryId = categoryId;
         this.memberId = memberId;
         this.views = 0L;
+    }
+
+    /** 빈 문자열은 null 로 — "없음" 을 한 가지로만 표현한다. */
+    public void updateDescription(String descriptionKo, String descriptionEn) {
+        this.descriptionKo = descriptionKo == null || descriptionKo.isBlank() ? null : descriptionKo.trim();
+        this.descriptionEn = descriptionEn == null || descriptionEn.isBlank() ? null : descriptionEn.trim();
     }
 
     public void updateContent(String titleKo, String titleEn, String textKo, String textEn, Long categoryId) {

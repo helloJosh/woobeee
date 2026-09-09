@@ -62,6 +62,13 @@
 - **인기 태그** — `GET /api/back/tags?limit=20`: `[{id, name, count}]` 글 수 내림차순, 같은 수는 이름 순. 공개 GET.
 - **QueryDSL 제거** — `PostQueryRepositoryImpl.searchPosts` 에 태그 조건을 넣는 대신 네이티브 SQL 로 다시 쓴다. `countGroupByCategoryId` 도 함께. `QuerydslConfig`, `querydsl-jpa`/`querydsl-apt` 의존, 컨텍스트 테스트의 `JPAQueryFactory` 목을 걷어낸다. 정렬·검색 대상 컬럼 규칙(BLOG-AC-01/02/03)은 그대로.
 
+### C-2. 글 설명 (4차 추가)
+
+사용자 요청: "글 description 을 적어둘 수 있게, 제목 아래 description 이 나오게". 제목과 같은 언어별 필드
+`description_ko/description_en VARCHAR(300)`(V14). 요청 `descriptionKo/descriptionEn`(선택), 빈 값은 null.
+응답 `description` 은 locale 의 것, 영어가 없으면 한국어. 목록 항목과 상세는 제목 아래에 설명을 보이고,
+목록은 설명이 없으면 본문 요약(`summaryOf`)으로 대체한다. 에디터는 각 언어 탭의 제목 아래 한 줄 입력.
+
 ### D. 에디터
 
 태그 입력 한 줄: Enter 또는 쉼표로 chip 추가, × 로 제거, 최대 10개 안내. 수정 화면은 상세 응답의 `tags` 로 초기화. `request` JSON 파트에 `tags` 를 싣는다.

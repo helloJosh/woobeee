@@ -13,7 +13,7 @@
 
 ## 모델
 
-- `Posts`(제목/본문 한국어·영어 필드 `titleKo/textKo`, `titleEn/textEn`, `categoryId`, `createdAt`), `Categories`, `Tags`(`name`, lower 유니크), `PostTags`(글-태그 연결, V13), `Comments`(대댓글 구조), `Likes`.
+- `Posts`(제목/본문 한국어·영어 필드 `titleKo/textKo`, `titleEn/textEn`, 한 줄 설명 `descriptionKo/descriptionEn`(V14, 선택·300자), `categoryId`, `createdAt`), `Categories`, `Tags`(`name`, lower 유니크), `PostTags`(글-태그 연결, V13), `Comments`(대댓글 구조), `Likes`.
 - 저장소: 단순 CRUD는 Spring Data JPA(`PostRepository`, `CategoryRepository`, `TagRepository`, `PostTagRepository`, `CommentRepository`, `LikeRepository`), 검색/집계는 로우 쿼리(Native SQL). `PostQueryRepositoryImpl`(목록·카테고리 집계)은 2026-09-09 에 QueryDSL 에서 네이티브 SQL 로 전환했고 QueryDSL 의존은 제거됐다.
 - 태그 테이블에는 FK 가 없다(사용자 결정). 참조 무결성은 서비스가 검사한다 — 글 삭제 시 `post_tags` 를 먼저 지운다.
 - 서비스는 interface/impl 분리(`PostService`/`PostServiceImpl` 등).
@@ -81,6 +81,7 @@
 | BLOG-AC-19 | 저장·수정은 이름을 소문자로 비교해 있는 태그를 재사용하고 없는 이름을 새로 만든 뒤 `post_tags` 를 **집합 교체**한다(수정은 삭제 후 재생성). 글 삭제는 연결을 먼저 지운다. 태그 없이 저장하면 태그 저장소를 건드리지 않는다. 에디터는 기존 태그(인기순 200개)를 자동완성으로 보여 재사용을 유도하고(`tagSuggestions` — 대소문자 무시 부분일치, 고른 것 제외, 앞글자 일치 우선, 최대 8개), 없는 이름은 Enter 로 새 태그가 된다 | `PostServiceImplTest`, `PostRepositoryTest`, `blog-admin.test.ts` |
 | BLOG-AC-20 | 목록 `PostContent.tags` 와 상세 `GetPostResponse.tags` 는 `[{id, name}]`(글 안에서 이름 순). 목록은 글 id 를 모아 **한 번의** 조인 조회로 붙인다 | `PostServiceImplTest`, `PostRepositoryTest` |
 | BLOG-AC-21 | `GET /api/back/posts?tag=<name>` 은 대소문자를 무시하고 카테고리·검색과 AND 로 겹친다. 프론트는 `?tag=` 쿼리로 홈을 필터한다 | `PostRepositoryTest` |
+| BLOG-AC-23 | 글 설명: `PostPostRequest.descriptionKo/descriptionEn`(선택, 각 300자)을 저장·수정 때 갈아 끼우고 빈 값은 null. 목록·상세 응답의 `description` 은 locale 의 것, 영어가 없으면 한국어로 대체(제목과 같은 규칙). 화면은 제목 아래에 설명을 보이고, 목록은 설명이 없으면 본문 요약(`summaryOf`)으로 대체 | `PostServiceImplTest`, `blog-admin.test.ts`, `post-preview.test.ts` |
 | BLOG-AC-22 | `GET /api/back/tags?limit=N`(기본 20, 공개)은 글 수 내림차순·같으면 이름 오름차순으로 글 있는 태그만 낸다 | `PostRepositoryTest`, `TagControllerTest` |
 
 ## 지원 기능

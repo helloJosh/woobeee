@@ -13,6 +13,17 @@ export interface PostDraft {
     attachments?: PendingImage[]
     /** 태그 이름 — 저장 시 normalizeTags 를 거친다 (BLOG-AC-18). */
     tags?: string[]
+    /** 한 줄 설명 — 언어별, 선택, 각 300자 (BLOG-AC-23). */
+    descriptionKo?: string
+    descriptionEn?: string
+}
+
+export const MAX_DESCRIPTION = 300
+
+/** 설명은 trim 해서 싣고 비면 null — 서버가 읽을 때 영어 → 한국어로 대체한다. */
+const descriptionOrNull = (value: string | undefined): string | null => {
+    const v = value?.trim()
+    return v ? v : null
 }
 
 // 서버 TagNormalizer 와 같은 상한
@@ -83,6 +94,9 @@ export const validatePostDraft = (draft: PostDraft): string[] => {
     if (tags.some((t) => t.length > MAX_TAG_LENGTH)) {
         errors.push(`태그는 ${MAX_TAG_LENGTH}자까지입니다.`)
     }
+    if ((draft.descriptionKo?.trim().length ?? 0) > MAX_DESCRIPTION || (draft.descriptionEn?.trim().length ?? 0) > MAX_DESCRIPTION) {
+        errors.push(`설명은 ${MAX_DESCRIPTION}자까지입니다.`)
+    }
     return errors
 }
 
@@ -115,7 +129,12 @@ export const buildPostFormData = (draft: PostDraft): FormData => {
     form.append(
         "request",
         new Blob(
-            [JSON.stringify({ titleKo, titleEn, categoryId: draft.categoryId, tags: normalizeTags(draft.tags) })],
+            [JSON.stringify({
+                titleKo, titleEn, categoryId: draft.categoryId,
+                descriptionKo: descriptionOrNull(draft.descriptionKo),
+                descriptionEn: descriptionOrNull(draft.descriptionEn),
+                tags: normalizeTags(draft.tags),
+            })],
             { type: "application/json" },
         ),
     )

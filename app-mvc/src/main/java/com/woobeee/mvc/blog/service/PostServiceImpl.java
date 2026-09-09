@@ -91,6 +91,7 @@ public class PostServiceImpl implements PostService {
         );
 
         List<String> tags = TagNormalizer.normalize(request.tags());
+        post.updateDescription(request.descriptionKo(), request.descriptionEn());
         post = postRepository.save(post);
         linkTags(post.getId(), tags);
 
@@ -125,6 +126,7 @@ public class PostServiceImpl implements PostService {
                 readMarkdown(markdownEn),
                 request.categoryId()
         );
+        post.updateDescription(request.descriptionKo(), request.descriptionEn());
         // BLOG-AC-19 — 집합 교체
         postTagRepository.deleteAllForPost(post.getId());
         linkTags(post.getId(), tags);
@@ -278,6 +280,7 @@ public class PostServiceImpl implements PostService {
         return new GetPostResponse(
                 post.getId(),
                 title,
+                descriptionFor(post, locale),
                 content,
                 categoryName,
                 post.getCategoryId(),
@@ -350,6 +353,7 @@ public class PostServiceImpl implements PostService {
             return new GetPostsResponse.PostContent(
                     post.getId(),
                     title,
+                    descriptionFor(post, locale),
                     content,
                     categoryName,
                     post.getCategoryId(),
@@ -361,6 +365,14 @@ public class PostServiceImpl implements PostService {
         }).toList();
 
         return new GetPostsResponse(posts.hasNext(), contents);
+    }
+
+    /** BLOG-AC-23 — 영어 설명이 없으면 한국어로 대체한다(제목과 같은 규칙). 둘 다 없으면 null. */
+    private static String descriptionFor(Posts post, String locale) {
+        if (locale.equalsIgnoreCase("en") && post.getDescriptionEn() != null) {
+            return post.getDescriptionEn();
+        }
+        return post.getDescriptionKo();
     }
 
     public List<Long> findAllChildIdsIncludingSelf(Long parentId) {

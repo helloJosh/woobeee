@@ -111,8 +111,18 @@ describe("buildPostFormData", () => {
             titleKo: "제목",
             titleEn: "Title",
             categoryId: 3,
+            descriptionKo: null,
+            descriptionEn: null,
             tags: [],
         })
+    })
+
+    // BLOG-AC-23 — 설명은 trim 해서 싣고, 비면 null (서버가 읽을 때 영어→한국어로 대체한다)
+    it("설명을 언어별로 싣고 빈 값은 null 이다", async () => {
+        const form = buildPostFormData(draft({ descriptionKo: "  한 줄 설명 ", descriptionEn: "   " }))
+        const body = JSON.parse(await (form.get("request") as Blob).text())
+        expect(body.descriptionKo).toBe("한 줄 설명")
+        expect(body.descriptionEn).toBeNull()
     })
 
     // BLOG-AC-18 — 태그는 정규화된 목록으로 request JSON 에 실린다
@@ -388,5 +398,12 @@ describe("tagSuggestions", () => {
         expect(tagSuggestions(existing, "  ", [])).toEqual([])
         const many = Array.from({ length: 12 }, (_, i) => `tag${i}`)
         expect(tagSuggestions(many, "tag", [])).toHaveLength(8)
+    })
+})
+
+describe("validatePostDraft with description", () => {
+    it("301자 설명은 오류다", () => {
+        expect(validatePostDraft(draft({ descriptionKo: "가".repeat(301) }))).toContain("설명은 300자까지입니다.")
+        expect(validatePostDraft(draft({ descriptionEn: "a".repeat(300) }))).toEqual([])
     })
 })

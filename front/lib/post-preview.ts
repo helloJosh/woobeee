@@ -1,6 +1,14 @@
 // front/lib/post-preview.ts — 홈 목록의 요약. 글에 전용 필드가 없어 본문 마크다운에서 만든다.
 // React-free: 컴포넌트는 값을 그리기만 한다.
 
+export const MAX_DESCRIPTION_LENGTH = 300
+
+/** BLOG-AC-23 — 제목 아래 줄: 작성자가 적은 설명이 있으면 그것, 없으면 본문 요약. */
+export function summaryOf(description: string | null | undefined, markdown: string | null | undefined, maxChars: number): string {
+    const d = description?.trim()
+    return d ? d : excerpt(markdown, maxChars)
+}
+
 /**
  * 마크다운 기호를 걷어낸 본문 앞부분. 헤딩 줄과 코드블록은 통째로 빠지고, 링크·강조·인용·인라인 코드는
  * 텍스트만 남는다. 공백은 한 칸으로 접고 maxChars 를 넘으면 "…" 을 붙인다.

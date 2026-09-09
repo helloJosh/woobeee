@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import TagChips from "@/components/home/tag-chips"
-import { excerpt } from "@/lib/post-preview"
+import { summaryOf } from "@/lib/post-preview"
 import type { Post } from "@/lib/types"
 
 function formatDate(value: Date | string | undefined): string {
@@ -28,7 +28,7 @@ export default function PostListItem({ post, activeTag, onSelectTag }: {
             <h2 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
                 <Link href={`/blog/${post.id}`} className="hover:underline decoration-2 underline-offset-4">{post.title}</Link>
             </h2>
-            <p className="line-clamp-2 text-base leading-relaxed text-muted-foreground">{excerpt(post.content, 220)}</p>
+            <p className="line-clamp-2 text-base leading-relaxed text-muted-foreground">{summaryOf(post.description, post.content, 220)}</p>
             <TagChips tags={post.tags} activeTag={activeTag} onSelect={onSelectTag} />
         </article>
     )

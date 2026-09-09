@@ -14,6 +14,8 @@ public record GetPostsResponse(
     public record PostContent(
             Long id,
             String title,
+            /** locale 의 설명 — 영어가 비면 한국어로 대체. 없으면 null (BLOG-AC-23). */
+            String description,
             String content,
             String categoryName,
             Long categoryId,

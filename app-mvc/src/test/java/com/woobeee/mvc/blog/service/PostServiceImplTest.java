@@ -94,7 +94,7 @@ class PostServiceImplTest {
 
         postService.updatePost(
                 42L,
-                new PostPostRequest("new-ko", "new-en", 5L, null),
+                new PostPostRequest("new-ko", "new-en", 5L, null, null, null),
                 "admin@example.com",
                 new MockMultipartFile("markdownEn", "en.md", "text/markdown", "# new en".getBytes(StandardCharsets.UTF_8)),
                 new MockMultipartFile("markdownKr", "kr.md", "text/markdown", "# new kr".getBytes(StandardCharsets.UTF_8)),
@@ -118,7 +118,7 @@ class PostServiceImplTest {
 
         assertThatThrownBy(() -> postService.updatePost(
                 42L,
-                new PostPostRequest("new-ko", "new-en", 5L, null),
+                new PostPostRequest("new-ko", "new-en", 5L, null, null, null),
                 "other@example.com",
                 null,
                 null,
@@ -138,7 +138,7 @@ class PostServiceImplTest {
 
         postService.updatePost(
                 42L,
-                new PostPostRequest("new-ko", "new-en", 5L, null),
+                new PostPostRequest("new-ko", "new-en", 5L, null, null, null),
                 "admin@example.com",
                 null,
                 null,
@@ -314,7 +314,7 @@ class PostServiceImplTest {
             return fresh;
         });
 
-        postService.savePost(new PostPostRequest("t", "t", 1L, List.of(" spring", "Kafka")),
+        postService.savePost(new PostPostRequest("t", "t", 1L, null, null, List.of(" spring", "Kafka")),
                 "admin@example.com", null, null, null);
 
         verify(tagRepository).saveAll(argThat((List<Tags> l) -> l.size() == 1 && l.get(0).getName().equals("Kafka")));
@@ -329,7 +329,7 @@ class PostServiceImplTest {
         adminLoggedIn();
         when(postRepository.save(any(Posts.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        postService.savePost(new PostPostRequest("t", "t", 1L, null), "admin@example.com", null, null, null);
+        postService.savePost(new PostPostRequest("t", "t", 1L, null, null, null), "admin@example.com", null, null, null);
 
         verify(tagRepository, never()).findAllByLowerNames(anyList());
         verify(postTagRepository, never()).saveAll(anyList());
@@ -344,7 +344,7 @@ class PostServiceImplTest {
         when(postRepository.findById(42L)).thenReturn(Optional.of(post));
         when(tagRepository.findAllByLowerNames(List.of("jpa"))).thenReturn(List.of(storedTag(7L, "JPA")));
 
-        postService.updatePost(42L, new PostPostRequest("n", "n", 1L, List.of("JPA")), "admin@example.com", null, null, null);
+        postService.updatePost(42L, new PostPostRequest("n", "n", 1L, null, null, List.of("JPA")), "admin@example.com", null, null, null);
 
         var order = inOrder(postTagRepository);
         order.verify(postTagRepository).deleteAllForPost(42L);
@@ -398,5 +398,50 @@ class PostServiceImplTest {
 
         assertThat(response.tags()).extracting(TagResponse::id, TagResponse::name)
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(10L, "Kafka"));
+    }
+    /* ===== BLOG-AC-23 — 글 설명 ===== */
+
+    /** BLOG-AC-23 — 설명은 제목처럼 언어별로 저장되고, 목록·상세 응답은 locale 의 것을 낸다. 영어가 비면 한국어로 대체. */
+    @Test
+    void descriptionIsStoredPerLocaleAndFallsBackToKorean() {
+        adminLoggedIn();
+        ArgumentCaptor<Posts> saved = ArgumentCaptor.forClass(Posts.class);
+        when(postRepository.save(saved.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        postService.savePost(new PostPostRequest("t", "t", 1L, "한 줄 설명", "  ", null),
+                "admin@example.com", null, null, null);
+
+        Posts post = saved.getValue();
+        assertThat(post.getDescriptionKo()).isEqualTo("한 줄 설명");
+        assertThat(post.getDescriptionEn()).isNull();
+
+        ReflectionTestUtils.setField(post, "id", 42L);
+        when(postRepository.findById(42L)).thenReturn(Optional.of(post));
+        when(categoryRepository.findById(1L)).thenReturn(Optional.empty());
+        assertThat(postService.getPost(42L, "ko", null, mock(HttpServletRequest.class)).description()).isEqualTo("한 줄 설명");
+        assertThat(postService.getPost(42L, "en", null, mock(HttpServletRequest.class)).description()).isEqualTo("한 줄 설명");
+
+        when(postRepository.searchPosts(null, null, "en", null, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(post)));
+        assertThat(postService.getAllPost(null, "en", null, null, Pageable.unpaged()).contents().get(0).description())
+                .isEqualTo("한 줄 설명");
+    }
+
+    /** BLOG-AC-23 — 수정은 설명도 갈아 끼우고, 비우면 null 이 된다. */
+    @Test
+    void updatePostReplacesTheDescription() {
+        Posts post = existingPost(42L, 3L);
+        post.updateDescription("옛 설명", "old");
+        adminLoggedIn();
+        when(postRepository.findById(42L)).thenReturn(Optional.of(post));
+
+        postService.updatePost(42L, new PostPostRequest("n", "n", 1L, "새 설명", "new one", null),
+                "admin@example.com", null, null, null);
+        assertThat(post.getDescriptionKo()).isEqualTo("새 설명");
+        assertThat(post.getDescriptionEn()).isEqualTo("new one");
+
+        postService.updatePost(42L, new PostPostRequest("n", "n", 1L, null, null, null),
+                "admin@example.com", null, null, null);
+        assertThat(post.getDescriptionKo()).isNull();
+        assertThat(post.getDescriptionEn()).isNull();
     }
 }

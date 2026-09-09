@@ -23,6 +23,7 @@ import {
     normalizeTags,
     MAX_TAGS,
     MAX_TAG_LENGTH,
+    MAX_DESCRIPTION,
     tagSuggestions,
     collectDroppedImages,
     flattenCategories,
@@ -114,6 +115,9 @@ export default function PostEditor({ postId }: PostEditorProps) {
     const [authorized, setAuthorized] = useState<boolean | null>(null)
     const [titleKo, setTitleKo] = useState("")
     const [titleEn, setTitleEn] = useState("")
+    // 한 줄 설명 — 제목 아래에 나온다. 비우면 목록은 본문 요약으로 대체한다 (BLOG-AC-23)
+    const [descriptionKo, setDescriptionKo] = useState("")
+    const [descriptionEn, setDescriptionEn] = useState("")
     const [categoryId, setCategoryId] = useState<number | null>(null)
     // 태그 — chips 로 관리하고 저장 시 request JSON 에 실린다 (BLOG-AC-18)
     const [tags, setTags] = useState<string[]>([])
@@ -197,6 +201,9 @@ export default function PostEditor({ postId }: PostEditorProps) {
 
                 setTitleKo(ko.title ?? "")
                 setTitleEn(en.title ?? "")
+                setDescriptionKo(ko.description ?? "")
+                // 영어 응답은 한국어로 대체돼 올 수 있다 — 같은 값이면 영어 칸은 비워 둔다
+                setDescriptionEn(en.description && en.description !== ko.description ? en.description : "")
                 setCategoryId(ko.categoryId ?? null)
                 setTags((ko.tags ?? []).map((t) => t.name))
                 // 조회 응답은 `${파일명}` 이 해석된 상태다. 되돌려 놓지 않으면 저장이
@@ -231,6 +238,8 @@ export default function PostEditor({ postId }: PostEditorProps) {
             titleEn,
             categoryId,
             tags,
+            descriptionKo,
+            descriptionEn,
             markdownKo: resolved.markdownKo,
             markdownEn: resolved.markdownEn,
             attachments: resolved.attachments,
@@ -401,6 +410,13 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         onChange={(event) => setTitleKo(event.target.value)}
                         className="text-lg font-semibold"
                     />
+                    <Input
+                        placeholder="한 줄 설명 (선택, 300자) — 목록과 글 제목 아래에 나옵니다"
+                        aria-label="설명"
+                        value={descriptionKo}
+                        maxLength={MAX_DESCRIPTION}
+                        onChange={(event) => setDescriptionKo(event.target.value)}
+                    />
                     <MarkdownEditorPane
                         value={markdownKo}
                         onValueChange={setMarkdownKo}
@@ -415,6 +431,13 @@ export default function PostEditor({ postId }: PostEditorProps) {
                         value={titleEn}
                         onChange={(event) => setTitleEn(event.target.value)}
                         className="text-lg font-semibold"
+                    />
+                    <Input
+                        placeholder="Description (optional, 300 chars — falls back to Korean)"
+                        aria-label="Description"
+                        value={descriptionEn}
+                        maxLength={MAX_DESCRIPTION}
+                        onChange={(event) => setDescriptionEn(event.target.value)}
                     />
                     <MarkdownEditorPane
                         value={markdownEn}

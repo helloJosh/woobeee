@@ -327,6 +327,9 @@ export default function PostDetail({ postId }: PostDetailProps) {
                 ))}
               </div>
               <h1 className="text-3xl font-bold">{post.title}</h1>
+              {post.description ? (
+                  <p className="text-base leading-relaxed text-muted-foreground">{post.description}</p>
+              ) : null}
 
               <div className="flex items-center justify-between text-sm text-muted-foreground">
                 <div className="flex items-center gap-4">
