@@ -46,6 +46,18 @@ export default function HomeSidebar({ categories, selectedCategory, onSelectCate
     }
 
     const nav = categoryNav(categories, selectedCategory)
+    // 부모별 자식 목록 접힘/펼침 — 고른 카테고리의 부모는 자동으로 펼친다
+    const [expanded, setExpanded] = useState<Set<number>>(new Set())
+    const activeParentId = nav.activeParent?.id ?? null
+    useEffect(() => {
+        if (activeParentId === null) return
+        setExpanded((prev) => (prev.has(activeParentId) ? prev : new Set(prev).add(activeParentId)))
+    }, [activeParentId])
+    const toggleChildren = (id: number) => setExpanded((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id); else next.add(id)
+        return next
+    })
     const selectedName = selectedCategory === null ? null
         : categories.flatMap((c) => [c, ...(c.children ?? [])]).find((c) => c.id === selectedCategory)?.name ?? null
 
@@ -63,14 +75,28 @@ export default function HomeSidebar({ categories, selectedCategory, onSelectCate
                 {open ? (
                     <ul className="space-y-0.5">
                         <li><ItemButton active={selectedCategory === null} onClick={() => onSelectCategory(null)}>전체</ItemButton></li>
-                        {nav.parents.map((c) => (
+                        {nav.parents.map((c) => {
+                            const children = c.children ?? []
+                            const isOpen = expanded.has(c.id)
+                            return (
                             <li key={c.id}>
-                                <ItemButton active={selectedCategory === c.id} onClick={() => onSelectCategory(c.id)}>
-                                    {c.name}{c.count > 0 ? <span className="ml-1 text-muted-foreground">({c.count})</span> : null}
-                                </ItemButton>
-                                {nav.activeParent?.id === c.id && nav.children.length > 0 ? (
+                                <div className="flex items-center gap-1">
+                                    <div className="flex-1">
+                                        <ItemButton active={selectedCategory === c.id} onClick={() => onSelectCategory(c.id)}>
+                                            {c.name}{c.count > 0 ? <span className="ml-1 text-muted-foreground">({c.count})</span> : null}
+                                        </ItemButton>
+                                    </div>
+                                    {children.length > 0 ? (
+                                        <button type="button" onClick={() => toggleChildren(c.id)} aria-expanded={isOpen}
+                                                aria-label={isOpen ? `${c.name} 하위 접기` : `${c.name} 하위 펼치기`}
+                                                className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                        </button>
+                                    ) : null}
+                                </div>
+                                {isOpen && children.length > 0 ? (
                                     <ul className="ml-3 border-l pl-3">
-                                        {nav.children.map((child) => (
+                                        {children.map((child) => (
                                             <li key={child.id}>
                                                 <ItemButton active={selectedCategory === child.id} onClick={() => onSelectCategory(child.id)}>
                                                     {child.name}{child.count > 0 ? <span className="ml-1 text-muted-foreground">({child.count})</span> : null}
@@ -80,7 +106,8 @@ export default function HomeSidebar({ categories, selectedCategory, onSelectCate
                                     </ul>
                                 ) : null}
                             </li>
-                        ))}
+                            )
+                        })}
                     </ul>
                 ) : null}
             </section>
