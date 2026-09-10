@@ -1,18 +1,20 @@
 "use client"
 
 import { useState } from "react"
-import { ExternalLink } from "lucide-react"
+import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 /**
  * 헤더 아래 전체 폭 소개 배너 — 우아한 기술블로그의 민트 배너 자리. 클릭하면 이력서가 모달로 열린다.
  *   - 배너 이미지: public/home-banner.png (3840×766, scripts/home-banner.html 을 헤드리스 크롬으로 찍은 것 — 문구를 바꾸면 다시 찍는다)
- *   - 이력서: public/resume.pdf (사용자 결정으로 레포에 포함)
+ *   - 이력서: public/resume.pdf (사용자 결정으로 레포에 포함). 모달은 브라우저 PDF 뷰어(툴바·썸네일 패널) 대신
+ *     public/resume.png — scripts/render-resume.sh 로 PDF 첫 장을 렌더한 이미지 — 만 보인다. PDF 를 바꾸면 다시 렌더한다.
  * 이미지가 없으면(404) 같은 문구의 CSS 배너로 대체해 화면이 깨지지 않는다.
  */
 export const BANNER_IMAGE = "/home-banner.png"
 export const RESUME_URL = "/resume.pdf"
+export const RESUME_IMAGE = "/resume.png"
 const LABEL = "WOOBEEBLOG"
 const TITLE = "백엔드엔지니어 김병우"
 const SUBTITLE = "관심 있는 것을 공부합니다"
@@ -48,17 +50,18 @@ export default function HomeBanner() {
             </button>
 
             <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="flex h-[90vh] max-w-4xl flex-col gap-3 p-4 sm:p-6">
-                    <DialogHeader className="flex-row items-center justify-between space-y-0 pr-8">
-                        <DialogTitle>이력서</DialogTitle>
-                        <Button asChild variant="outline" size="sm">
-                            <a href={RESUME_URL} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink className="mr-1.5 h-4 w-4" />새 탭에서 열기
+                <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto p-0">
+                    <DialogHeader className="sr-only"><DialogTitle>이력서</DialogTitle></DialogHeader>
+                    {/* 이력서 한 장만 — 뷰어 UI 없이. PDF 원본은 아래 작은 링크로 */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={RESUME_IMAGE} alt="이력서 — 백엔드 개발자 김병우" className="block w-full bg-white" />
+                    <div className="flex justify-end border-t bg-background px-4 py-2">
+                        <Button asChild variant="ghost" size="sm" className="text-muted-foreground">
+                            <a href={RESUME_URL} download="김병우_이력서.pdf">
+                                <Download className="mr-1.5 h-4 w-4" />PDF 다운로드
                             </a>
                         </Button>
-                    </DialogHeader>
-                    {/* 브라우저 내장 PDF 뷰어. 모바일 사파리처럼 인라인 PDF 를 못 그리는 곳은 위 「새 탭에서 열기」로 */}
-                    <iframe title="이력서 PDF" src={`${RESUME_URL}#view=FitH`} className="min-h-0 w-full flex-1 rounded-md border bg-white" />
+                    </div>
                 </DialogContent>
             </Dialog>
         </>
