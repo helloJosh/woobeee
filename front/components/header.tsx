@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Sun, Moon, Github, Mail, LogIn, Newspaper, CalendarDays, Gamepad2} from "lucide-react"
+import {Search, Sun, Moon, LogIn, Newspaper, CalendarDays} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -82,17 +82,11 @@ export default function Header() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-16 items-center px-4">
           <div className="flex items-center gap-4">
-            {/* 상단탭: 홈(기술블로그) · 게임 · 일정(로그인 시). 마이페이지는 오른쪽 아바타가 가리킨다. */}
+            {/* 상단탭: 기술블로그 · 일정(로그인 시). 게임(/game)은 탭 없이 URL 로만 들어간다. 마이페이지는 오른쪽 아바타. */}
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/">
                 <Newspaper className="h-4 w-4" />
                 <span className="hidden sm:inline">기술블로그</span>
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
-              <Link href="/game">
-                <Gamepad2 className="h-4 w-4" />
-                <span className="hidden sm:inline">게임</span>
               </Link>
             </Button>
             {isAuthenticated ? (
@@ -126,18 +120,6 @@ export default function Header() {
 
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
-
-            <Button variant="ghost" size="icon" asChild>
-              <a href="https://github.com/helloJosh" target="_blank" rel="noopener noreferrer">
-                <Github className="h-5 w-5" />
-              </a>
-            </Button>
-
-            <Button variant="ghost" size="icon" asChild>
-              <a href="mailto:kimjoshua135@gmail.com">
-                <Mail className="h-5 w-5" />
-              </a>
             </Button>
 
             {/* 로그인/사용자 메뉴 */}
