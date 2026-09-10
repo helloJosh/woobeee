@@ -25,6 +25,7 @@
 
 ### 인증
 - 로그인/회원가입 시작 화면에서 백엔드의 시작 API로 `authorizationUrl`과 `state`를 받아 Google로 이동한다.
+- **로그인으로 들어와도 계정이 없으면 서버가 콜백에서 바로 회원을 만들어 로그인시킨다**(AUTH-AC-21). 회원가입 화면은 닉네임을 직접 정하고 싶은 사람을 위한 선택 경로다 — 로그인 화면이 그렇게 안내한다.
 - `/auth/google/callback`에서 `code`/`state`를 `POST /api/auth/callback-google`로 교환해 토큰을 받는다(Authorization Code + PKCE).
 - **로그인 뒤에는 원래 가려던 곳으로 돌아간다.** 초대 링크를 열었다가 로그인이 필요해진 사람을
   홈에 버려두면 방까지 다시 걸어와야 한다. 같은 탭 안에서 끝나는 경로는 `?next=`로, Google 왕복은

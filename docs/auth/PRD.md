@@ -61,7 +61,10 @@
 2. 서버가 Google authorization URL과 state를 발급한다. state는 Redis에 TTL(기본 600초)과 함께 저장된다(`RedisGoogleAuthorizationStateStore`).
 3. Google callback에서 code/state를 검증한다(`GoogleOauthClient`, `GoogleIdentityVerifier`).
 4. 회원 정보를 확인/생성하고 access/refresh token을 발급한다(`TokenService`). 로그인은 google subject로
-   회원을 찾고, 미등록이면 `404`다.
+   회원을 찾고, **미등록이면 그 자리에서 회원을 만들고 로그인시킨다**(2026-09-10, 사용자 결정 — 회원가입
+   화면을 따로 거치지 않아도 된다). 닉네임은 Google 프로필 이름, 없으면 이메일의 @ 앞부분, 그것도 없으면
+   `Google 사용자`(60자로 자른다). 약관·개인정보 동의는 프론트 회원가입과 같은 규칙(안내 문구로 간주)이라 `true`.
+   비활성(`active=false`) 회원은 새로 만들지 않고 `403`이다.
 5. 토큰은 `TokenMetadata`(memberId, role, device, ip)와 함께 Redis(`RedisTokenStore`)에 저장된다.
 
 ## 토큰 정책
@@ -85,7 +88,7 @@
 | AUTH-AC-06 | `ip`가 달라도 device가 일치하면 재발급은 거절하지 않고 진행한다(현재 정책, IP 경고는 TODO) | `TokenServiceTest` |
 | AUTH-AC-07 | Google callback에서 state/code 검증에 실패하면 인증을 거절한다 | `AuthServiceTest` |
 | AUTH-AC-08 | 회원가입이 성공하면 `members`에 `active=true`, `gameMoney=0`으로 생성한다 | `AuthServiceTest` |
-| AUTH-AC-09 | 로그인은 memberType 없이 google subject로 회원을 찾고, 미등록이면 `404`를 반환한다 | `AuthServiceTest` |
+| AUTH-AC-09 | 로그인은 memberType 없이 google subject로 회원을 찾아 토큰을 발급한다. 비활성 회원은 `403`이고 새로 만들지 않는다 | `AuthServiceTest` |
 | AUTH-AC-10 | `POST /api/auth/me/profile-image` 는 multipart `file` 을 `profiles/{토큰의 memberId}/{uuid}/{파일명}` 키로 저장한다 — memberId 는 요청이 아니라 토큰에서 온다 | `MemberProfileImageServiceTest`, `MemberProfileImageControllerTest` |
 | AUTH-AC-11 | 허용 목록(png/jpeg/webp/gif) 밖 contentType 으로 업로드하면 `400` 이고 스토리지에 손대지 않는다 | `MemberProfileImageServiceTest` |
 | AUTH-AC-12 | 업로드는 5MB 를 넘으면 `400`, 정확히 5MB 는 통과한다. 빈 파일도 `400` — 업로드가 앱을 거치므로 상한이 없으면 큰 파일이 앱 힙을 받는다 | `MemberProfileImageServiceTest` |
@@ -96,6 +99,7 @@
 | AUTH-AC-17 | `ROLE_ADMIN` 의 access token 은 1일 TTL 로, 그 외 role 은 기본 15분으로 발급한다. `TokenResponse` 의 만료 초도 실제 TTL 을 반영한다 (긴 글 작성 중 만료 방지 — 사용자 결정) | `TokenServiceTest` |
 | AUTH-AC-18 | 프로필 이미지 URL 은 <b>같은 시간대의 모든 방문자에게 동일</b>하다 — 서명 시각을 1시간 단위로 내린다. 요청마다 달라지면 CDN 캐시 키가 갈라져 원점 트래픽이 방문자 수에 비례한다 | `PresignedUrlFactoryTest` |
 | AUTH-AC-19 | 프로필 이미지를 설정하지 않았으면 `profileImageUrl` 이 `null` 이다 — 없는 오브젝트를 가리키는 URL 을 내리면 화면에 깨진 이미지가 뜬다 | `MemberProfileImageServiceTest` |
+| AUTH-AC-21 | 로그인 콜백에서 google subject 가 미등록이면 **바로 회원가입**해 토큰을 발급한다 — `ROLE_MEMBER`, `active=true`, 약관·개인정보 동의 `true`. 닉네임은 Google 이름 → 이메일 @ 앞 → `Google 사용자` 순으로 고르고 60자로 자른다 | `AuthServiceTest` |
 | AUTH-AC-20 | presigned URL 의 TTL 은 버킷(1시간)보다 **길어야** 한다. 같으면 시간 끝에 들어온 방문자가 곧 만료되는 URL 을 받아 이미지가 깨진다 — 기본 24시간이므로 최악의 남은 유효기간은 23시간이고, 설정이 이를 어기면 기동 시 터진다 | `PresignedUrlFactoryTest` |
 
 ## 설정

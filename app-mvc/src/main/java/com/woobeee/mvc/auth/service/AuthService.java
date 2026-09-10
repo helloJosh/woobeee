@@ -115,11 +115,39 @@ public class AuthService {
         return tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip);
     }
 
+    /**
+     * AUTH-AC-09/21 — 등록된 회원은 로그인, 미등록이면 그 자리에서 회원을 만들어 로그인시킨다(회원가입 화면을
+     * 따로 거치지 않는다). 비활성 회원은 새로 만들지 않고 403 — 같은 google subject 로 두 번째 행을 만들면 안 된다.
+     */
     private TokenResponse login(GoogleIdentity identity, GoogleAuthorizationContext context, String ip) {
-        return memberRepository.findByGoogleSubject(identity.subject())
-                .filter(Member::isActive)
-                .map(member -> tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Member is not registered"));
+        Member member = memberRepository.findByGoogleSubject(identity.subject())
+                .orElseGet(() -> memberRepository.save(Member.create(
+                        identity.subject(),
+                        identity.email(),
+                        nicknameFor(identity),
+                        true,
+                        true
+                )));
+        if (!member.isActive()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Member is deactivated");
+        }
+        return tokenService.issue(member.getId(), member.getRole().name(), context.device(), ip);
+    }
+
+    static final int MAX_NICKNAME_LENGTH = 60;
+    static final String DEFAULT_NICKNAME = "Google 사용자";
+
+    /** AUTH-AC-21 — Google 이름 → 이메일 @ 앞 → 기본값, 60자로 자른다(MemberSignupRequest 의 상한과 같다). */
+    static String nicknameFor(GoogleIdentity identity) {
+        String candidate = identity.name() == null ? "" : identity.name().trim();
+        if (candidate.isEmpty() && identity.email() != null) {
+            int at = identity.email().indexOf('@');
+            candidate = (at > 0 ? identity.email().substring(0, at) : identity.email()).trim();
+        }
+        if (candidate.isEmpty()) {
+            candidate = DEFAULT_NICKNAME;
+        }
+        return candidate.length() > MAX_NICKNAME_LENGTH ? candidate.substring(0, MAX_NICKNAME_LENGTH) : candidate;
     }
 
     private String nextCodeVerifier() {

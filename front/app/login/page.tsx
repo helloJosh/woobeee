@@ -69,9 +69,12 @@ function LoginScreen() {
                 {/* Google 로그인 */}
 
                 <GoogleAuthButton mode="login" className="w-full" next={next} />
+                <p className="text-center text-xs text-muted-foreground">
+                    {/* AUTH-AC-21 — 계정이 없으면 서버가 로그인 콜백에서 바로 만든다. 닉네임을 직접 정하고 싶으면 회원가입으로. */}
+                    계정이 없으면 Google 계정으로 자동으로 만들어집니다.
+                </p>
                 <div className="text-center text-sm text-muted-foreground">
-                    계정이 없으신가요?{" "}
-                    {/* 계정이 없어 회원가입으로 새는 방문자도 목적지를 잃지 않게 함께 넘긴다. */}
+                    닉네임을 직접 정하고 싶으신가요?{" "}
                     <Link href={buildAuthHref("/signup", next)} className="text-primary hover:underline">
                         회원가입
                     </Link>

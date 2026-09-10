@@ -31,7 +31,7 @@
 | --- | --- | --- | --- |
 | POST | `/api/auth/signup` | Google OAuth 회원가입 시작 (인가 URL 발급) | 공개 |
 | POST | `/api/auth/login` | Google OAuth 로그인 시작 | 공개 |
-| POST | `/api/auth/callback-google` | OAuth 콜백 — 토큰 발급. 신규 회원은 `ROLE_MEMBER` 로 생성 | 공개 (state 검증) |
+| POST | `/api/auth/callback-google` | OAuth 콜백 — 토큰 발급. 신규 회원은 `ROLE_MEMBER` 로 생성. **로그인 state 여도 미등록 계정이면 바로 회원가입**(닉네임 = Google 이름 → 이메일 @ 앞 → `Google 사용자`). 비활성 회원은 403 | 공개 (state 검증) |
 | POST | `/api/auth/access-tokens` | memberId/role/device 기준 토큰 발급 | 공개 (내부/테스트용) |
 | POST | `/api/auth/refresh-tokens` | refresh token 재발급 (rotation, device 일치 검증) | 공개 (refresh token 필요) |
 | GET | `/api/auth/me` | 내 프로필 조회 (`hasProfileImage` 보유 여부. 이미지 URL 은 주지 않는다) | 로그인 |

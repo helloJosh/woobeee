@@ -257,31 +257,87 @@ class AuthServiceTest {
         assertThat(response.memberId()).isEqualTo(21L);
     }
 
-    /** AUTH-AC-09 */
-    @Test
-    void completeGoogleAuthorizationFailsWhenMemberIsNotRegistered() {
-        GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
-        GoogleAuthorizationContext context = new GoogleAuthorizationContext(
-                GoogleAuthorizationAction.LOGIN,
-                "code-verifier",
-                "web",
-                null,
-                false,
-                false
-        );
-        when(googleAuthorizationStateStore.find("state-123")).thenReturn(Optional.of(context));
+    private GoogleAuthorizationContext loginContext() {
+        return new GoogleAuthorizationContext(GoogleAuthorizationAction.LOGIN, "code-verifier", "web", null, false, false);
+    }
+
+    private void googleReturns(GoogleIdentity identity) {
+        when(googleAuthorizationStateStore.find("state-123")).thenReturn(Optional.of(loginContext()));
         when(googleOauthClient.exchangeAuthorizationCode("auth-code", "code-verifier"))
                 .thenReturn(tokenExchangeResponse());
-        when(googleIdentityVerifier.verify("id-token"))
-                .thenReturn(new GoogleIdentity("unknown-sub", "unknown@example.com", "Unknown"));
+        when(googleIdentityVerifier.verify("id-token")).thenReturn(identity);
+    }
+
+    private void savingAssignsId(long id) {
+        when(memberRepository.save(any(Member.class))).thenAnswer(invocation -> {
+            Member member = invocation.getArgument(0);
+            ReflectionTestUtils.setField(member, "id", id);
+            return member;
+        });
+    }
+
+    /** AUTH-AC-21 — 로그인인데 계정이 없으면 그 자리에서 회원을 만들고 토큰을 발급한다. */
+    @Test
+    void completeGoogleAuthorizationSignsUpAnUnknownAccountOnLogin() {
+        GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
+        googleReturns(new GoogleIdentity("unknown-sub", "unknown@example.com", "Unknown Person"));
         when(memberRepository.findByGoogleSubject("unknown-sub")).thenReturn(Optional.empty());
+        savingAssignsId(21L);
+        when(tokenService.issue(21L, "ROLE_MEMBER", "web", "127.0.0.1"))
+                .thenReturn(new TokenResponse("access", 900, "refresh", 2_592_000, 21L, "ROLE_MEMBER"));
+
+        TokenResponse response = authService.completeGoogleAuthorization(request, "127.0.0.1");
+
+        ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
+        verify(memberRepository).save(captor.capture());
+        Member saved = captor.getValue();
+        assertThat(saved.getGoogleSubject()).isEqualTo("unknown-sub");
+        assertThat(saved.getEmail()).isEqualTo("unknown@example.com");
+        assertThat(saved.getNickname()).isEqualTo("Unknown Person");
+        assertThat(saved.getRole()).isEqualTo(MemberRole.ROLE_MEMBER);
+        assertThat(saved.isActive()).isTrue();
+        assertThat(saved.isTermsAgreed()).isTrue();
+        assertThat(saved.isPrivacyPolicyAgreed()).isTrue();
+        assertThat(response.accessToken()).isEqualTo("access");
+        verify(googleAuthorizationStateStore).delete("state-123");
+    }
+
+    /** AUTH-AC-21 — 닉네임: Google 이름이 비면 이메일 @ 앞, 그것도 없으면 "Google 사용자". 60자로 자른다. */
+    @Test
+    void autoSignupPicksANicknameFromNameThenEmailThenDefaultAndCapsAtSixty() {
+        GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
+        when(memberRepository.findByGoogleSubject(any())).thenReturn(Optional.empty());
+        savingAssignsId(1L);
+        when(tokenService.issue(any(), any(), any(), any()))
+                .thenReturn(new TokenResponse("a", 900, "r", 1, 1L, "ROLE_MEMBER"));
+        ArgumentCaptor<Member> captor = ArgumentCaptor.forClass(Member.class);
+
+        googleReturns(new GoogleIdentity("s1", "hello.world@example.com", "   "));
+        authService.completeGoogleAuthorization(request, "ip");
+        googleReturns(new GoogleIdentity("s2", null, null));
+        authService.completeGoogleAuthorization(request, "ip");
+        googleReturns(new GoogleIdentity("s3", "x@example.com", "n".repeat(80)));
+        authService.completeGoogleAuthorization(request, "ip");
+
+        verify(memberRepository, org.mockito.Mockito.times(3)).save(captor.capture());
+        assertThat(captor.getAllValues()).extracting(Member::getNickname)
+                .containsExactly("hello.world", "Google 사용자", "n".repeat(60));
+    }
+
+    /** AUTH-AC-09 — 비활성 회원은 새로 만들지도, 로그인시키지도 않는다. */
+    @Test
+    void completeGoogleAuthorizationRejectsADeactivatedMemberInsteadOfRecreatingIt() {
+        GoogleAuthorizationCallbackRequest request = new GoogleAuthorizationCallbackRequest("auth-code", "state-123");
+        googleReturns(new GoogleIdentity("gone-sub", "gone@example.com", "Gone"));
+        Member deactivated = Member.create("gone-sub", "gone@example.com", "gone", true, true);
+        ReflectionTestUtils.setField(deactivated, "active", false);
+        when(memberRepository.findByGoogleSubject("gone-sub")).thenReturn(Optional.of(deactivated));
 
         assertThatThrownBy(() -> authService.completeGoogleAuthorization(request, "127.0.0.1"))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("404 NOT_FOUND")
-                .hasMessageContaining("Member is not registered");
+                .hasMessageContaining("403 FORBIDDEN");
 
-        verify(googleAuthorizationStateStore).delete("state-123");
+        verify(memberRepository, org.mockito.Mockito.never()).save(any());
     }
 
     /** AUTH-AC-07 */
