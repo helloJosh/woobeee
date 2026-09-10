@@ -87,8 +87,9 @@ export default function Header() {
   return (
       <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        {/* 세 구역 격자: 왼쪽 탭 · 가운데 검색 · 오른쪽 메뉴. 양옆이 같은 폭(1fr)이라 검색창이 화면 정가운데에 온다 */}
-        <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
+        {/* md 이상: 세 구역 격자(왼쪽 탭 · 가운데 검색 · 오른쪽 메뉴, 양옆 1fr 로 검색창이 정가운데).
+            휴대폰: 검색이 없으니 격자 대신 양끝 정렬 — 오른콝 아이콘이 탭 옆에 붙지 않고 오른쪽 끝으로 간다 */}
+        <div className="flex h-16 items-center justify-between gap-4 px-4 md:grid md:grid-cols-[1fr_auto_1fr]">
           {/* 상단탭: 버튼·아이콘 없이 글씨만 — HOME · RESUME(모달) · 일정(로그인 시). 게임(/game)은 URL 로만. 마이페이지는 오른쪽 아바타. */}
           <nav aria-label="주 메뉴" className="flex items-center gap-5 text-sm font-semibold tracking-wide">
             <Link href="/" className={navLinkClass(pathname === "/")}>HOME</Link>
@@ -119,7 +120,7 @@ export default function Header() {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-end gap-4">
+          <div className="flex items-center justify-end gap-2 sm:gap-4">
 
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}

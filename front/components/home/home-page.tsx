@@ -83,7 +83,8 @@ export default function HomePage() {
           {/* 우아한 홈 구조: 전체 폭 가운데의 태그 알약 줄 → 큰 여백 → 두 열(글 목록 · 사이드바)이 같은 높이에서 시작 */}
           {/* 글쓰기 버튼은 두지 않는다 — ADMIN 은 /blog/write URL 로 바로 들어간다 (서버 403 이 진짜 방어) */}
           <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
-          <div className="mt-10 sm:mt-20 lg:grid lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-12">
+          {/* 위 여백은 태그 줄이 보이는 lg 이상에서만 크게 — 휴대폰에서는 태그 줄이 숨겨져 빈칸만 남는다 */}
+          <div className="mt-2 lg:mt-20 lg:grid lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-12">
           <div className="min-w-0 space-y-4">
             {/* 휴대폰 폭: 목록만 보이고, 카테고리·태그는 ≡ 서랍에서 고른다(우아한 모바일 홈처럼) */}
             <div className="flex justify-end lg:hidden">
