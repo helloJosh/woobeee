@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Sun, Moon, LogIn, Newspaper, CalendarDays, FileText} from "lucide-react"
+import {Search, Sun, Moon, LogIn} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -31,6 +31,10 @@ function useDebounce(value: string, delay: number) {
 
   return debouncedValue
 }
+
+/** 헤더 탭 글씨 — 현재 위치는 진하게, 나머지는 흐리게. 밑줄은 hover 에만. */
+const navLinkClass = (active: boolean) =>
+    `transition-colors hover:text-foreground hover:underline underline-offset-4 ${active ? "text-foreground" : "text-muted-foreground"}`
 
 export default function Header() {
   // 홈(블로그)처럼 검색을 갖는 페이지가 마운트돼 있을 때만 채워진다.
@@ -85,27 +89,14 @@ export default function Header() {
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         {/* 세 구역 격자: 왼쪽 탭 · 가운데 검색 · 오른쪽 메뉴. 양옆이 같은 폭(1fr)이라 검색창이 화면 정가운데에 온다 */}
         <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
-          <div className="flex items-center gap-4">
-            {/* 상단탭: BLOG HOME · RESUME(모달) · 일정(로그인 시). 게임(/game)은 탭 없이 URL 로만 들어간다. 마이페이지는 오른쪽 아바타. */}
-            <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
-              <Link href="/">
-                <Newspaper className="h-4 w-4" />
-                <span className="hidden font-semibold tracking-wide sm:inline">BLOG HOME</span>
-              </Link>
-            </Button>
-            <Button variant="ghost" size="sm" className="h-9 px-2.5" onClick={() => setResumeOpen(true)} aria-haspopup="dialog">
-              <FileText className="h-4 w-4" />
-              <span className="hidden font-semibold tracking-wide sm:inline">RESUME</span>
-            </Button>
+          {/* 상단탭: 버튼·아이콘 없이 글씨만 — HOME · RESUME(모달) · 일정(로그인 시). 게임(/game)은 URL 로만. 마이페이지는 오른쪽 아바타. */}
+          <nav aria-label="주 메뉴" className="flex items-center gap-5 text-sm font-semibold tracking-wide">
+            <Link href="/" className={navLinkClass(pathname === "/")}>HOME</Link>
+            <button type="button" onClick={() => setResumeOpen(true)} aria-haspopup="dialog" className={navLinkClass(false)}>RESUME</button>
             {isAuthenticated ? (
-                <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
-                  <Link href="/schedule">
-                    <CalendarDays className="h-4 w-4" />
-                    <span className="hidden sm:inline">일정</span>
-                  </Link>
-                </Button>
+                <Link href="/schedule" className={navLinkClass(pathname?.startsWith("/schedule") ?? false)}>일정</Link>
             ) : null}
-          </div>
+          </nav>
 
           <div className="flex justify-center">
             {onSearchChange ? (
