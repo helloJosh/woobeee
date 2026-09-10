@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Loader2, Menu, PenSquare, RefreshCw, X } from "lucide-react"
+import { Loader2, Menu, RefreshCw, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -14,8 +14,7 @@ import MinimalScrollToTop from "@/components/minimal-scroll-to-top"
 import { useCategories } from "@/hooks/use-categories"
 import { useInfinitePosts } from "@/hooks/use-infinite-posts"
 import { useRegisterHeaderControls } from "@/hooks/use-header-controls"
-import { tagsAPI, tokenManager, type PopularTag } from "@/lib/api"
-import { canManagePosts } from "@/lib/blog-admin"
+import { tagsAPI, type PopularTag } from "@/lib/api"
 
 const PAGE_SIZE = 10
 
@@ -34,10 +33,8 @@ export default function HomePage() {
     const tag = searchParams.get("tag") || null
 
     const [popularTags, setPopularTags] = useState<PopularTag[]>([])
-    const [canWrite, setCanWrite] = useState(false)
 
     useEffect(() => {
-        setCanWrite(canManagePosts(tokenManager.getRole()))
         let cancelled = false
         tagsAPI.popular(50).then((t) => { if (!cancelled) setPopularTags(t) }).catch(() => { if (!cancelled) setPopularTags([]) })
         return () => { cancelled = true }
@@ -84,13 +81,7 @@ export default function HomePage() {
         <HomeBanner />
         <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
           {/* 우아한 홈 구조: 전체 폭 가운데의 태그 알약 줄 → 큰 여백 → 두 열(글 목록 · 사이드바)이 같은 높이에서 시작 */}
-          {canWrite ? (
-              <div className="flex justify-end">
-                  <Button size="sm" onClick={() => router.push("/blog/write")}>
-                      <PenSquare className="mr-1.5 h-4 w-4" />글쓰기
-                  </Button>
-              </div>
-          ) : null}
+          {/* 글쓰기 버튼은 두지 않는다 — ADMIN 은 /blog/write URL 로 바로 들어간다 (서버 403 이 진짜 방어) */}
           <TagBar tags={popularTags} activeTag={tag} onSelectTag={selectTag} onClear={() => update({ tag: null })} />
           <div className="mt-10 sm:mt-20 lg:grid lg:grid-cols-[minmax(0,1fr)_200px] lg:gap-12">
           <div className="min-w-0 space-y-4">

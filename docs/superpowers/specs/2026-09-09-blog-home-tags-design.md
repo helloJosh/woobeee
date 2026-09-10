@@ -44,7 +44,7 @@
 3. **검색** — 기존 헤더 검색을 `useRegisterHeaderControls` 로 등록. `?search=`. 활성 필터(카테고리·검색·태그)는
    목록 위에 × 달린 chip 으로 보여 한 번에 푼다.
 4. **요약 없음** — 목록은 본문에서 아무것도 뽑지 않는다(5차, 사용자 요청 "무조건 description 만"). `lib/post-preview.ts` 는 삭제.
-5. ADMIN 이면 목록 위 우측 「글쓰기」 버튼(`canManagePosts`).
+5. 「글쓰기」 버튼 없음(15차) — ADMIN 은 `/blog/write` URL 로 바로 들어간다.
 6. 삭제: `components/blog-page.tsx`, `components/post-list.tsx`, `components/sidebar.tsx`. 헤더 컨트롤의 사이드바 토글은
    등록하는 곳이 없어지므로 헤더가 그리지 않는다.
 

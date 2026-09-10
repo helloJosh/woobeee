@@ -98,7 +98,8 @@ export default function Header() {
             ) : null}
           </nav>
 
-          <div className="flex justify-center">
+          {/* 검색은 md 이상에서만 — 휴대폰 폭에서는 세 구역 격자에 검색창이 들어갈 자리가 없어 탭이 밀린다 */}
+          <div className="hidden justify-center md:flex">
             {onSearchChange ? (
                 <form onSubmit={handleSearchSubmit} className="relative w-[min(28rem,60vw)]">
                   <button
