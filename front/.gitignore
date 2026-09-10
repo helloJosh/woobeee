@@ -1,3 +1,0 @@
-
-# 이력서 PDF 는 개인 문서 — 레포에 넣지 않고 배포 환경에서 public/ 에 놓는다 (components/home/home-banner.tsx)
-public/resume.pdf

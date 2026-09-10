@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 /**
  * 헤더 아래 전체 폭 소개 배너 — 우아한 기술블로그의 민트 배너 자리. 클릭하면 이력서가 모달로 열린다.
  *   - 배너 이미지: public/home-banner.png (3840×766, scripts/home-banner.html 을 헤드리스 크롬으로 찍은 것 — 문구를 바꾸면 다시 찍는다)
- *   - 이력서: public/resume.pdf — 개인 문서라 .gitignore 대상, 배포 환경에서 넣는다
+ *   - 이력서: public/resume.pdf (사용자 결정으로 레포에 포함)
  * 이미지가 없으면(404) 같은 문구의 CSS 배너로 대체해 화면이 깨지지 않는다.
  */
 export const BANNER_IMAGE = "/home-banner.png"
