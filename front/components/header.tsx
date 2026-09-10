@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import {Search, Sun, Moon, LogIn, Newspaper, CalendarDays} from "lucide-react"
+import {Search, Sun, Moon, LogIn, Newspaper, CalendarDays, FileText} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useTheme } from "next-themes"
@@ -10,6 +10,7 @@ import { useState, useEffect } from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import ProfileAvatar from "@/components/auth/profile-avatar"
+import ResumeDialog from "@/components/resume-dialog"
 import { buildAuthHref, returnPathFor } from "@/lib/auth-redirect"
 import { useAuth } from "@/hooks/use-auth" // Updated import
 import { useHeaderControls } from "@/hooks/use-header-controls"
@@ -38,6 +39,7 @@ export default function Header() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [resumeOpen, setResumeOpen] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -79,16 +81,21 @@ export default function Header() {
   }
 
   return (
+      <>
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         {/* 세 구역 격자: 왼쪽 탭 · 가운데 검색 · 오른쪽 메뉴. 양옆이 같은 폭(1fr)이라 검색창이 화면 정가운데에 온다 */}
         <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
           <div className="flex items-center gap-4">
-            {/* 상단탭: BLOG HOME · 일정(로그인 시). 게임(/game)은 탭 없이 URL 로만 들어간다. 마이페이지는 오른쪽 아바타. */}
+            {/* 상단탭: BLOG HOME · RESUME(모달) · 일정(로그인 시). 게임(/game)은 탭 없이 URL 로만 들어간다. 마이페이지는 오른쪽 아바타. */}
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/">
                 <Newspaper className="h-4 w-4" />
                 <span className="hidden font-semibold tracking-wide sm:inline">BLOG HOME</span>
               </Link>
+            </Button>
+            <Button variant="ghost" size="sm" className="h-9 px-2.5" onClick={() => setResumeOpen(true)} aria-haspopup="dialog">
+              <FileText className="h-4 w-4" />
+              <span className="hidden font-semibold tracking-wide sm:inline">RESUME</span>
             </Button>
             {isAuthenticated ? (
                 <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
@@ -170,5 +177,7 @@ export default function Header() {
           </div>
         </div>
       </header>
+      <ResumeDialog open={resumeOpen} onOpenChange={setResumeOpen} />
+      </>
   )
 }
