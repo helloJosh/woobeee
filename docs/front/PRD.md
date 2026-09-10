@@ -42,7 +42,7 @@ HOME(`/`) / RESUME(이력서 모달, 라우트 없음) / 일정(`/schedule`, 로
   `GET /api/back/tags` 를 `이름 (글 수)` 목록으로.
 - 필터(`category`·`search`·`tag`)는 전부 URL 쿼리에 산다. 헤더 검색은 이 페이지가 마운트돼 있을 때만
   헤더에 나타난다(`useRegisterHeaderControls`). 태그 chip 클릭은 그 태그로 필터하고 다시 누르면 푼다.
-- 홈에 「글쓰기」 버튼은 없다 — ADMIN 은 `/blog/write` URL 로 바로 들어간다(진짜 방어는 서버 403). 에디터는 태그를 chips 로 입력한다(Enter·쉼표 추가, 최대 10개·30자 —
+- 홈에 「글쓰기」 버튼, 글 상세에 「수정」 버튼은 없다 — ADMIN 은 `/blog/write`·`/blog/edit/{id}` URL 로 바로 들어간다(진짜 방어는 서버 403). 상세의 「삭제」 버튼은 ADMIN 에게만 보인다. 에디터는 태그를 chips 로 입력한다(Enter·쉼표 추가, 최대 10개·30자 —
   서버 `TagNormalizer` 와 같은 규칙, `lib/blog-admin.ts`).
 
 ### 게임 메인 (`/game`)

@@ -175,7 +175,7 @@
 import {useEffect, useMemo, useState} from "react"
 import { formatDistanceToNow } from "date-fns"
 import { ko } from "date-fns/locale"
-import { ArrowLeft, Eye, Heart, MessageCircle, Pencil, Share2, Trash2 } from "lucide-react"
+import { ArrowLeft, Eye, Heart, MessageCircle, Share2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import Link from "next/link"
@@ -206,7 +206,7 @@ export default function PostDetail({ postId }: PostDetailProps) {
     setCanManage(canManagePosts(tokenManager.getRole()))
   }, [])
 
-  const handleEdit = () => router.push(`/blog/edit/${postId}`)
+  // 수정 버튼은 두지 않는다 — ADMIN 은 /blog/edit/{id} URL 로 바로 들어간다 (진짜 방어는 서버 403)
 
   const handleDelete = async () => {
     if (!window.confirm("이 글을 삭제할까요? 되돌릴 수 없습니다.")) return
@@ -301,10 +301,6 @@ export default function PostDetail({ postId }: PostDetailProps) {
           </Button>
           {canManage && (
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleEdit} className="flex items-center gap-2">
-                <Pencil className="h-4 w-4" />
-                수정
-              </Button>
               <Button variant="outline" onClick={handleDelete} disabled={deleting}
                       className="flex items-center gap-2 text-destructive">
                 <Trash2 className="h-4 w-4" />
