@@ -80,13 +80,14 @@ export default function Header() {
 
   return (
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-16 items-center px-4">
+        {/* 세 구역 격자: 왼쪽 탭 · 가운데 검색 · 오른쪽 메뉴. 양옆이 같은 폭(1fr)이라 검색창이 화면 정가운데에 온다 */}
+        <div className="grid h-16 grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
           <div className="flex items-center gap-4">
-            {/* 상단탭: 기술블로그 · 일정(로그인 시). 게임(/game)은 탭 없이 URL 로만 들어간다. 마이페이지는 오른쪽 아바타. */}
+            {/* 상단탭: BLOG HOME · 일정(로그인 시). 게임(/game)은 탭 없이 URL 로만 들어간다. 마이페이지는 오른쪽 아바타. */}
             <Button asChild variant="ghost" size="sm" className="h-9 px-2.5">
               <Link href="/">
                 <Newspaper className="h-4 w-4" />
-                <span className="hidden sm:inline">기술블로그</span>
+                <span className="hidden font-semibold tracking-wide sm:inline">BLOG HOME</span>
               </Link>
             </Button>
             {isAuthenticated ? (
@@ -99,9 +100,9 @@ export default function Header() {
             ) : null}
           </div>
 
-          <div className="flex-1 flex items-center justify-end gap-4">
+          <div className="flex justify-center">
             {onSearchChange ? (
-                <form onSubmit={handleSearchSubmit} className="relative max-w-sm w-full">
+                <form onSubmit={handleSearchSubmit} className="relative w-[min(28rem,60vw)]">
                   <button
                       type="submit"
                       className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground"
@@ -117,6 +118,9 @@ export default function Header() {
                   />
                 </form>
             ) : null}
+          </div>
+
+          <div className="flex items-center justify-end gap-4">
 
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
