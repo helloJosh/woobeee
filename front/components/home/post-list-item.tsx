@@ -20,7 +20,7 @@ export default function PostListItem({ post }: { post: Post }) {
                 <span className="ml-3 font-medium text-foreground/80">{post.categoryName}</span>
             </p>
             <h2 className="text-2xl font-bold leading-tight tracking-tight sm:text-3xl">
-                <Link href={`/blog/${post.id}`} className="hover:underline decoration-2 underline-offset-4">{post.title}</Link>
+                <Link href={`/blog/${post.id}`} className="transition-colors hover:text-primary">{post.title}</Link>
             </h2>
             {post.description ? (
                 <p className="text-base leading-relaxed text-muted-foreground">{post.description}</p>

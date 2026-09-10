@@ -32,9 +32,9 @@ function useDebounce(value: string, delay: number) {
   return debouncedValue
 }
 
-/** 헤더 탭 글씨 — 현재 위치는 진하게, 나머지는 흐리게. 밑줄은 hover 에만. */
+/** 헤더 탭 글씨 — 현재 위치는 진하게, 나머지는 흐리게. hover 는 색만 진해지고 밑줄은 없다. */
 const navLinkClass = (active: boolean) =>
-    `transition-colors hover:text-foreground hover:underline underline-offset-4 ${active ? "text-foreground" : "text-muted-foreground"}`
+    `transition-colors hover:text-foreground ${active ? "text-foreground" : "text-muted-foreground"}`
 
 export default function Header() {
   // 홈(블로그)처럼 검색을 갖는 페이지가 마운트돼 있을 때만 채워진다.
