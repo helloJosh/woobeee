@@ -34,7 +34,7 @@ HOME(`/`) / RESUME(이력서 모달, 라우트 없음) / 일정(`/schedule`, 로
   절대 경로 하나이고, 거절한 것은 전부 홈으로 떨군다.
 
 ### 홈 — 기술블로그 (`/`)
-- 헤더 바로 아래 전체 폭 소개 배너(`public/home-banner.png` — 「WOOBEEBLOG / 백엔드엔지니어 김병우 / 관심 있는 것을 공부합니다」, 없으면 같은 문구의 CSS 배너). 장식용이고 클릭 동작은 없다. 이력서는 헤더 RESUME 탭이 모달로 연다 — PDF 뷰어 UI 없이 렌더된 이미지(`public/resume.png`, `scripts/render-resume.sh`) 한 장만(다운로드 링크 없음). 이력서 PDF 도 레포에 포함돼 있다(사용자 결정).
+- 헤더 바로 아래 전체 폭 소개 배너(「WOOBEEBLOG / 백엔드엔지니어 김병우 / 관심 있는 것을 공부합니다」 — 테마 팔레트로 찍은 두 장 `public/home-banner-light.png`/`-dark.png` 를 `.dark` 로 고른다, 없으면 같은 문구의 CSS 배너). 장식용이고 클릭 동작은 없다. 이력서는 헤더 RESUME 탭이 모달로 연다 — PDF 뷰어 UI 없이 렌더된 이미지(`public/resume.png`, `scripts/render-resume.sh`) 한 장만(다운로드 링크 없음). 이력서 PDF 도 레포에 포함돼 있다(사용자 결정).
 - 우아한형제들 기술블로그의 두 열을 따른다(스펙 `docs/superpowers/specs/2026-09-09-blog-home-tags-design.md`). 맨 위에는 인기 태그 50개가 둥근 알약 줄로 가운데 정렬돼 있고(첫 칸 「-」 = 전체) 누르면 그 태그로 필터한다.
   왼쪽은 글을 세로로 — 날짜·카테고리명, 큰 제목, 작성자가 적은 설명(없으면 생략), 구분선, 무한 스크롤. 글 아래 태그 표시는 없다(태그는 상단 알약 줄·사이드바에서만). 이미지도 본문 요약도 없다.
   오른쪽(`lg` 이상)은 「카테고리」와 「태그」. 휴대폰 폭에서는 태그 줄과 사이드바를 숨기고 목록만 보이며, 「≡ 카테고리 · 태그」 버튼이 오른쪽 서랍으로 같은 내용을 연다. 카테고리는 헤더를 눌러 접고 펼치며 **기본 접힘**
@@ -103,7 +103,7 @@ HOME(`/`) / RESUME(이력서 모달, 라우트 없음) / 일정(`/schedule`, 로
   아직 서로 링크한다 — `app/products/[productId]/page.tsx` 의 상단 바가 여전히 `/cart` 로
   가는 링크를 그린다. 페이지 삭제는 후속 과제다.
 - 미구현: 프로필 이미지 업로드 UI(표시만 한다).
-- 다크/라이트 모드 전환(`next-themes`)을 제공한다.
+- 다크/라이트 모드 전환(`next-themes`)을 제공한다. 두 테마의 팔레트는 `docs/DESIGN.md` 의 표(라이트 `#F9F7F7/#DBE2EF/#3F72AF/#112D4E`, 다크 `#1B262C/#0F4C75/#3282B8/#BBE1FA`)가 기준이고 `globals.css` 토큰이 단일 출처다.
 - WebSocket 은 Next rewrites 를 타지 못해 브라우저가 WebFlux 오리진에 직접 붙는다 —
   `NEXT_PUBLIC_WS_BASE_URL` 이 필요하다.
 - 검증은 `cd front && npm test && npm run build`. `next/font`의 Google Fonts 조회로 네트워크 차단
