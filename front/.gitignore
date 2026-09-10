@@ -1,0 +1,4 @@
+
+# 홈 배너·이력서는 개인 파일 — 자리만 코드에 있고 파일은 배포 환경에서 넣는다 (components/home/home-banner.tsx)
+public/home-banner.png
+public/resume.pdf

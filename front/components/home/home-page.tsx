@@ -6,6 +6,7 @@ import { Loader2, Menu, PenSquare, RefreshCw, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
+import HomeBanner from "@/components/home/home-banner"
 import HomeSidebar from "@/components/home/home-sidebar"
 import TagBar from "@/components/home/tag-bar"
 import PostListItem from "@/components/home/post-list-item"
@@ -79,6 +80,8 @@ export default function HomePage() {
     )
 
     return (
+        <>
+        <HomeBanner />
         <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
           {/* 우아한 홈 구조: 전체 폭 가운데의 태그 알약 줄 → 큰 여백 → 두 열(글 목록 · 사이드바)이 같은 높이에서 시작 */}
           {canWrite ? (
@@ -171,5 +174,6 @@ export default function HomePage() {
           <div className="hidden lg:block">{sidebar}</div>
           </div>
         </main>
+        </>
     )
 }
