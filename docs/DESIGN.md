@@ -24,6 +24,20 @@
 
 ## 색상과 타이포그래피
 
+- **팔레트(2026-09-10, feature/theme-palette)** — 두 테마 모두 네 색으로 짠다. 값은 `front/app/globals.css` 의
+  shadcn 토큰이 단일 출처고, 컴포넌트는 색을 직접 쓰지 않고 `bg-background`·`text-primary`·`bg-muted` 같은
+  토큰 클래스만 쓴다.
+
+  | 역할 | 라이트 | 다크 |
+  | --- | --- | --- |
+  | 바탕 `--background` | `#F9F7F7` | `#1B262C` |
+  | 면 `--muted`/`--secondary`/`--accent` | `#DBE2EF` | `#0F4C75` |
+  | 강조 `--primary`/`--ring` | `#3F72AF` | `#3282B8` |
+  | 글자 `--foreground` | `#112D4E` | `#BBE1FA` |
+
+  홈 배너 이미지도 같은 팔레트로 두 장(`public/home-banner-light.png`/`-dark.png`, `scripts/render-banners.sh`)이고
+  `.dark` 클래스로 CSS 가 고른다.
+
 - 단일 색상 계열만으로 화면을 구성하지 않는다.
 - 본문 가독성을 위해 충분한 대비를 유지한다.
 - 제목, 본문, 보조 텍스트의 크기 위계를 명확히 한다.

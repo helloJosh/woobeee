@@ -24,24 +24,19 @@ export default function MarkdownView({ content }: { content: string }) {
               [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:ml-6 [&_ol]:my-3
               [&_li]:my-1
               [&_li>ul]:mt-1 [&_li>ol]:mt-1
-              [&_code]:bg-gray-100 [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5
+              [&_code]:bg-muted [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5
               [&_code]:font-mono [&_code]:text-sm
-              [&_pre]:bg-gray-100 [&_pre]:p-4 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:my-4
+              [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:my-4
               [&_pre_code]:bg-transparent [&_pre_code]:p-0
               [&_blockquote]:my-4 [&_blockquote]:pl-4 [&_blockquote]:border-l-4
               [&_blockquote]:border-slate-200 [&_blockquote]:bg-slate-50 [&_blockquote]:text-slate-700
               [&_hr]:my-6 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-slate-200
               [&_img]:max-w-full [&_img]:h-auto
               [&_table]:w-full [&_table]:border-collapse [&_table]:my-4
-              [&_th]:border [&_th]:border-slate-200 [&_th]:px-3 [&_th]:py-2 [&_th]:text-left
-              [&_td]:border [&_td]:border-slate-200 [&_td]:px-3 [&_td]:py-2
-              text-slate-800
-              dark:text-slate-200
-              dark:[&_pre]:bg-slate-900
-              dark:[&_code]:bg-slate-900
-              dark:[&_blockquote]:bg-slate-900 dark:[&_blockquote]:border-slate-600 dark:[&_blockquote]:text-slate-300
-              dark:[&_hr]:border-slate-600
-              dark:[&_th]:border-slate-600 dark:[&_td]:border-slate-600
+              [&_th]:border [&_th]:border-border [&_th]:px-3 [&_th]:py-2 [&_th]:text-left
+              [&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2
+              text-foreground
+              dark:[&_blockquote]:bg-muted dark:[&_blockquote]:border-border dark:[&_blockquote]:text-muted-foreground
             "
         >
             <ReactMarkdown

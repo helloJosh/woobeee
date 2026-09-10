@@ -9,7 +9,7 @@ import type { Category } from "@/lib/types"
 const STORAGE_KEY = "home.categoriesOpen"
 
 function SectionTitle({ children }: { children: ReactNode }) {
-    return <h3 className="text-sm font-bold text-teal-500">{children}</h3>
+    return <h3 className="text-sm font-bold text-primary">{children}</h3>
 }
 
 function ItemButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
