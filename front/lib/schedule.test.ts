@@ -23,6 +23,7 @@ import {
     openIssueCount,
     pickColor,
     normalizeTree,
+    sortTreeByStart,
     applyIssue,
     STATUS_LABELS,
     todayIso,
@@ -462,5 +463,49 @@ describe("normalizeTree", () => {
 
     it("이미 온전한 트리는 값이 같다", () => {
         expect(normalizeTree(tree)).toEqual(tree)
+    })
+})
+
+// SCHEDULE-AC-43 — 하위 항목은 시작일 오름차순, 시작일 없는 것은 뒤로, 같으면 id 순. 프로젝트 순서는 그대로.
+describe("sortTreeByStart", () => {
+    const t = (id: number, startDate: string | null): ScheduleTask => ({
+        id, milestoneId: null, name: `t${id}`, status: "NOT_STARTED", startDate, endDate: null,
+        startTime: null, endTime: null, reminders: [], issues: [], color: "#ef4444",
+    })
+    const unsorted: ScheduleTree = {
+        projects: [
+            { id: 2, name: "B", status: "NOT_STARTED", startDate: "2026-01-01", endDate: null, tasks: [], milestones: [] },
+            { id: 1, name: "A", status: "NOT_STARTED", startDate: "2026-09-01", endDate: null,
+              tasks: [t(10, "2026-09-14"), t(11, null), t(12, "2026-09-11"), t(13, "2026-09-11")],
+              milestones: [
+                  { id: 20, name: "late", status: "NOT_STARTED", startDate: "2026-10-01", endDate: null, tasks: [t(30, "2026-10-05"), t(31, "2026-10-02")], milestones: [] },
+                  { id: 21, name: "none", status: "NOT_STARTED", startDate: null, endDate: null, tasks: [], milestones: [] },
+                  { id: 22, name: "early", status: "NOT_STARTED", startDate: "2026-09-20", endDate: null, tasks: [], milestones: [] },
+              ] },
+        ],
+        tasks: [t(40, null), t(41, "2026-08-01")],
+    }
+
+    it("할 일은 시작일 순, 미정은 뒤, 같은 날은 id 순", () => {
+        const out = sortTreeByStart(unsorted)
+        expect(out.projects[1].tasks.map((x) => x.id)).toEqual([12, 13, 10, 11])
+        expect(out.tasks.map((x) => x.id)).toEqual([41, 40])
+    })
+
+    it("마일스톤도 시작일 순이고 그 안의 할 일까지 재귀로 정렬한다", () => {
+        const out = sortTreeByStart(unsorted)
+        expect(out.projects[1].milestones.map((m) => m.id)).toEqual([22, 20, 21])
+        expect(out.projects[1].milestones[1].tasks.map((x) => x.id)).toEqual([31, 30])
+    })
+
+    it("프로젝트 순서는 건드리지 않고 원본도 변형하지 않는다", () => {
+        const before = JSON.stringify(unsorted)
+        const out = sortTreeByStart(unsorted)
+        expect(out.projects.map((p) => p.id)).toEqual([2, 1])
+        expect(JSON.stringify(unsorted)).toBe(before)
+    })
+
+    it("normalizeTree 가 정렬까지 한다 — 화면은 항상 정렬된 트리를 받는다", () => {
+        expect(normalizeTree(unsorted).projects[1].tasks.map((x) => x.id)).toEqual([12, 13, 10, 11])
     })
 })

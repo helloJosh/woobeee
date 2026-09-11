@@ -207,9 +207,37 @@ export function normalizeTree(tree: ScheduleTree): ScheduleTree {
     const milestone = (m: ScheduleMilestone): ScheduleMilestone => ({
         ...m, tasks: m.tasks.map(task), milestones: m.milestones.map(milestone),
     })
-    return {
+    return sortTreeByStart({
         projects: tree.projects.map((p) => ({ ...p, tasks: p.tasks.map(task), milestones: p.milestones.map(milestone) })),
         tasks: tree.tasks.map(task),
+    })
+}
+
+/** 시작일 오름차순, 시작일 없는 것은 뒤로, 같으면 id 순. 안정 정렬이라 서버 순서(sort_order, id)가 동률의 기준으로 남는다. */
+function byStart<T extends { id: number; startDate: string | null }>(a: T, b: T): number {
+    if (a.startDate === b.startDate) return a.id - b.id
+    if (a.startDate === null) return 1
+    if (b.startDate === null) return -1
+    return a.startDate < b.startDate ? -1 : 1
+}
+
+/**
+ * SCHEDULE-AC-43 — 하위 항목(할 일·마일스톤)을 시작일 순으로. 프로젝트 순서는 사용자가 만든 순서 그대로 둔다.
+ * 원본은 변형하지 않는다. 달력(`collectCalendarEntries`)도 이 순서를 따르므로 lane 순서가 트리와 같아진다.
+ */
+export function sortTreeByStart(tree: ScheduleTree): ScheduleTree {
+    const milestone = (m: ScheduleMilestone): ScheduleMilestone => ({
+        ...m,
+        tasks: [...m.tasks].sort(byStart),
+        milestones: [...m.milestones].sort(byStart).map(milestone),
+    })
+    return {
+        projects: tree.projects.map((p) => ({
+            ...p,
+            tasks: [...p.tasks].sort(byStart),
+            milestones: [...p.milestones].sort(byStart).map(milestone),
+        })),
+        tasks: [...tree.tasks].sort(byStart),
     }
 }
 
