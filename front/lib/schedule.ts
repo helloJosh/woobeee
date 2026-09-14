@@ -199,7 +199,7 @@ export function nextStatus(status: ScheduleStatus): ScheduleStatus {
 // ── SCHEDULE-AC-40 ~ 42 — 이슈사항 ─────────────────────────────────────────────
 
 /**
- * SCHEDULE-AC-41 — 서버 응답 정규화. `issues` 가 빠진 할 일(아직 재시작하지 않은 구버전 서버)에
+ * SCHEDULE-AC-41 — 서버 응답 정규화. 하위 항목 순서는 서버가 시작일 순으로 내린다(SCHEDULE-AC-43) — 여기서는 건드리지 않는다. `issues` 가 빠진 할 일(아직 재시작하지 않은 구버전 서버)에
  * 빈 배열을 채워 화면이 `issues.length` 에서 깨지지 않게 한다. 이슈 추가는 그때 서버 오류로 드러난다.
  */
 /** "10:00:00" → "10:00". 서버 LocalTime 직렬화가 초를 붙여도 화면 계약(SCHEDULE-AC-34)은 HH:mm 이다. */
@@ -218,39 +218,12 @@ export function normalizeTree(tree: ScheduleTree): ScheduleTree {
     const milestone = (m: ScheduleMilestone): ScheduleMilestone => ({
         ...m, tasks: m.tasks.map(task), milestones: m.milestones.map(milestone),
     })
-    return sortTreeByStart({
+    return {
         projects: tree.projects.map((p) => ({ ...p, tasks: p.tasks.map(task), milestones: p.milestones.map(milestone) })),
         tasks: tree.tasks.map(task),
-    })
-}
-
-/** 시작일 오름차순, 시작일 없는 것은 뒤로, 같으면 id 순. 안정 정렬이라 서버 순서(sort_order, id)가 동률의 기준으로 남는다. */
-function byStart<T extends { id: number; startDate: string | null }>(a: T, b: T): number {
-    if (a.startDate === b.startDate) return a.id - b.id
-    if (a.startDate === null) return 1
-    if (b.startDate === null) return -1
-    return a.startDate < b.startDate ? -1 : 1
-}
-
-/**
- * SCHEDULE-AC-43 — 하위 항목(할 일·마일스톤)을 시작일 순으로. 프로젝트 순서는 사용자가 만든 순서 그대로 둔다.
- * 원본은 변형하지 않는다. 달력(`collectCalendarEntries`)도 이 순서를 따르므로 lane 순서가 트리와 같아진다.
- */
-export function sortTreeByStart(tree: ScheduleTree): ScheduleTree {
-    const milestone = (m: ScheduleMilestone): ScheduleMilestone => ({
-        ...m,
-        tasks: [...m.tasks].sort(byStart),
-        milestones: [...m.milestones].sort(byStart).map(milestone),
-    })
-    return {
-        projects: tree.projects.map((p) => ({
-            ...p,
-            tasks: [...p.tasks].sort(byStart),
-            milestones: [...p.milestones].sort(byStart).map(milestone),
-        })),
-        tasks: [...tree.tasks].sort(byStart),
     }
 }
+
 
 /** 할 일 행의 「이슈 N」 배지 — 미해결만 센다. */
 export function openIssueCount(issues: ScheduleIssue[]): number {

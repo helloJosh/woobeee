@@ -10,8 +10,8 @@ import java.util.List;
 
 public interface TaskRepository extends JpaRepository<Tasks, Long> {
 
-    /** 무소속 포함 내 할 일 전부 — 트리·달력의 단일 조회 (SCHEDULE-AC-31). */
-    @Query(value = "SELECT * FROM tasks WHERE member_id = :memberId ORDER BY sort_order, id",
+    /** 무소속 포함 내 할 일 전부 — 트리·달력의 단일 조회 (SCHEDULE-AC-31). 시작일 순, 미정은 뒤 (SCHEDULE-AC-43). */
+    @Query(value = "SELECT * FROM tasks WHERE member_id = :memberId ORDER BY start_date ASC NULLS LAST, sort_order, id",
             nativeQuery = true)
     List<Tasks> findAllForMember(@Param("memberId") Long memberId);
 

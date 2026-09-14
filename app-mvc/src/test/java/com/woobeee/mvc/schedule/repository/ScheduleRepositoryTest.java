@@ -386,4 +386,25 @@ class ScheduleRepositoryTest {
         issueRepository.deleteAllForTask(standalone.getId());
         assertThat(issueRepository.findAllForTasks(all)).isEmpty();
     }
+    /* ===== SCHEDULE-AC-43 — 트리 조회 정렬 ===== */
+
+    /** SCHEDULE-AC-43 — 할 일·마일스톤 조회는 시작일 오름차순, 시작일 없는 것은 뒤, 같으면 sort_order·id 순으로 내려온다. */
+    @Test
+    void treeQueriesOrderChildrenByStartDateWithUndatedLast() {
+        Projects p = project(801L);
+        Tasks late = taskRepository.save(newTask(p, null, "late", null, LocalDate.of(2026, 9, 28), null));
+        Tasks undated = taskRepository.save(newTask(p, null, "undated", null, null, null));
+        Tasks early = taskRepository.save(newTask(p, null, "early", null, LocalDate.of(2026, 9, 7), null));
+        Tasks sameDayLater = taskRepository.save(newTask(p, null, "same-day", null, LocalDate.of(2026, 9, 7), null));
+
+        assertThat(taskRepository.findAllForMember(801L)).extracting(Tasks::getId)
+                .containsExactly(early.getId(), sameDayLater.getId(), late.getId(), undated.getId());
+
+        Milestones mLate = milestoneRepository.save(Milestones.create(p.getId(), null, "late", null, LocalDate.of(2026, 10, 1), null));
+        Milestones mNone = milestoneRepository.save(Milestones.create(p.getId(), null, "none", null, null, null));
+        Milestones mEarly = milestoneRepository.save(Milestones.create(p.getId(), null, "early", null, LocalDate.of(2026, 9, 20), null));
+
+        assertThat(milestoneRepository.findAllForProjects(List.of(p.getId()))).extracting(Milestones::getId)
+                .containsExactly(mEarly.getId(), mLate.getId(), mNone.getId());
+    }
 }

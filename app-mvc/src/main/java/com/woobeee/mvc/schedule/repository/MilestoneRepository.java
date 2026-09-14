@@ -10,7 +10,8 @@ import java.util.List;
 
 public interface MilestoneRepository extends JpaRepository<Milestones, Long> {
 
-    @Query(value = "SELECT * FROM milestones WHERE project_id IN (:projectIds) ORDER BY sort_order, id",
+    /** 트리 조립용 — 시작일 순, 미정은 뒤 (SCHEDULE-AC-43). 부모별 묶음은 서비스가 하되 이 순서를 보존한다. */
+    @Query(value = "SELECT * FROM milestones WHERE project_id IN (:projectIds) ORDER BY start_date ASC NULLS LAST, sort_order, id",
             nativeQuery = true)
     List<Milestones> findAllForProjects(@Param("projectIds") List<Long> projectIds);
 
