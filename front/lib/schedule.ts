@@ -202,8 +202,19 @@ export function nextStatus(status: ScheduleStatus): ScheduleStatus {
  * SCHEDULE-AC-41 — 서버 응답 정규화. `issues` 가 빠진 할 일(아직 재시작하지 않은 구버전 서버)에
  * 빈 배열을 채워 화면이 `issues.length` 에서 깨지지 않게 한다. 이슈 추가는 그때 서버 오류로 드러난다.
  */
+/** "10:00:00" → "10:00". 서버 LocalTime 직렬화가 초를 붙여도 화면 계약(SCHEDULE-AC-34)은 HH:mm 이다. */
+function hhmm(time: string | null | undefined): string | null {
+    if (!time) return null
+    return time.length > 5 ? time.slice(0, 5) : time
+}
+
 export function normalizeTree(tree: ScheduleTree): ScheduleTree {
-    const task = (t: ScheduleTask): ScheduleTask => (Array.isArray(t.issues) ? t : { ...t, issues: [] })
+    const task = (t: ScheduleTask): ScheduleTask => ({
+        ...t,
+        issues: Array.isArray(t.issues) ? t.issues : [],
+        startTime: hhmm(t.startTime),
+        endTime: hhmm(t.endTime),
+    })
     const milestone = (m: ScheduleMilestone): ScheduleMilestone => ({
         ...m, tasks: m.tasks.map(task), milestones: m.milestones.map(milestone),
     })

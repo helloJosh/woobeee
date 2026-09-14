@@ -464,6 +464,17 @@ describe("normalizeTree", () => {
     it("이미 온전한 트리는 값이 같다", () => {
         expect(normalizeTree(tree)).toEqual(tree)
     })
+
+    // SCHEDULE-AC-34 — 서버(LocalTime)가 "10:00:00" 처럼 초까지 내려도 화면 계약은 "HH:mm" 이다
+    it("시간은 HH:mm 으로 잘라 정규화한다", () => {
+        const raw = JSON.parse(JSON.stringify(tree)) as ScheduleTree
+        raw.tasks[0].startTime = "10:00:00"
+        raw.tasks[0].endTime = "11:30:00"
+        const out = normalizeTree(raw)
+        expect(out.tasks[0].startTime).toBe("10:00")
+        expect(out.tasks[0].endTime).toBe("11:30")
+        expect(normalizeTree(tree).tasks[0].startTime).toBe(tree.tasks[0].startTime)
+    })
 })
 
 // SCHEDULE-AC-43 — 하위 항목은 시작일 오름차순, 시작일 없는 것은 뒤로, 같으면 id 순. 프로젝트 순서는 그대로.
