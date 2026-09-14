@@ -37,6 +37,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -309,6 +310,29 @@ public class PostServiceImpl implements PostService {
             String publicUrl = publicUrl(postId, fileName);
 
             matcher.appendReplacement(result, Matcher.quoteReplacement(publicUrl));
+        }
+        matcher.appendTail(result);
+        return reSignBakedUrls(result.toString(), postId);
+    }
+
+    /**
+     * BLOG-AC-24 — 원문에 이 글의 presigned URL 이 구워져 있으면(편집기가 되돌리지 못한 채 저장된 경우) 읽을 때
+     * 다시 서명한다. 저장된 서명은 24시간이면 죽으므로 그대로 내리면 이미지가 전부 403 이다. 같은 버킷 밑
+     * {@code /<postId>/<파일>?X-Amz-…} 만 대상이고 다른 글의 경로는 건드리지 않는다(이 글의 키로 서명하면 안 된다).
+     */
+    private String reSignBakedUrls(String markdown, Long postId) {
+        String bucket = storageProperties.getBucket();
+        if (bucket == null || bucket.isBlank()) {
+            return markdown; // 버킷을 모르면 무엇이 "이 글의" URL 인지 판별할 수 없다 — 건드리지 않는다
+        }
+        Pattern baked = Pattern.compile(
+                "https?://[^\\s)\"'<>]+?/" + Pattern.quote(bucket) + "/" + postId
+                        + "/([^\\s)\"'<>?/]+)\\?X-Amz-[^\\s)\"'<>]*");
+        Matcher matcher = baked.matcher(markdown);
+        StringBuffer result = new StringBuffer();
+        while (matcher.find()) {
+            String fileName = URLDecoder.decode(matcher.group(1), StandardCharsets.UTF_8);
+            matcher.appendReplacement(result, Matcher.quoteReplacement(publicUrl(postId, fileName)));
         }
         matcher.appendTail(result);
         return result.toString();

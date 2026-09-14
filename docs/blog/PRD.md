@@ -76,7 +76,8 @@
 | BLOG-AC-14 | `${파일명}` 플레이스홀더는 저장 원문에 유지되고 치환은 조회 시점에만 일어난다 — 원문에 URL 을 구우면 서빙 방식이 바뀔 때 기존 글이 전부 깨진다 | `PostServiceImplTest` |
 | BLOG-AC-15 | 목록 응답도 `${파일명}` 을 치환한다 — 치환이 상세에만 걸려 있으면 목록 미리보기에 원문이 그대로 나간다 | `PostServiceImplTest` |
 | BLOG-AC-16 | `GET /api/back/posts/{postId}/images/{파일명}` 은 버킷을 공개하지 않고 앱 자격증명으로 오브젝트를 스트리밍한다. 파일명은 basename 만 남겨 `../` 로 같은 버킷의 `profiles/` 를 읽을 수 없고, 없는 오브젝트는 404 다 | `PostServiceImplTest` |
-| BLOG-AC-17 | 수정 화면은 불러온 본문의 `/api/back/posts/{postId}/images/{파일명}` 을 `${파일명}` 으로 되돌린다 — 되돌리지 않으면 저장이 해석된 경로를 원문에 구워 AC-14 가 깨진다. 다른 글의 경로와 외부 URL 은 건드리지 않는다 | `blog-admin.test.ts` |
+| BLOG-AC-17 | 수정 화면은 불러온 본문의 이미지 주소를 `${파일명}` 으로 되돌린다 — 옛 `/api/back/posts/{postId}/images/{파일명}` 과 **지금의 presigned URL**(`https://<host>/<bucket>/{postId}/{파일명}?X-Amz-…`, 호스트·버킷 불문) 둘 다. 되돌리지 않으면 저장이 해석된 주소를 원문에 구워 AC-14 가 깨진다 — 2026-09-14 프로덕션에서 presigned 형태를 몰라 24시간 서명이 구워졌고 다음 날부터 이미지가 전부 403 이었다. 다른 글의 경로와 외부 URL 은 건드리지 않는다 | `blog-admin.test.ts` |
+| BLOG-AC-24 | 읽기(목록·상세) 때 원문에 **이 글의** presigned URL 이 구워져 있으면(`/<bucket>/{postId}/<파일>?X-Amz-…`) 다시 서명해 내린다 — 편집기 회귀나 옛 데이터가 남아 있어도 화면이 깨지지 않는 2차 방어. 다른 글의 경로는 이 글의 키로 서명하지 않는다 | `PostServiceImplTest` |
 | BLOG-AC-18 | 태그 입력 정규화: trim, 빈 값 제거, 대소문자 무시 중복 제거(첫 표기 유지), 최대 10개, 각 1~30자 — 위반은 400 `post_invalidTags`. 프론트 `normalizeTags`/`validatePostDraft` 도 같은 규칙 | `TagNormalizerTest`, `blog-admin.test.ts` |
 | BLOG-AC-19 | 저장·수정은 이름을 소문자로 비교해 있는 태그를 재사용하고 없는 이름을 새로 만든 뒤 `post_tags` 를 **집합 교체**한다(수정은 삭제 후 재생성). 글 삭제는 연결을 먼저 지운다. 태그 없이 저장하면 태그 저장소를 건드리지 않는다. 에디터는 기존 태그(인기순 200개)를 자동완성으로 보여 재사용을 유도하고(`tagSuggestions` — 대소문자 무시 부분일치, 고른 것 제외, 앞글자 일치 우선, 최대 8개), 없는 이름은 Enter 로 새 태그가 된다 | `PostServiceImplTest`, `PostRepositoryTest`, `blog-admin.test.ts` |
 | BLOG-AC-20 | 목록 `PostContent.tags` 와 상세 `GetPostResponse.tags` 는 `[{id, name}]`(글 안에서 이름 순). 목록은 글 id 를 모아 **한 번의** 조인 조회로 붙인다 | `PostServiceImplTest`, `PostRepositoryTest` |

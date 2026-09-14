@@ -329,6 +329,23 @@ describe("toPlaceholderMarkdown", () => {
         expect(toPlaceholderMarkdown(content, 3)).toBe(content)
     })
 
+    /**
+     * BLOG-AC-17 회귀(2026-09-14 프로덕션) — 본문 이미지가 presigned URL(`https://image.woobeee.com/<버킷>/<postId>/<파일>?X-Amz-…`)
+     * 로 내려오게 된 뒤에도 되돌리기는 옛 `/api/back/posts/{id}/images/…` 형태만 알았다. 그래서 8/27 에 글을 저장하자
+     * 24시간짜리 서명 URL 이 원문에 구워졌고 다음 날부터 모든 이미지가 403 이었다.
+     */
+    it("이 글의 presigned 이미지 URL 도 플레이스홀더로 되돌린다", () => {
+        const signed = "https://image.woobeee.com/woobeee/14/fk_by_operation.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=admin%2F20260827%2Fap-northeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260827T050000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host&X-Amz-Signature=abc"
+        expect(toPlaceholderMarkdown(`![a](${signed})`, 14)).toBe("![a](${fk_by_operation.png})")
+    })
+
+    it("presigned URL 도 다른 postId 면 그대로 두고, 호스트·버킷은 가리지 않는다(로컬 MinIO 포함)", () => {
+        const other = "![a](https://image.woobeee.com/woobeee/99/x.png?X-Amz-Date=20260827T050000Z&X-Amz-Signature=abc)"
+        expect(toPlaceholderMarkdown(other, 14)).toBe(other)
+        expect(toPlaceholderMarkdown("![a](http://localhost:9000/dev-bucket/14/%ED%95%9C%EA%B8%80.png?X-Amz-Date=20260827T050000Z&X-Amz-Signature=abc)", 14))
+            .toBe("![a](${한글.png})")
+    })
+
     it("외부 이미지 URL 은 건드리지 않는다", () => {
         const content = "![a](https://example.com/logo.png)\n![b](/static/hero.png)"
 

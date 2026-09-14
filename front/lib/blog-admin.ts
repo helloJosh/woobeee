@@ -241,21 +241,26 @@ export const collectDroppedImages = (
  * 않는다. 버킷 이름은 서버 설정이라 프론트가 알 수 없고, 느슨하게 맞추면 작성자가 의도적으로
  * 넣은 외부 이미지까지 건드린다. 그런 글이 있으면 일회성으로 손봐야 한다.
  */
-export const toPlaceholderMarkdown = (content: string, postId: number): string =>
-    content.replace(
-        /\/api\/back\/posts\/(\d+)\/images\/([^\s)"'<>]+)/g,
-        (whole, id: string, encodedName: string) => {
-            if (Number(id) !== postId) {
-                return whole
-            }
-            try {
-                return `\${${decodeURIComponent(encodedName)}}`
-            } catch {
-                // 깨진 퍼센트 인코딩. 원문을 남긴다 — 여기서 던지면 글을 아예 못 연다.
-                return whole
-            }
-        },
-    )
+export const toPlaceholderMarkdown = (content: string, postId: number): string => {
+    const revert = (whole: string, id: string, encodedName: string): string => {
+        if (Number(id) !== postId) {
+            return whole
+        }
+        try {
+            return `\${${decodeURIComponent(encodedName)}}`
+        } catch {
+            // 깨진 퍼센트 인코딩. 원문을 남긴다 — 여기서 던지면 글을 아예 못 연다.
+            return whole
+        }
+    }
+    return content
+        // 옛 형태: 앱이 스트리밍하던 상대 경로 (BLOG-AC-16)
+        .replace(/\/api\/back\/posts\/(\d+)\/images\/([^\s)"'<>]+)/g, revert)
+        // 지금 형태: presigned URL `https://<host>/<bucket>/<postId>/<파일>?X-Amz-…` — 호스트·버킷은 환경마다 달라
+        // 가리지 않고 "postId 세그먼트 바로 뒤가 파일, 그 뒤가 X-Amz 쿼리" 만 본다. 이걸 되돌리지 못하면 24시간짜리
+        // 서명이 원문에 구워져 다음 날 이미지가 전부 403 이다 (2026-09-14 프로덕션 회귀).
+        .replace(/https?:\/\/[^\s)"'<>]+?\/(\d+)\/([^\s)"'<>?/]+)\?X-Amz-[^\s)"'<>]*/g, revert)
+}
 
 export const resolvePendingImages = (
     markdownKo: string,

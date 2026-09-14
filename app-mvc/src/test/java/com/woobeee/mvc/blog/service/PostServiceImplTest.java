@@ -199,6 +199,30 @@ class PostServiceImplTest {
         assertThat(response.content()).doesNotContain("${");
     }
 
+    /**
+     * BLOG-AC-24 — 원문에 presigned URL 이 구워져 있어도(2026-09-14 프로덕션: 편집기가 되돌리지 못한 채 저장) 읽을 때
+     * 이 글의 버킷/postId 경로면 다시 서명해 내린다. 저장된 만료 서명이 그대로 나가면 이미지가 전부 403 이다.
+     */
+    @Test
+    void aBakedPresignedUrlInTheStoredMarkdownIsReSignedOnRead() throws Exception {
+        ArgumentCaptor<String> captor = stubPresigner(SIGNED);
+        when(storageProperties.getBucket()).thenReturn("woobeee");
+        Posts post = new Posts("ko", "en",
+                "본문 ![a](https://image.woobeee.com/woobeee/13/old.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20260827T050000Z&X-Amz-Expires=86400&X-Amz-Signature=stale) 끝"
+                        + " ![other](https://image.woobeee.com/woobeee/99/theirs.png?X-Amz-Date=20260827T050000Z&X-Amz-Signature=x)",
+                "body", 1L, 3L);
+        ReflectionTestUtils.setField(post, "id", 13L);
+        when(postRepository.findById(13L)).thenReturn(Optional.of(post));
+        when(categoryRepository.findById(1L)).thenReturn(Optional.empty());
+
+        GetPostResponse response = postService.getPost(13L, "ko", null, mock(HttpServletRequest.class));
+
+        assertThat(captor.getAllValues()).containsExactly("13/old.png");
+        assertThat(response.content()).contains("![a](" + SIGNED + ")").doesNotContain("stale");
+        // 다른 글의 경로는 이 글의 키로 다시 서명하면 안 된다 — 그대로 둔다
+        assertThat(response.content()).contains("99/theirs.png?X-Amz-Date=20260827T050000Z&X-Amz-Signature=x");
+    }
+
     /** BLOG-AC-13 — 서명하라고 넘기는 키는 {@code {postId}/{basename}} 이다. */
     @Test
     void theKeyHandedToThePresignerIsPostIdSlashBasename() throws Exception {
