@@ -11,9 +11,9 @@ import { useState } from "react"
  */
 export const BANNER_IMAGE_LIGHT = "/home-banner-light.png"
 export const BANNER_IMAGE_DARK = "/home-banner-dark.png"
-const LABEL = "WOOBEEBLOG"
+const LABEL = "WOOBEEEBLOG"
 const TITLE = "백엔드엔지니어 김병우"
-const SUBTITLE = "관심 있는 것을 공부합니다"
+const SUBTITLE = "막힌 지점과 푼 방법을 기록합니다"
 
 export default function HomeBanner() {
     const [imageMissing, setImageMissing] = useState(false)
