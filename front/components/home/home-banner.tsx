@@ -11,7 +11,7 @@ import { useState } from "react"
  */
 export const BANNER_IMAGE_LIGHT = "/home-banner-light.png"
 export const BANNER_IMAGE_DARK = "/home-banner-dark.png"
-const LABEL = "WOOBEEEBLOG"
+const LABEL = "woobeeeblog"
 const TITLE = "백엔드엔지니어 김병우"
 const SUBTITLE = "경험한 것을 기록합니다"
 
