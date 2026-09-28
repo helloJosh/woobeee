@@ -1,16 +1,20 @@
 "use client"
 
 import { useState } from "react"
+import bannerLight from "@/public/home-banner-light.png"
+import bannerDark from "@/public/home-banner-dark.png"
 
 /**
  * 헤더 아래 전체 폭 소개 배너 — 우아한 기술블로그의 민트 배너 자리. 장식용이고 클릭 동작은 없다
  * (이력서는 헤더의 RESUME 탭, components/resume-dialog.tsx).
  *   - 배너 이미지: public/home-banner-light.png / -dark.png (3840×766, scripts/render-banners.sh — 테마 팔레트에 맞춰 두 장,
  *     .dark 클래스로 CSS 가 골라 보인다. 문구·색을 바꾸면 scripts/home-banner-*.html 을 고치고 다시 찍는다)
+ *     정적 import 로 싣는다 — Next 가 내용 해시가 붙은 /_next/static/media/… 주소로 바꿔 주므로 다시 찍을 때마다 주소가
+ *     달라져 브라우저·CDN 캐시(같은 파일명 + max-age 4시간)에 옛 그림이 남지 않는다 (2026-09-28: 배포 뒤에도 안 바뀌던 원인).
  * 이미지가 없으면(404) 같은 문구의 CSS 배너(팔레트 토큰)로 대체해 화면이 깨지지 않는다.
  */
-export const BANNER_IMAGE_LIGHT = "/home-banner-light.png"
-export const BANNER_IMAGE_DARK = "/home-banner-dark.png"
+export const BANNER_IMAGE_LIGHT = bannerLight.src
+export const BANNER_IMAGE_DARK = bannerDark.src
 const LABEL = "woobeeeblog"
 const TITLE = "백엔드엔지니어 김병우"
 const SUBTITLE = "경험한 것을 기록합니다"
