@@ -1,0 +1,24 @@
+# 테스트 프로파일 — app-mvc 와 같은 이유로 DB 를 갈라 놓는다.
+#
+#   ./mvnw -pl app-webflux spring-boot:run -Dspring-boot.run.profiles=test
+#
+# 스키마는 app-mvc 의 Flyway 가 세운다(이 앱은 flyway.enabled=false). 그래서 market_test 에
+# 테이블이 있으려면 app-mvc 를 test 프로파일로 한 번 띄워 둬야 한다.
+server:
+  # dev(8001)와 동시에 띄울 수 있게 포트를 비켜 둔다.
+  port: ${SERVER_PORT:8101}
+
+spring:
+  r2dbc:
+    url: ${TEST_R2DBC_URL:r2dbc:postgresql://localhost:9432/market_test}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456789}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:9379}
+      password: ${REDIS_PASSWORD:root!23}
+
+logging:
+  file:
+    name: logs/app-webflux-test.log

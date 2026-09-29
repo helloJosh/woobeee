@@ -69,14 +69,12 @@ spring:
       password: ${REDIS_PASSWORD:root!23}
   jpa:
     open-in-view: false
-    show-sql: true
+    # SQL 출력은 dev 프로파일에서 켠다 — 배포 로그가 쿼리로 덮이면 정작 볼 것을 못 본다.
+    show-sql: false
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
-        format_sql: true
-        use_sql_comments: true
-        highlight_sql: true
         auto_quote_keyword: true
         hbm2ddl:
           auto: validate
@@ -104,9 +102,13 @@ spring:
       time-between-eviction-runs-millis: 5000
       min-evictable-idle-time-millis: 60000
 
+# 이 파일은 **배포 기준**이다. 로컬에서 띄울 때는 dev, 테스트는 test 프로파일을 쓴다:
+#   ./mvnw -pl app-mvc spring-boot:run -Dspring-boot.run.profiles=dev
+# 바인딩 파라미터 TRACE 로그는 dev 로 옮겼다 — 배포에서는 이메일·토큰 같은 값이 그대로
+# 로그 파일에 남는다.
 logging:
   level:
-    org.hibernate.orm.jdbc.bind: trace
-    org.springframework.transaction.interceptor: trace
+    org.hibernate.orm.jdbc.bind: info
+    org.springframework.transaction.interceptor: info
   file:
     name: logs/app-mvc.log

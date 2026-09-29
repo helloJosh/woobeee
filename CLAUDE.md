@@ -84,8 +84,12 @@ ADR을 갱신한다. 백엔드 개발에 Kafka가 필요 없으면 `up -d postgr
 
 ### 기본 검증 명령
 
+DB 를 쓰는 테스트는 `@ActiveProfiles("test")` 로 **`market_test`** 만 본다. 공유 DB 를 건드리지
+않으므로 마음껏 지우고 넣어도 된다(`ScheduleRepositoryTest` 는 빈 DB 를 전제로 쓰였고, 공유
+DB 에서는 남의 데이터 때문에 실패했다).
+
 ```bash
-./mvnw -pl core,app-mvc,app-webflux -am test   # SchemaValidationTest는 PostgreSQL이 떠 있어야 통과
+./mvnw -pl core,app-mvc,app-webflux -am test   # PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
 cd front && npm test && npm run build          # npm test = tsc --noEmit → vitest run
 ```
 
@@ -105,13 +109,36 @@ cd front && npm test && npm run build          # npm test = tsc --noEmit → vit
 ./mvnw -pl core dependency:tree | grep -E "starter-webmvc|starter-webflux|tomcat-embed|reactor-netty" && echo "FAIL: web stack leaked into core" || echo "OK"
 ```
 
-### 개발 서버
+### 프로파일 — 배포 / dev / test
+
+`application.yaml` 은 **배포 기준**이다. 로컬에서 띄울 때는 프로파일을 지정한다.
+
+| 프로파일 | DB | 포트 | 쓰임 |
+| --- | --- | --- | --- |
+| (없음) | `market` | 8000 / 8001 | 배포. 환경변수로 실제 주소를 주입한다 |
+| `dev` | `market` (**공유, 실데이터**) | 8000 / 8001 | 로컬 개발. SQL·바인딩 파라미터 로그를 켠다 |
+| `test` | `market_test` (빈 DB) | 8100 / 8101 | 자동화 테스트와, 데이터를 지워도 되는 수동 검증 |
 
 ```bash
-./mvnw -pl app-mvc spring-boot:run       # :8000  auth + blog
-./mvnw -pl app-webflux spring-boot:run   # :8001  game
-cd front && npm run dev                  # :3000  rewrites로 위 둘을 프록시
+./mvnw -pl app-mvc spring-boot:run -Dspring-boot.run.profiles=dev        # :8000
+./mvnw -pl app-webflux spring-boot:run -Dspring-boot.run.profiles=dev    # :8001
+./mvnw -pl app-mvc spring-boot:run -Dspring-boot.run.profiles=test       # :8100  market_test
+cd front && npm run dev                                                  # :3000
 ```
+
+`dev` 와 `test` 는 포트가 달라 동시에 띄울 수 있다.
+
+**`dev` 는 공유 DB 를 본다.** 실제 회원·글·일정·신청서가 들어 있고 백업이 없다. 데이터를
+지우는 검증은 `test` 로 띄운다 — 그것이 `market_test` 를 따로 둔 이유다.
+
+`market_test` 가 없으면 한 번 만든다(스키마는 Flyway 가 세운다):
+
+```bash
+docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test OWNER root;"
+```
+
+바인딩 파라미터 TRACE 로그는 `dev` 에만 있다 — 배포에서 켜면 이메일·토큰 같은 값이 그대로
+로그 파일에 남는다.
 
 `-pl <module>` 단독 실행은 `com.woobeee:core` 가 로컬 리포에 설치돼 있어야 한다. 클린 클론에서는
 먼저 `./mvnw -pl core -am install -DskipTests` 를 한 번 실행한다.

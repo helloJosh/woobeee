@@ -1,0 +1,52 @@
+# 테스트 프로파일 — 자동화 테스트와, 데이터를 마음껏 지워도 되는 수동 검증용.
+#
+#   ./mvnw -pl core,app-mvc -am test                                    # 자동 활성 (surefire)
+#   ./mvnw -pl app-mvc spring-boot:run -Dspring-boot.run.profiles=test  # 손으로 띄울 때
+#
+# 핵심은 **DB 를 갈라 놓는 것**이다. market 에는 실제 회원·글·일정·신청서가 있고 백업이 없다.
+# 2026-09-29 에 검증용 DELETE 로 신청서를 잃었다 — 그때 테스트와 개발이 같은 DB 를 봤다.
+# 여기서는 market_test 만 본다. 스키마는 Flyway 가 마이그레이션으로 처음부터 세운다.
+#
+# market_test 가 없으면 만들어야 한다(한 번만):
+#   docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test OWNER root;"
+server:
+  # dev(8000)와 동시에 띄울 수 있게 포트를 비켜 둔다.
+  port: ${SERVER_PORT:8100}
+
+spring:
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:9432/market_test}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456789}
+  jpa:
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    # 빈 DB 에서 시작하므로 baseline 이 필요 없다. 마이그레이션이 V1 부터 전부 돈다.
+    baseline-on-migrate: false
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:9379}
+      password: ${REDIS_PASSWORD:root!23}
+
+pokemon:
+  # 테스트가 밖으로 나가지 않게 한다. 없는 주소라 조회는 실패하고, 동기화는 "읽은 것이 없다" 로
+  # 건너뛴다 — 상품표를 건드리지 않는 정상 경로다.
+  app-store:
+    url: ${POKEMON_APP_STORE_URL:http://localhost:1/disabled-in-test}
+    # 테스트 중에 스케줄러가 돌 이유가 없다. "-" 는 Spring 이 @Scheduled 를 끄는 값이다
+    # (ScheduledTaskRegistrar.CRON_DISABLED). 안 도는 시각을 지어내면 6필드 규칙을 어겨
+    # 앱이 아예 못 뜬다.
+    sync-cron: "-"
+  bank-account: 테스트 계좌
+
+logging:
+  level:
+    org.hibernate.orm.jdbc.bind: info
+    org.springframework.transaction.interceptor: info
+  file:
+    name: logs/app-mvc-test.log

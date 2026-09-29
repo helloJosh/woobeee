@@ -1,0 +1,13 @@
+# 개발 프로파일 — 로컬에서 손으로 띄울 때.
+#
+#   ./mvnw -pl app-webflux spring-boot:run -Dspring-boot.run.profiles=dev
+#
+# 기본(application.yaml)은 배포 기준이다. R2DBC·Redis·S3 주소는 기본값이 이미 로컬 compose 를
+# 가리키므로 다시 적지 않는다.
+#
+# 주의: 이 프로파일은 **공유 개발 DB(market)** 를 쓴다. 데이터를 지우는 검증이 필요하면
+# test 프로파일(market_test)로 띄운다.
+logging:
+  level:
+    com.woobeee.game: debug
+    org.springframework.r2dbc: debug

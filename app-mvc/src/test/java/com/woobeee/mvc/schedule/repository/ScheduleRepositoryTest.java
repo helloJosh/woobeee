@@ -10,9 +10,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,21 +24,12 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringJUnitConfig
+@SpringJUnitConfig(initializers = ConfigDataApplicationContextInitializer.class)
 @EnableAutoConfiguration
 @EntityScan(basePackages = "com.woobeee.mvc")
 @EnableJpaRepositories(basePackages = "com.woobeee.mvc.schedule.repository")
 @Transactional
-@TestPropertySource(properties = {
-        "spring.datasource.url=jdbc:postgresql://localhost:9432/market",
-        "spring.datasource.username=root",
-        "spring.datasource.password=123456789",
-        "spring.datasource.driver-class-name=org.postgresql.Driver",
-        "spring.datasource.type=org.apache.commons.dbcp2.BasicDataSource",
-        "spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect",
-        "spring.jpa.hibernate.ddl-auto=validate",
-        "spring.flyway.enabled=true"
-})
+@ActiveProfiles("test")
 class ScheduleRepositoryTest {
 
     @Autowired ProjectRepository projectRepository;

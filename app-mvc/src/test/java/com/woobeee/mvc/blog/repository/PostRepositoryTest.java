@@ -7,11 +7,12 @@ import com.woobeee.mvc.blog.entity.Tags;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
-import org.springframework.test.context.TestPropertySource;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,21 +25,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 없어 BLOG-AC-01~04 가 문서로만 있었다 — 네이티브 전환과 함께 여기서 처음 고정한다.
  * 개발 DB 에 다른 글이 있어도 흔들리지 않도록 매 테스트가 자기 카테고리 안에서만 조회한다.
  */
-@SpringJUnitConfig
+@SpringJUnitConfig(initializers = ConfigDataApplicationContextInitializer.class)
 @EnableAutoConfiguration
 @EntityScan(basePackages = "com.woobeee.mvc")
 @EnableJpaRepositories(basePackages = "com.woobeee.mvc.blog.repository")
 @Transactional
-@TestPropertySource(properties = {
-        "spring.datasource.url=jdbc:postgresql://localhost:9432/market",
-        "spring.datasource.username=root",
-        "spring.datasource.password=123456789",
-        "spring.datasource.driver-class-name=org.postgresql.Driver",
-        "spring.datasource.type=org.apache.commons.dbcp2.BasicDataSource",
-        "spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect",
-        "spring.jpa.hibernate.ddl-auto=validate",
-        "spring.flyway.enabled=true"
-})
+@ActiveProfiles("test")
 class PostRepositoryTest {
 
     @Autowired PostRepository postRepository;
