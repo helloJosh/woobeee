@@ -20,18 +20,15 @@ class PokemonPropertiesTest {
     /** POKEMON-AC-09 — application.yaml 의 `1,3` 은 쉼표로 끊긴 문자열이다. */
     @Test
     void aCommaSeparatedStringBindsToTheManagerIdSet() {
-        PokemonProperties properties = bind(Map.of(
-                "pokemon.bank-account", "은행 0000 아무개",
-                "pokemon.manager-member-ids", "1,3"));
+        PokemonProperties properties = bind(Map.of("pokemon.manager-member-ids", "1,3"));
 
         assertThat(properties.managerMemberIds()).containsExactlyInAnyOrder(1L, 3L);
-        assertThat(properties.bankAccount()).isEqualTo("은행 0000 아무개");
     }
 
     /** POKEMON-AC-09 */
     @Test
     void onlyTheListedMembersAreManagers() {
-        PokemonProperties properties = new PokemonProperties("계좌", Set.of(1L, 3L));
+        PokemonProperties properties = new PokemonProperties(Set.of(1L, 3L));
 
         assertThat(properties.isManager(1L)).isTrue();
         assertThat(properties.isManager(3L)).isTrue();
@@ -42,7 +39,7 @@ class PokemonPropertiesTest {
     /** POKEMON-AC-09 — 비회원은 회원 id 가 없다. null 을 운영자로 보면 안 된다. */
     @Test
     void aGuestIsNeverAManager() {
-        assertThat(new PokemonProperties("계좌", Set.of(1L, 3L)).isManager(null)).isFalse();
+        assertThat(new PokemonProperties(Set.of(1L, 3L)).isManager(null)).isFalse();
     }
 
     /**
@@ -51,19 +48,11 @@ class PokemonPropertiesTest {
      */
     @Test
     void anAbsentListFallsBackToTheDefaultManagers() {
-        PokemonProperties properties = bind(Map.of("pokemon.bank-account", "계좌"));
+        PokemonProperties properties = bind(Map.of("pokemon.manager-member-ids", ""));
 
         assertThat(properties.managerMemberIds()).containsExactlyInAnyOrder(1L, 3L);
     }
 
-    /** 계좌를 빠뜨리면 화면에 바로 드러나는 문구가 나와야 한다 — 빈 문자열로 조용히 넘어가지 않는다. */
-    @Test
-    void anAbsentBankAccountShowsAVisiblePlaceholder() {
-        PokemonProperties properties = bind(Map.of("pokemon.manager-member-ids", "1"));
-
-        assertThat(properties.bankAccount()).isNotBlank();
-        assertThat(properties.managerMemberIds()).containsExactly(1L);
-    }
 
     private static PokemonProperties bind(Map<String, Object> values) {
         ConfigurationPropertySource source = new MapConfigurationPropertySource(values);

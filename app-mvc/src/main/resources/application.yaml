@@ -34,10 +34,7 @@ storage:
     path-style-access-enabled: true
 
 pokemon:
-  # 신청자가 이체할 계좌. 화면에 그대로 찍히는 문자열이고, 공동구매 페이지가 공개이므로
-  # 이 값도 공개로 노출된다. 실제 계좌번호는 레포에 두지 않고 POKEMON_BANK_ACCOUNT 로 넣는다
-  # — 미설정이면 아래 문구가 그대로 화면에 뜨므로 빠뜨리면 바로 눈에 띈다.
-  bank-account: ${POKEMON_BANK_ACCOUNT:계좌 정보가 아직 설정되지 않았습니다}
+  # 어느 차수든 주무를 수 있는 전역 운영자. 계좌는 주최자와 차수가 들고 있으므로 여기 없다.
   # 진행 상태를 바꿀 수 있는 회원 id. 블로그의 ROLE_ADMIN 과 별개다 — 이 공동구매를 실제로
   # 굴리는 사람만 손대야 하므로 역할이 아니라 명단으로 좁혔다.
   manager-member-ids: ${POKEMON_MANAGER_MEMBER_IDS:1,3}

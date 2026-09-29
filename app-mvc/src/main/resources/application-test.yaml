@@ -33,8 +33,6 @@ spring:
       port: ${REDIS_PORT:9379}
       password: ${REDIS_PASSWORD:root!23}
 
-pokemon:
-  bank-account: 테스트 계좌
 
 logging:
   level:
