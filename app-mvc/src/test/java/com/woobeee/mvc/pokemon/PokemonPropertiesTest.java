@@ -31,7 +31,7 @@ class PokemonPropertiesTest {
     /** POKEMON-AC-09 */
     @Test
     void onlyTheListedMembersAreManagers() {
-        PokemonProperties properties = new PokemonProperties("계좌", Set.of(1L, 3L), null);
+        PokemonProperties properties = new PokemonProperties("계좌", Set.of(1L, 3L));
 
         assertThat(properties.isManager(1L)).isTrue();
         assertThat(properties.isManager(3L)).isTrue();
@@ -42,7 +42,7 @@ class PokemonPropertiesTest {
     /** POKEMON-AC-09 — 비회원은 회원 id 가 없다. null 을 운영자로 보면 안 된다. */
     @Test
     void aGuestIsNeverAManager() {
-        assertThat(new PokemonProperties("계좌", Set.of(1L, 3L), null).isManager(null)).isFalse();
+        assertThat(new PokemonProperties("계좌", Set.of(1L, 3L)).isManager(null)).isFalse();
     }
 
     /**
@@ -54,13 +54,6 @@ class PokemonPropertiesTest {
         PokemonProperties properties = bind(Map.of("pokemon.bank-account", "계좌"));
 
         assertThat(properties.managerMemberIds()).containsExactlyInAnyOrder(1L, 3L);
-    }
-
-    /** 제품 페이지 주소를 빠뜨려도 기본값이 있어야 동기화가 돈다. */
-    @Test
-    void anAbsentAppStoreUrlFallsBackToTheDefault() {
-        assertThat(bind(Map.of("pokemon.bank-account", "계좌")).appStoreUrl())
-                .startsWith("https://apps.apple.com/");
     }
 
     /** 계좌를 빠뜨리면 화면에 바로 드러나는 문구가 나와야 한다 — 빈 문자열로 조용히 넘어가지 않는다. */

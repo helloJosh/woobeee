@@ -30,6 +30,7 @@ import type {
     PokemonBoard,
     PokemonComment,
     PokemonExchangeRate,
+    PokemonManagedProduct,
     PokemonOrder,
     PokemonOrderDetail,
     PokemonOrderStatus,
@@ -874,6 +875,13 @@ export interface PokemonOrderBody {
     items: { productId: number; quantity: number }[]
 }
 
+export interface PokemonProductBody {
+    name: string
+    priceInr: number
+    coins: number
+    active: boolean
+}
+
 export const pokemonAPI = {
     getBoard: (): Promise<PokemonBoard> =>
         pokemonRequest<PokemonBoard>("/api/back/pokemon/board", "GET"),
@@ -902,6 +910,19 @@ export const pokemonAPI = {
 
     deleteComment: (commentId: number): Promise<void> =>
         pokemonRequest<void>(`/api/back/pokemon/comments/${commentId}`, "DELETE"),
+
+    /* 상품 관리 — 운영자 전용 */
+    getManagedProducts: (): Promise<PokemonManagedProduct[]> =>
+        pokemonRequest<PokemonManagedProduct[]>("/api/back/pokemon/products", "GET"),
+
+    createProduct: (body: PokemonProductBody): Promise<PokemonManagedProduct> =>
+        pokemonRequest<PokemonManagedProduct>("/api/back/pokemon/products", "POST", body),
+
+    updateProduct: (productId: number, body: PokemonProductBody): Promise<PokemonManagedProduct> =>
+        pokemonRequest<PokemonManagedProduct>(`/api/back/pokemon/products/${productId}`, "PUT", body),
+
+    deleteProduct: (productId: number): Promise<void> =>
+        pokemonRequest<void>(`/api/back/pokemon/products/${productId}`, "DELETE"),
 }
 
 export const productAPI = {

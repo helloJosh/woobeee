@@ -12,10 +12,9 @@ import java.util.Set;
  * @param managerMemberIds 신청서의 진행 상태를 바꿀 수 있는 회원 id. 블로그의 ROLE_ADMIN 과
  *                         별개다 — 이 공동구매를 실제로 굴리는 사람만 손대야 하므로 역할이
  *                         아니라 명단으로 좁힌다. 설정으로 빼 두어 사람이 바뀌어도 배포 없이 고친다.
- * @param appStoreUrl      상품표를 긁어 올 App Store 제품 페이지.
  */
 @ConfigurationProperties(prefix = "pokemon")
-public record PokemonProperties(String bankAccount, Set<Long> managerMemberIds, String appStoreUrl) {
+public record PokemonProperties(String bankAccount, Set<Long> managerMemberIds) {
 
     public PokemonProperties {
         if (bankAccount == null || bankAccount.isBlank()) {
@@ -23,9 +22,6 @@ public record PokemonProperties(String bankAccount, Set<Long> managerMemberIds, 
         }
         if (managerMemberIds == null || managerMemberIds.isEmpty()) {
             managerMemberIds = Set.copyOf(List.of(1L, 3L));
-        }
-        if (appStoreUrl == null || appStoreUrl.isBlank()) {
-            appStoreUrl = "https://apps.apple.com/in/app/pok%C3%A9mon-go/id1094591345";
         }
     }
 

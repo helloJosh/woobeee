@@ -1,14 +1,18 @@
 package com.woobeee.mvc.pokemon.service;
 
 import com.woobeee.mvc.pokemon.api.request.PatchPokemonOrderStatusRequest;
+import com.woobeee.mvc.pokemon.api.request.PokemonProductRequest;
 import com.woobeee.mvc.pokemon.api.request.PostPokemonCommentRequest;
 import com.woobeee.mvc.pokemon.api.request.PostPokemonOrderRequest;
 import com.woobeee.mvc.pokemon.api.request.PutPokemonOrderRequest;
 import com.woobeee.mvc.pokemon.api.response.ExchangeRateResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonBoardResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonCommentResponse;
+import com.woobeee.mvc.pokemon.api.response.PokemonManagedProductResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonOrderDetailResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonOrderResponse;
+
+import java.util.List;
 
 public interface PokemonService {
 
@@ -32,4 +36,15 @@ public interface PokemonService {
     PokemonCommentResponse createComment(String loginId, Long orderId, PostPokemonCommentRequest request);
 
     void deleteComment(String loginId, Long commentId);
+
+    /* ===== 상품 관리 (운영자 전용) ===== */
+
+    /** 내려간 것까지 전부. 신청 화면의 상품표와 달리 관리용이다. */
+    List<PokemonManagedProductResponse> getManagedProducts(String loginId);
+
+    PokemonManagedProductResponse createProduct(String loginId, PokemonProductRequest request);
+
+    PokemonManagedProductResponse updateProduct(String loginId, Long productId, PokemonProductRequest request);
+
+    void deleteProduct(String loginId, Long productId);
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Coins, MessageSquare, Plus, RefreshCw } from "lucide-react"
+import { AlertTriangle, Coins, MessageSquare, Plus, RefreshCw, Settings } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -94,11 +94,20 @@ export default function PokemonListPage() {
                     />
                     <BankAccountLine account={board.bankAccount} />
                 </div>
-                <Button asChild>
-                    <Link href="/pokemon/new">
-                        <Plus className="mr-1 h-4 w-4" /> 신청서 작성
-                    </Link>
-                </Button>
+                <div className="flex items-center gap-2">
+                    {board.canManage && (
+                        <Button asChild variant="outline">
+                            <Link href="/pokemon/products">
+                                <Settings className="mr-1 h-4 w-4" /> 상품 관리
+                            </Link>
+                        </Button>
+                    )}
+                    <Button asChild>
+                        <Link href="/pokemon/new">
+                            <Plus className="mr-1 h-4 w-4" /> 신청서 작성
+                        </Link>
+                    </Button>
+                </div>
             </header>
 
             {board.canManage && (

@@ -11,11 +11,13 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * App Store 의 In-App Purchases 한 줄. 매일 동기화되므로 코드가 아니라 DB 에 산다.
+ * 신청 화면에 뜨는 상품 한 줄. 운영자가 인게임 상점을 보고 직접 넣고 고친다.
  *
- * <p>식별자는 <b>이름</b>이다 — 스토어 페이지가 상품 id 를 내주지 않는다. 이름이 바뀌면
- * 새 상품으로 들어오고 옛 이름은 내려간다(active=false). 과거 신청서는 이름을 스냅샷으로
- * 들고 있으므로 그래도 읽힌다.
+ * <p>패스·티켓은 달마다 바뀌고("GO패스 디럭스: 9월"), App Store 의 IAP 목록에는 그 이름이
+ * 뜨지 않아 자동으로 가져올 수 없다. 그래서 코드가 아니라 DB 에 두고 화면에서 관리한다.
+ *
+ * <p>스토어에서 내려간 상품은 <b>지우지 말고 내린다</b>(active=false). 과거 신청서가
+ * 가리키고 있고, 항목에 이름·단가 스냅샷이 남아 있어도 참조는 끊지 않는 편이 낫다.
  */
 @Getter
 @Entity
@@ -64,25 +66,24 @@ public class PokemonProducts {
         this.lastSeenAt = lastSeenAt;
     }
 
-    public static PokemonProducts seen(String name, BigDecimal priceInr, int coins,
-                                       int sortOrder, LocalDateTime now) {
+    public static PokemonProducts create(String name, BigDecimal priceInr, int coins,
+                                         int sortOrder, LocalDateTime now) {
         return PokemonProducts.builder()
                 .name(name).priceInr(priceInr).coins(coins).sortOrder(sortOrder)
                 .active(true).firstSeenAt(now).lastSeenAt(now)
                 .build();
     }
 
-    /** 스토어에서 다시 본 상품 — 값을 맞추고 다시 올린다. */
-    public void refresh(BigDecimal priceInr, int coins, int sortOrder, LocalDateTime now) {
+    public void update(String name, BigDecimal priceInr, int coins, boolean active,
+                       LocalDateTime now) {
+        this.name = name;
         this.priceInr = priceInr;
         this.coins = coins;
-        this.sortOrder = sortOrder;
-        this.active = true;
+        this.active = active;
         this.lastSeenAt = now;
     }
 
-    /** 이번 목록에 없던 상품 — 내리기만 한다. */
-    public void retire() {
-        this.active = false;
+    public void moveTo(int sortOrder) {
+        this.sortOrder = sortOrder;
     }
 }

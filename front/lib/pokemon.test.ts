@@ -16,6 +16,7 @@ import {
     isSettled,
     orderCoins,
     parseDonation,
+    parseCoins,
     parseInr,
     pricePerCoin,
     quote,
@@ -25,6 +26,7 @@ import {
     summarize,
     toKrw,
     validateComment,
+    validateProductDraft,
     validateOrderForm,
     type PokemonComment,
     type PokemonOrder,
@@ -500,5 +502,43 @@ describe("자유 입력 루피", () => {
 
     it("음수 루피는 0으로 본다", () => {
         expect(quote({}, PRODUCTS, RATE, 0, -100).totalInr).toBe(0)
+    })
+})
+
+/** POKEMON-AC-24 */
+describe("상품 관리 검증", () => {
+    const draft = { name: "GO패스 디럭스: 11월", priceInr: "229.00", coins: "", active: true }
+
+    it("패스는 포켓코인 없이 등록된다 — 빈 값은 0이다", () => {
+        expect(validateProductDraft(draft)).toBeNull()
+        expect(parseCoins("")).toBe(0)
+    })
+
+    it("코인 팩은 코인 수를 받는다", () => {
+        expect(validateProductDraft({ ...draft, name: "550 PokéCoins", coins: "550" })).toBeNull()
+        expect(parseCoins("14,500")).toBe(14500)
+    })
+
+    it("이름 없이 등록할 수 없다", () => {
+        expect(validateProductDraft({ ...draft, name: "  " })).toBe("상품 이름을 입력해 주세요.")
+    })
+
+    it("가격은 0보다 커야 한다 — 공짜 상품은 신청 대상이 아니다", () => {
+        expect(validateProductDraft({ ...draft, priceInr: "0" }))
+            .toBe("루피 가격은 0보다 큰 숫자로 입력해 주세요 (소수점 둘째 자리까지).")
+        expect(validateProductDraft({ ...draft, priceInr: "" }))
+            .toBe("루피 가격은 0보다 큰 숫자로 입력해 주세요 (소수점 둘째 자리까지).")
+    })
+
+    it("코인 수는 음수·소수를 받지 않는다", () => {
+        expect(parseCoins("-1")).toBeNull()
+        expect(parseCoins("1.5")).toBeNull()
+        expect(validateProductDraft({ ...draft, coins: "-5" }))
+            .toBe("포켓코인 수는 0 이상의 정수로 입력해 주세요 (패스·티켓은 0).")
+    })
+
+    it("이름은 200자까지다", () => {
+        expect(validateProductDraft({ ...draft, name: "가".repeat(201) }))
+            .toBe("상품 이름은 200자까지 입력할 수 있습니다.")
     })
 })

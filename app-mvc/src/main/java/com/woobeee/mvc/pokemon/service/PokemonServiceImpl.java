@@ -4,6 +4,7 @@ import com.woobeee.mvc.auth.entity.Member;
 import com.woobeee.mvc.pokemon.PokemonProperties;
 import com.woobeee.mvc.pokemon.api.request.PatchPokemonOrderStatusRequest;
 import com.woobeee.mvc.pokemon.api.request.PokemonOrderItemRequest;
+import com.woobeee.mvc.pokemon.api.request.PokemonProductRequest;
 import com.woobeee.mvc.pokemon.api.request.PostPokemonCommentRequest;
 import com.woobeee.mvc.pokemon.api.request.PostPokemonOrderRequest;
 import com.woobeee.mvc.pokemon.api.request.PutPokemonOrderRequest;
@@ -242,6 +243,81 @@ public class PokemonServiceImpl implements PokemonService {
         }
 
         commentRepository.delete(comment);
+    }
+
+    /* ===== 상품 관리 (운영자 전용) ===== */
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PokemonManagedProductResponse> getManagedProducts(String loginId) {
+        memberResolver.requireManager(loginId);
+
+        Set<Long> used = Set.copyOf(itemRepository.findUsedProductIds());
+        return productRepository.findAllByOrderBySortOrderAsc().stream()
+                .map(product -> PokemonManagedProductResponse.of(product, used.contains(product.getId())))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public PokemonManagedProductResponse createProduct(String loginId, PokemonProductRequest request) {
+        memberResolver.requireManager(loginId);
+
+        String name = trimmedOrNull(request.name());
+        if (name == null) {
+            throw PokemonErrorCode.BAD_REQUEST.asException();
+        }
+        // 이름이 사람이 읽는 식별자다. 같은 이름이 둘이면 신청 화면에서 어느 쪽인지 알 수 없다.
+        if (productRepository.existsByName(name)) {
+            throw PokemonErrorCode.DUPLICATE_PRODUCT_NAME.asException();
+        }
+
+        // 새 상품은 맨 뒤에 붙인다. 순서를 바꾸는 것은 따로 할 일이다.
+        int nextOrder = productRepository.findAllByOrderBySortOrderAsc().stream()
+                .mapToInt(PokemonProducts::getSortOrder).max().orElse(0) + 1;
+
+        PokemonProducts saved = productRepository.save(PokemonProducts.create(
+                name, request.priceInr(), request.coins(), nextOrder, LocalDateTime.now()));
+        return PokemonManagedProductResponse.of(saved, false);
+    }
+
+    @Override
+    @Transactional
+    public PokemonManagedProductResponse updateProduct(String loginId, Long productId,
+                                                       PokemonProductRequest request) {
+        memberResolver.requireManager(loginId);
+
+        PokemonProducts product = productRepository.findById(productId)
+                .orElseThrow(PokemonErrorCode.PRODUCT_NOT_FOUND::asException);
+
+        String name = trimmedOrNull(request.name());
+        if (name == null) {
+            throw PokemonErrorCode.BAD_REQUEST.asException();
+        }
+        if (!name.equals(product.getName()) && productRepository.existsByName(name)) {
+            throw PokemonErrorCode.DUPLICATE_PRODUCT_NAME.asException();
+        }
+
+        // 가격을 고쳐도 과거 신청서는 움직이지 않는다 — 항목이 당시 단가를 스냅샷으로 들고 있다.
+        product.update(name, request.priceInr(), request.coins(), request.active(), LocalDateTime.now());
+        return PokemonManagedProductResponse.of(
+                product, itemRepository.findUsedProductIds().contains(productId));
+    }
+
+    @Override
+    @Transactional
+    public void deleteProduct(String loginId, Long productId) {
+        memberResolver.requireManager(loginId);
+
+        PokemonProducts product = productRepository.findById(productId)
+                .orElseThrow(PokemonErrorCode.PRODUCT_NOT_FOUND::asException);
+
+        // 신청서가 가리키는 상품은 지우지 않는다. 내려두면 신청 화면에서는 사라지고
+        // 과거 신청서는 그대로 읽힌다 — 지우면 FK 가 막거나 내역이 끊긴다.
+        if (itemRepository.findUsedProductIds().contains(productId)) {
+            throw PokemonErrorCode.PRODUCT_IN_USE.asException();
+        }
+        productRepository.delete(product);
     }
 
     /**

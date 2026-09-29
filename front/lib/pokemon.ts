@@ -12,8 +12,8 @@ export type PokemonOrderStatus =
     | "CANCELLED"
 
 /**
- * 상품표 한 줄. App Store 의 In-App Purchases 를 매일 긁어 DB 에 넣은 것이라
- * 가격도 구성도 바뀐다 — 프론트에 박아 두지 않는다.
+ * 상품표 한 줄. 운영자가 인게임 상점을 보고 직접 관리한다(`/pokemon/products`) —
+ * 패스는 달마다 바뀌므로 프론트에 박아 두지 않는다.
  */
 export interface PokemonProduct {
     id: number
@@ -23,6 +23,52 @@ export interface PokemonProduct {
     coins: number
     /** 루피. 서버의 BigDecimal 이 JSON number 로 온다. */
     priceInr: number
+}
+
+/** 운영자 관리 화면이 보는 상품. 내려간 것까지 나오고 지울 수 있는지도 알려준다. */
+export interface PokemonManagedProduct extends PokemonProduct {
+    sortOrder: number
+    active: boolean
+    /** 신청서에 쓰인 적이 있으면 지울 수 없다 — 내리기만 된다. */
+    inUse: boolean
+    updatedAt: string | null
+}
+
+export interface PokemonProductDraft {
+    name: string
+    /** 입력 그대로의 문자열. 루피는 소수 둘째 자리까지. */
+    priceInr: string
+    /** 입력 그대로의 문자열. 패스·티켓은 0(빈 값도 0). */
+    coins: string
+    active: boolean
+}
+
+/** 문제가 있으면 사용자에게 보여줄 문구, 없으면 null. */
+export function validateProductDraft(draft: PokemonProductDraft): string | null {
+    if (draft.name.trim() === "") {
+        return "상품 이름을 입력해 주세요."
+    }
+    if (draft.name.trim().length > 200) {
+        return "상품 이름은 200자까지 입력할 수 있습니다."
+    }
+    const price = parseInr(draft.priceInr)
+    if (price === null || price <= 0) {
+        return "루피 가격은 0보다 큰 숫자로 입력해 주세요 (소수점 둘째 자리까지)."
+    }
+    const coins = parseCoins(draft.coins)
+    if (coins === null) {
+        return "포켓코인 수는 0 이상의 정수로 입력해 주세요 (패스·티켓은 0)."
+    }
+    return null
+}
+
+/** 빈 값은 0 — 패스·티켓은 코인이 없다. 음수·소수·문자는 null. */
+export function parseCoins(raw: string): number | null {
+    const trimmed = raw.trim().replace(/,/g, "")
+    if (trimmed === "") return 0
+    if (!/^\d+$/.test(trimmed)) return null
+    const value = Number(trimmed)
+    return Number.isSafeInteger(value) ? value : null
 }
 
 export interface PokemonOrderItem {

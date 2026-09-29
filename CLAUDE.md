@@ -149,7 +149,7 @@ docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test 
 
 - app-mvc: `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 - app-webflux: `R2DBC_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (기보 업로드와 presign 에 쓴다 — 미설정이면 조용히 기본 버킷으로 간다)
-- app-mvc (pokemon, 선택): `POKEMON_BANK_ACCOUNT`, `POKEMON_MANAGER_MEMBER_IDS`(기본 `1,3`), `POKEMON_RATE_URL`, `POKEMON_RATE_CACHE_TTL`, `POKEMON_APP_STORE_URL`, `POKEMON_APP_STORE_SYNC_CRON`(기본 `0 0 6 * * *`)
+- app-mvc (pokemon, 선택): `POKEMON_BANK_ACCOUNT`, `POKEMON_MANAGER_MEMBER_IDS`(기본 `1,3`), `POKEMON_RATE_URL`, `POKEMON_RATE_CACHE_TTL`
 - front: `MVC_ORIGIN`, `WEBFLUX_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_WS_BASE_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`front/.env.local.example` 참조)
 
 ## API 엔드포인트
@@ -162,7 +162,7 @@ docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test 
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/tags`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/태그/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용, 태그는 글쓰기 안에서만 생성 |
 | app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
-| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 프론트는 `/pokemon` 목록 → `/pokemon/new` 작성 → `/pokemon/{id}` 세부(진행도·금액·환차·댓글) → `/{id}/edit` 수정. 조회/신청/댓글은 **공개**(비회원 가능), 진행 상태 변경은 `pokemon.manager-member-ids` 명단 전용. 상품표는 App Store 에서 매일 06:00 동기화 |
+| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 프론트는 `/pokemon` 목록 → `/pokemon/new` 작성 → `/pokemon/{id}` 세부(진행도·금액·환차·댓글) → `/{id}/edit` 수정. 조회/신청/댓글은 **공개**(비회원 가능), 진행 상태 변경은 `pokemon.manager-member-ids` 명단 전용. 상품표는 운영자가 `/pokemon/products` 에서 직접 관리 |
 | app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
 ## 안전 수칙
@@ -217,9 +217,7 @@ docker exec woobeee-db psql -U root -d market -c \
 | front AC 미작성 | `docs/front/PRD.md` 에 `## 인수 기준` 표가 없다. 274개→331개로 이 레포에서 가장 큰 테스트 스위트인데 AC ID 를 참조하는 테스트가 하나도 없어, 위 "테스트는 PRD의 인수 기준에서 도출한다" 규칙이 가장 필요한 도메인에서 지켜지지 않는다 |
 | 프론트 컴포넌트 무검증 | vitest 가 node 환경이고 jsdom 이 없다. 판단은 전부 `lib/` 로 옮겨 뒀지만 fetch 이펙트·재생 타이머·이펙트 정리(cleanup)가 **돌긴 하는지**는 아무도 확인하지 않는다 — `return () => …` 을 통째로 지워도 331개가 그대로 통과한다 |
 | 기보 골든이 단방향 | `front/lib/dodge-engine.ts` 의 `GOLDEN` 은 `scripts/dodge-parity-trace.jsh` 로 손으로 다시 뽑는다. Java 쪽 `DodgeGame` 을 고치고 재컴파일·재실행하지 않으면 프론트 테스트는 낡은 기대값에 대고 계속 초록이다. 왕복 픽스처(`app-webflux/src/test/resources`)가 절반은 막지만, 골든 자체를 강제하는 CI 는 없다 |
-| pokemon 서버 테스트 얇음 | `front/lib/pokemon.test.ts`(52개) · `PokemonErrorCodeTest` · `PokemonPropertiesTest` 뿐이다. POKEMON-AC-05·06·10 — 환율 스냅샷이 조회 때 다시 계산되지 않는 것, Redis 캐시 실패 시 `stale` 폴백, `PREPARING` 최초 진입에만 `settled_rate` 가 박히는 것 — 은 **코드로만** 지켜진다. 마지막 것은 상태를 되돌렸다 다시 넘기면 손익이 움직이는 회귀가 조용히 들어올 수 있다. AC-09 는 명단 판정만 테스트가 있고, 그 판정이 실제로 `PATCH /status` 를 막는지는 확인하지 않는다 |
-| App Store 스크레이핑이 세 군데서 조용히 깨진다 | 상품표를 매일 긁는 경로에서 실제로 밟은 함정 셋이다. **(1)** `₹` 뒤가 U+00A0(non-breaking space)라 자바 `\s` 가 `UNICODE_CHARACTER_CLASS` 없이는 못 잡아 **한 줄도** 안 읽힌다 — 파이썬 `\s` 는 기본으로 잡으므로 파이썬으로 먼저 검증하면 멀쩡해 보인다. **(2)** Apple 이 `content-type: text/html` 만 주고 charset 을 안 붙여, `body(String.class)` 로 받으면 Spring 이 ISO-8859-1 로 떨어뜨려 `₹`·`é` 가 깨진다 — `byte[]` 로 받아 UTF-8 로 직접 해석한다. **(3)** `/app/pokemon-go/` 는 301 로 `/app/pok%C3%A9mon-go/` 로 보내는데 RestClient 기본 팩토리는 리다이렉트를 안 따라가 빈 본문을 받는다. 셋 다 "예외 없이 0개" 로 나타나므로 로그만 보면 스토어가 바뀐 줄 안다 |
-| 동기화 트랜잭션이 테스트 밖 | `PokemonProductSyncService.syncDaily` 에 `@Transactional` 이 없으면 `sync()` 자기 호출이 프록시를 안 타 **기존 행의 가격 갱신·내림이 조용히 사라진다**(새 행은 `save` 자체 트랜잭션으로 들어가므로 로그는 "10개 반영" 으로 찍힌다). `PokemonProductSyncServiceTest` 는 가짜 리포지토리라 이걸 못 잡는다 — 실 DB 통합 테스트가 필요하다 |
+| pokemon 서버 테스트 얇음 | `front/lib/pokemon.test.ts`(52개) · `PokemonErrorCodeTest` · `PokemonPropertiesTest` 뿐이다. POKEMON-AC-05·06·10·20·21 — 환율 스냅샷이 조회 때 다시 계산되지 않는 것, Redis 캐시 실패 시 `stale` 폴백, `PREPARING` 최초 진입에만 `settled_rate` 가 박히는 것 — 은 **코드로만** 지켜진다. 마지막 것은 상태를 되돌렸다 다시 넘기면 손익이 움직이는 회귀가 조용히 들어올 수 있다. AC-09 는 명단 판정만 테스트가 있고, 그 판정이 실제로 `PATCH /status` 를 막는지는 확인하지 않는다 |
 | 접근 로그 필터 순서가 계약 | `RequestAccessLogFilter` 는 `@Order(HIGHEST_PRECEDENCE)` 로 가장 바깥에 있어야 401/403 으로 잘린 요청까지 남는다. 대신 바깥이라 토큰 필터가 **아래로** 넘기는 래퍼의 `loginId` 헤더가 안 보이므로, 신원은 `AccessTokenLoginIdHeaderFilter.LOGIN_ID_ATTRIBUTE`(원본 요청 attribute)로 받는다. 둘 중 하나만 바꾸면 로그인한 요청이 전부 `비회원` 으로 찍히거나 거절된 요청이 사라진다 |
 | CI 없음 | 레포에 워크플로가 없다. `GameErrorCodeTest` 의 enum↔TS 지도 대조는 상대 경로에 `Assumptions.assumeTrue(Files.exists(...))` 를 걸어 두어, 파일이 옮겨지면 **말없이 건너뛴다** |
 | app-mvc 에 catch-all advice 없음 | `AuthRestControllerAdvice` 가 `basePackages="com.woobeee.mvc.auth"` 로 좁혀져 있어 네 부류가 `ApiResponse` 봉투 밖으로 나간다: auth 서비스의 `ResponseStatusException` 12곳, `CustomInternalServerException`, blog 컨트롤러 전체의 빈 검증, `DELETE /api/auth/me/profile-image` 의 204. 프론트는 전부 "예기치 못한 오류" 한 문장으로 받는다. 게다가 app-mvc 는 `header.message` 에 영어 문장을 넣는데 프론트는 그 자리를 **코드 키**로 읽는다 — 반드시 어긋난다. app-webflux 는 `GameExceptionHandler` 로 이미 해결돼 있으니 그 모양을 옮기면 된다 |

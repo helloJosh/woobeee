@@ -34,14 +34,6 @@ spring:
       password: ${REDIS_PASSWORD:root!23}
 
 pokemon:
-  # 테스트가 밖으로 나가지 않게 한다. 없는 주소라 조회는 실패하고, 동기화는 "읽은 것이 없다" 로
-  # 건너뛴다 — 상품표를 건드리지 않는 정상 경로다.
-  app-store:
-    url: ${POKEMON_APP_STORE_URL:http://localhost:1/disabled-in-test}
-    # 테스트 중에 스케줄러가 돌 이유가 없다. "-" 는 Spring 이 @Scheduled 를 끄는 값이다
-    # (ScheduledTaskRegistrar.CRON_DISABLED). 안 도는 시각을 지어내면 6필드 규칙을 어겨
-    # 앱이 아예 못 뜬다.
-    sync-cron: "-"
   bank-account: 테스트 계좌
 
 logging:

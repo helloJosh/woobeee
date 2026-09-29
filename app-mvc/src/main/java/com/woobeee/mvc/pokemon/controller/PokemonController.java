@@ -2,12 +2,14 @@ package com.woobeee.mvc.pokemon.controller;
 
 import com.woobeee.core.api.ApiResponse;
 import com.woobeee.mvc.pokemon.api.request.PatchPokemonOrderStatusRequest;
+import com.woobeee.mvc.pokemon.api.request.PokemonProductRequest;
 import com.woobeee.mvc.pokemon.api.request.PostPokemonCommentRequest;
 import com.woobeee.mvc.pokemon.api.request.PostPokemonOrderRequest;
 import com.woobeee.mvc.pokemon.api.request.PutPokemonOrderRequest;
 import com.woobeee.mvc.pokemon.api.response.ExchangeRateResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonBoardResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonCommentResponse;
+import com.woobeee.mvc.pokemon.api.response.PokemonManagedProductResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonOrderDetailResponse;
 import com.woobeee.mvc.pokemon.api.response.PokemonOrderResponse;
 import com.woobeee.mvc.pokemon.service.PokemonService;
@@ -17,6 +19,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * 포켓코인 공동구매 신청·진행도.
@@ -91,6 +95,43 @@ public class PokemonController {
             @PathVariable Long orderId) {
         pokemonService.deleteOrder(loginId, orderId);
         return ApiResponse.success("Order deleted");
+    }
+
+    @GetMapping("/products")
+    @Operation(summary = "상품 관리 목록", description = "내려간 상품까지 전부. 운영자 전용.")
+    public ApiResponse<List<PokemonManagedProductResponse>> getManagedProducts(
+            @RequestHeader(name = "loginId", required = false) String loginId) {
+        return ApiResponse.success(pokemonService.getManagedProducts(loginId), "Products retrieved");
+    }
+
+    @PostMapping("/products")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "상품 등록", description = "인게임 상점을 보고 직접 넣는다. 운영자 전용.")
+    public ApiResponse<PokemonManagedProductResponse> createProduct(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @Valid @RequestBody PokemonProductRequest request) {
+        return ApiResponse.createSuccess(pokemonService.createProduct(loginId, request), "Product created");
+    }
+
+    @PutMapping("/products/{productId}")
+    @Operation(summary = "상품 수정",
+            description = "가격을 고쳐도 과거 신청서는 움직이지 않는다(항목이 당시 단가를 들고 있다). 운영자 전용.")
+    public ApiResponse<PokemonManagedProductResponse> updateProduct(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long productId,
+            @Valid @RequestBody PokemonProductRequest request) {
+        return ApiResponse.success(
+                pokemonService.updateProduct(loginId, productId, request), "Product updated");
+    }
+
+    @DeleteMapping("/products/{productId}")
+    @Operation(summary = "상품 삭제",
+            description = "신청서에 쓰인 적이 없을 때만. 쓰인 상품은 내려두면 목록에서만 빠진다. 운영자 전용.")
+    public ApiResponse<Void> deleteProduct(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long productId) {
+        pokemonService.deleteProduct(loginId, productId);
+        return ApiResponse.success("Product deleted");
     }
 
     @PostMapping("/orders/{orderId}/comments")

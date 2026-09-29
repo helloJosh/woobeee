@@ -41,11 +41,6 @@ pokemon:
   # 진행 상태를 바꿀 수 있는 회원 id. 블로그의 ROLE_ADMIN 과 별개다 — 이 공동구매를 실제로
   # 굴리는 사람만 손대야 하므로 역할이 아니라 명단으로 좁혔다.
   manager-member-ids: ${POKEMON_MANAGER_MEMBER_IDS:1,3}
-  app-store:
-    # 상품표를 긁어 올 제품 페이지. robots.txt 가 /in/app/... 를 막지 않는다(사이트맵에 있다).
-    url: ${POKEMON_APP_STORE_URL:https://apps.apple.com/in/app/pok%C3%A9mon-go/id1094591345}
-    # 매일 06:00 (Asia/Seoul). 신청이 몰리기 전에 하루치 가격을 맞춰 둔다.
-    sync-cron: ${POKEMON_APP_STORE_SYNC_CRON:0 0 6 * * *}
   exchange-rate:
     # 키 없이 쓰는 대신 하루 한 번만 갱신된다. 초 단위 실시간이 아니라는 뜻이고,
     # 어차피 실제 청구액은 카드사 환율 + 해외결제 수수료가 붙어 달라진다.

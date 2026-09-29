@@ -13,4 +13,9 @@ public interface PokemonProductRepository extends JpaRepository<PokemonProducts,
 
     /** 신청서에 담긴 상품을 한 번에 읽는다 — 항목마다 조회하면 N+1 이다. */
     List<PokemonProducts> findAllByIdIn(Collection<Long> ids);
+
+    /** 관리 화면은 내려간 상품까지 본다. */
+    List<PokemonProducts> findAllByOrderBySortOrderAsc();
+
+    boolean existsByName(String name);
 }
