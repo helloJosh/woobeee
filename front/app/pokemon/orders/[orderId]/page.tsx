@@ -10,35 +10,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import CommentThread from "@/components/pokemon/comment-thread"
-import { OrderProgressSteps } from "@/components/pokemon/order-progress"
-import { BankAccountLine, FxDelta, RateLine, StatusBadge } from "@/components/pokemon/pokemon-bits"
+import { OrderProgressSteps } from "@/components/pokemon/progress-steps"
+import {
+    BankAccountLine, FxDelta, OrderStatusBadge, RateLine,
+} from "@/components/pokemon/pokemon-bits"
 import { useAuth } from "@/hooks/use-auth"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
-    STATUS_FLOW,
-    STATUS_LABELS,
-    canModifyOrder,
-    formatCoins,
-    formatInr,
-    formatKrw,
-    formatRate,
-    fxDelta,
-    isSettled,
-    orderCoins,
-    type PokemonOrderDetail,
-    type PokemonOrderStatus,
+    ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, canModifyOrder, formatAmount, formatCoins,
+    formatKrw, formatRate, fxDelta, isRoundSettled, orderCoins, roundTitle,
+    type PokemonOrderDetail, type PokemonOrderStatus,
 } from "@/lib/pokemon"
 
-const ALL_STATUSES: PokemonOrderStatus[] = [...STATUS_FLOW, "CANCELLED"]
+const ALL_ORDER_STATUSES: PokemonOrderStatus[] = [...ORDER_STATUS_FLOW, "CANCELLED"]
 
-/** 신청서 한 건의 세부 페이지 — 저장 직후 여기로 온다. 댓글도 여기에 있다. */
+/** 신청서 한 건. 저장 직후 여기로 온다. 댓글도 여기에 있다. */
 export default function PokemonOrderDetailPage() {
     const params = useParams<{ orderId: string }>()
     const router = useRouter()
     const { isAuthenticated } = useAuth()
-
     const orderId = Number(params?.orderId)
+
     const [detail, setDetail] = useState<PokemonOrderDetail | null>(null)
     const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading")
     const [error, setError] = useState<string | null>(null)
@@ -63,24 +56,6 @@ export default function PokemonOrderDetailPage() {
         void load()
     }, [load])
 
-    const changeStatus = async (next: PokemonOrderStatus) => {
-        try {
-            await pokemonAPI.changeStatus(orderId, next)
-            await load()
-        } catch (caught) {
-            setError(describeGameApiError(caught, "상태를 바꾸지 못했습니다."))
-        }
-    }
-
-    const removeOrder = async () => {
-        try {
-            await pokemonAPI.deleteOrder(orderId)
-            router.replace("/pokemon")
-        } catch (caught) {
-            setError(describeGameApiError(caught, "신청서를 삭제하지 못했습니다."))
-        }
-    }
-
     if (loadState === "loading") {
         return (
             <main className="mx-auto max-w-3xl space-y-4 px-4 py-8">
@@ -103,23 +78,22 @@ export default function PokemonOrderDetailPage() {
                     </AlertDescription>
                 </Alert>
                 <Button asChild variant="ghost" size="sm">
-                    <Link href="/pokemon">
-                        <ArrowLeft className="mr-1 h-4 w-4" /> 목록으로
-                    </Link>
+                    <Link href="/pokemon"><ArrowLeft className="mr-1 h-4 w-4" /> 전체 목록</Link>
                 </Button>
             </main>
         )
     }
 
-    const { order, rate, canManage, bankAccount } = detail
-    const delta = fxDelta(order, rate.inrToKrw)
+    const { order, round, rate, canManage } = detail
+    const delta = fxDelta(order, round, rate.toKrw)
+    const backToRound = `/pokemon/${round.hostHandle}/${round.sequence}`
 
     return (
         <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
             <header className="space-y-2">
                 <Button asChild variant="ghost" size="sm" className="-ml-2">
-                    <Link href="/pokemon">
-                        <ArrowLeft className="mr-1 h-4 w-4" /> 목록
+                    <Link href={backToRound}>
+                        <ArrowLeft className="mr-1 h-4 w-4" /> {roundTitle(round)}
                     </Link>
                 </Button>
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -133,34 +107,36 @@ export default function PokemonOrderDetailPage() {
                         {canManage ? (
                             <Select
                                 value={order.status}
-                                onValueChange={(next) => void changeStatus(next as PokemonOrderStatus)}
+                                onValueChange={(next) =>
+                                    void pokemonAPI.changeStatus(orderId, next as PokemonOrderStatus)
+                                        .then(() => load())
+                                        .catch((c) => setError(describeGameApiError(c, "상태를 바꾸지 못했습니다.")))
+                                }
                             >
-                                <SelectTrigger className="h-9 w-36 text-sm">
-                                    <SelectValue />
-                                </SelectTrigger>
+                                <SelectTrigger className="h-9 w-32 text-sm"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    {ALL_STATUSES.map((status) => (
-                                        <SelectItem key={status} value={status}>
-                                            {STATUS_LABELS[status]}
-                                        </SelectItem>
+                                    {ALL_ORDER_STATUSES.map((s) => (
+                                        <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s]}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         ) : (
-                            <StatusBadge status={order.status} />
+                            <OrderStatusBadge status={order.status} />
                         )}
                         {canModifyOrder(order, canManage) && (
                             <>
                                 <Button asChild size="sm" variant="outline">
-                                    <Link href={`/pokemon/${orderId}/edit`}>
+                                    <Link href={`/pokemon/orders/${orderId}/edit`}>
                                         <Pencil className="mr-1 h-3 w-3" /> 수정
                                     </Link>
                                 </Button>
                                 <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    aria-label="신청서 삭제"
-                                    onClick={() => void removeOrder()}
+                                    size="icon" variant="ghost" aria-label="신청서 삭제"
+                                    onClick={() =>
+                                        void pokemonAPI.deleteOrder(orderId)
+                                            .then(() => router.replace(backToRound))
+                                            .catch((c) => setError(describeGameApiError(c, "삭제하지 못했습니다.")))
+                                    }
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -182,42 +158,31 @@ export default function PokemonOrderDetailPage() {
             )}
 
             <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base">진행도</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <OrderProgressSteps status={order.status} />
-                </CardContent>
+                <CardHeader className="pb-3"><CardTitle className="text-base">진행도</CardTitle></CardHeader>
+                <CardContent><OrderProgressSteps status={order.status} /></CardContent>
             </Card>
 
             <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base">주문 내역</CardTitle>
-                </CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">주문 내역</CardTitle></CardHeader>
                 <CardContent className="space-y-3 text-sm">
                     {order.items.map((item, index) => (
                         <div key={`${item.productName}-${index}`} className="flex justify-between">
-                            <span>
-                                {item.productName} × {item.quantity}
-                            </span>
+                            <span>{item.productName} × {item.quantity}</span>
                             <span className="text-muted-foreground">
-                                {formatInr(item.unitPriceInr * item.quantity)}
+                                {formatAmount(item.unitPrice * item.quantity, round.currency)}
                             </span>
                         </div>
                     ))}
-                    {order.extraInr > 0 && (
+                    {order.extraAmount > 0 && (
                         <div className="flex justify-between">
                             <span>
-                                직접 입력한 루피
-                                <span className="ml-1 text-xs text-muted-foreground">
-                                    상품표에 없는 것
-                                </span>
+                                직접 입력한 금액
+                                <span className="ml-1 text-xs text-muted-foreground">상품표에 없는 것</span>
                             </span>
-                            <span className="text-muted-foreground">{formatInr(order.extraInr)}</span>
+                            <span className="text-muted-foreground">
+                                {formatAmount(order.extraAmount, round.currency)}
+                            </span>
                         </div>
-                    )}
-                    {order.items.length === 0 && order.extraInr === 0 && (
-                        <p className="text-muted-foreground">항목이 없습니다.</p>
                     )}
                     <div className="flex justify-between border-t pt-3 font-semibold">
                         <span>받는 포켓코인</span>
@@ -227,18 +192,16 @@ export default function PokemonOrderDetailPage() {
             </Card>
 
             <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base">금액</CardTitle>
-                </CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">금액</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">상품 합계</span>
-                            <span>{formatInr(order.totalInr)}</span>
+                            <span>{formatAmount(order.totalAmount, round.currency)}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                                환산 (신청 시점 {formatRate(order.quotedRate)})
+                                환산 ({formatRate(order.quotedRate, round.currency)})
                             </span>
                             <span>{formatKrw(order.itemsKrw)}</span>
                         </div>
@@ -252,31 +215,29 @@ export default function PokemonOrderDetailPage() {
                         </div>
                     </div>
 
-                    {(order.status === "ORDERED" || order.status === "PREPARING") && (
-                        <BankAccountLine account={bankAccount} />
-                    )}
+                    {order.status === "ORDERED" && <BankAccountLine account={round.bankAccount} />}
 
                     <div className="rounded-md border p-3">
                         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
                                 <dt className="text-xs text-muted-foreground">환차손익</dt>
                                 <dd className="mt-0.5">
-                                    <FxDelta delta={delta} settled={isSettled(order)} />
+                                    <FxDelta delta={delta} settled={isRoundSettled(round)} />
                                 </dd>
                             </div>
                             <div>
                                 <dt className="text-xs text-muted-foreground">기준</dt>
                                 <dd className="mt-0.5 text-sm">
-                                    {isSettled(order)
-                                        ? `결제 시점 ${formatRate(order.settledRate as number)}`
-                                        : `현재 ${formatRate(rate.inrToKrw)}`}
+                                    {isRoundSettled(round)
+                                        ? `차수 결제 시점 ${formatRate(round.settledRate as number, round.currency)}`
+                                        : `현재 ${formatRate(rate.toKrw, round.currency)}`}
                                 </dd>
                             </div>
                         </dl>
                     </div>
 
                     <RateLine
-                        rate={formatRate(rate.inrToKrw)}
+                        rate={formatRate(rate.toKrw, round.currency)}
                         fetchedAt={rate.fetchedAt}
                         stale={rate.stale}
                     />
@@ -285,12 +246,8 @@ export default function PokemonOrderDetailPage() {
 
             {order.memo !== null && (
                 <Card>
-                    <CardHeader className="pb-3">
-                        <CardTitle className="text-base">메모</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="whitespace-pre-wrap text-sm">{order.memo}</p>
-                    </CardContent>
+                    <CardHeader className="pb-3"><CardTitle className="text-base">메모</CardTitle></CardHeader>
+                    <CardContent><p className="whitespace-pre-wrap text-sm">{order.memo}</p></CardContent>
                 </Card>
             )}
 

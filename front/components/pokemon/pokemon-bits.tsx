@@ -2,13 +2,19 @@
 
 import type { ReactNode } from "react"
 import { Badge } from "@/components/ui/badge"
-import { STATUS_LABELS, formatSignedKrw, type PokemonOrderStatus } from "@/lib/pokemon"
+import {
+    ORDER_STATUS_LABELS,
+    ROUND_STATUS_LABELS,
+    formatSignedKrw,
+    type PokemonOrderStatus,
+    type PokemonRoundStatus,
+} from "@/lib/pokemon"
 
 /**
  * 손익 색. 국내 관례대로 <b>이득이 빨강, 손해가 파랑</b>이다 — 서양 관례(이득 초록)와 반대이니
  * 다른 화면에서 가져다 쓸 때 주의한다. 0 은 색을 입히지 않는다.
  *
- * <p>다크 모드에서 red-600/blue-600 은 어두운 배경에 묻히므로 한 단계 밝은 쪽을 쓴다.
+ * <p>다크 모드에서 600 계열은 어두운 배경에 묻히므로 한 단계 밝은 쪽을 쓴다.
  */
 function toneClass(value: number): string {
     if (value > 0) return "text-red-600 dark:text-red-500"
@@ -34,10 +40,15 @@ export function Field({ label, children }: { label: string; children: ReactNode 
     )
 }
 
-export function StatusBadge({ status }: { status: PokemonOrderStatus }) {
+export function RoundStatusBadge({ status }: { status: PokemonRoundStatus }) {
+    const variant = status === "CANCELLED" ? "outline" : status === "OPEN" ? "default" : "secondary"
+    return <Badge variant={variant}>{ROUND_STATUS_LABELS[status]}</Badge>
+}
+
+export function OrderStatusBadge({ status }: { status: PokemonOrderStatus }) {
     return (
         <Badge variant={status === "CANCELLED" ? "outline" : "secondary"}>
-            {STATUS_LABELS[status]}
+            {ORDER_STATUS_LABELS[status]}
         </Badge>
     )
 }
@@ -65,14 +76,17 @@ export function RateLine({
     rate,
     fetchedAt,
     stale,
+    note,
 }: {
     rate: string
     fetchedAt: string
     stale: boolean
+    note?: string
 }) {
     return (
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary">{rate}</Badge>
+            {note !== undefined && <span>{note}</span>}
             <span>기준 {new Date(fetchedAt).toLocaleString("ko-KR")}</span>
             {stale && <Badge variant="destructive">환율 갱신 실패 — 지난 값</Badge>}
         </div>

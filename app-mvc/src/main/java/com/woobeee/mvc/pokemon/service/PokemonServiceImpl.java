@@ -45,12 +45,14 @@ public class PokemonServiceImpl implements PokemonService {
     @Transactional(readOnly = true)
     public PokemonHomeResponse getHome(String loginId) {
         Long viewerId = memberResolver.optionalMemberId(loginId);
+        Optional<PokemonHosts> mine = viewerId == null
+                ? Optional.empty() : hostRepository.findById(viewerId);
         List<PokemonRounds> rounds = roundRepository.findAllByOrderByCreatedAtDesc();
 
         return new PokemonHomeResponse(
                 toRoundResponses(rounds, viewerId),
-                hostRepository.findById(viewerId == null ? -1L : viewerId)
-                        .map(PokemonHosts::getHandle).orElse(null),
+                mine.map(PokemonHosts::getHandle).orElse(null),
+                mine.map(PokemonHosts::getBankAccount).orElse(null),
                 viewerId != null,
                 exchangeRateService.supportedCurrencies());
     }
@@ -62,10 +64,13 @@ public class PokemonServiceImpl implements PokemonService {
                 .orElseThrow(PokemonErrorCode.ROUND_NOT_FOUND::asException);
         Long viewerId = memberResolver.optionalMemberId(loginId);
 
+        boolean isMe = host.getMemberId().equals(viewerId);
         return new PokemonHostResponse(
                 host.getHandle(),
                 memberName(host.getMemberId()),
-                host.getMemberId().equals(viewerId),
+                isMe,
+                // 계좌는 본인에게만. 차수를 열기 전이라면 아직 공개할 이유가 없다.
+                isMe ? host.getBankAccount() : null,
                 toRoundResponses(
                         roundRepository.findAllByHostMemberIdOrderBySequenceDesc(host.getMemberId()),
                         viewerId));
@@ -94,6 +99,18 @@ public class PokemonServiceImpl implements PokemonService {
         return getHost(loginId, handle);
     }
 
+    @Override
+    @Transactional
+    public PokemonHostResponse updateHostSettings(String loginId, PokemonHostSettingsRequest request) {
+        Member member = memberResolver.optionalMember(loginId)
+                .orElseThrow(PokemonErrorCode.LOGIN_REQUIRED::asException);
+        PokemonHosts host = hostRepository.findById(member.getId())
+                .orElseThrow(PokemonErrorCode.HOST_REQUIRED::asException);
+
+        host.updateBankAccount(trimmedOrNull(request.bankAccount()));
+        return getHost(loginId, host.getHandle());
+    }
+
     /* ===== 차수 ===== */
 
     @Override
@@ -113,9 +130,18 @@ public class PokemonServiceImpl implements PokemonService {
         int nextSequence = roundRepository.findFirstByHostMemberIdOrderBySequenceDesc(member.getId())
                 .map(PokemonRounds::getSequence).orElse(0) + 1;
 
+        // 계좌를 적어 내지 않으면 주최자 기본 계좌를 쓴다. 둘 다 없으면 어디로 보낼지 모른다.
+        String bankAccount = trimmedOrNull(request.bankAccount());
+        if (bankAccount == null) {
+            bankAccount = host.getBankAccount();
+        }
+        if (bankAccount == null) {
+            throw PokemonErrorCode.BANK_ACCOUNT_REQUIRED.asException();
+        }
+
         PokemonRounds saved = roundRepository.save(PokemonRounds.open(
                 member.getId(), nextSequence, trimmedOrNull(request.title()), currency,
-                rateMode, quotedRate, live.fetchedAt(), request.bankAccount().trim(),
+                rateMode, quotedRate, live.fetchedAt(), bankAccount,
                 request.deadline(), trimmedOrNull(request.memo())));
 
         return PokemonRoundResponse.of(saved, host.getHandle(), member.getNickname(), true, 0, 0);

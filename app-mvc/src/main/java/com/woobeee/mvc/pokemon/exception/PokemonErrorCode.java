@@ -48,6 +48,8 @@ public enum PokemonErrorCode {
             "The address may use lowercase letters, digits and hyphens only"),
     HOST_REQUIRED(HttpStatus.BAD_REQUEST, "pokemon_hostRequired",
             "Pick your address before opening a round"),
+    BANK_ACCOUNT_REQUIRED(HttpStatus.BAD_REQUEST, "pokemon_bankAccountRequired",
+            "Set an account to receive transfers"),
     LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "pokemon_loginRequired", "Please log in first"),
 
     BAD_REQUEST(HttpStatus.BAD_REQUEST, "pokemon_badRequest", "Malformed request"),

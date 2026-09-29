@@ -54,6 +54,15 @@ public class PokemonController {
         return ApiResponse.createSuccess(pokemonService.claimHandle(loginId, request), "Handle claimed");
     }
 
+    @PutMapping("/hosts/me")
+    @Operation(summary = "주최자 설정", description = "기본 입금 계좌. 차수를 열 때 자동으로 채워진다.")
+    public ApiResponse<PokemonHostResponse> updateHostSettings(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @Valid @RequestBody PokemonHostSettingsRequest request) {
+        return ApiResponse.success(
+                pokemonService.updateHostSettings(loginId, request), "Host settings updated");
+    }
+
     /* ===== 차수 ===== */
 
     @PostMapping("/rounds")

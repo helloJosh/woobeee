@@ -11,17 +11,19 @@ import ProductPicker from "@/components/pokemon/product-picker"
 import { BankAccountLine, Field } from "@/components/pokemon/pokemon-bits"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
+    formatAmount,
     formatCoins,
-    formatInr,
     formatKrw,
     formatRate,
+    parseAmount,
     parseDonation,
-    parseInr,
     quote,
+    rateFor,
     selectionLines,
     toKrw,
     validateOrderForm,
     type PokemonProduct,
+    type PokemonRound,
     type PokemonSelection,
 } from "@/lib/pokemon"
 
@@ -30,7 +32,7 @@ export interface OrderFormValues {
     applicantName: string
     depositorName: string
     donation: string
-    extraInr: string
+    extraAmount: string
     memo: string
 }
 
@@ -39,7 +41,7 @@ export const EMPTY_ORDER_FORM: OrderFormValues = {
     applicantName: "",
     depositorName: "",
     donation: "",
-    extraInr: "",
+    extraAmount: "",
     memo: "",
 }
 
@@ -47,6 +49,7 @@ export interface OrderFormBody {
     applicantName?: string
     depositorName?: string
     donationKrw: number
+    /** 차수 통화 기준의 자유 입력 금액. 서버 필드명은 extraInr 로 남아 있다. */
     extraInr: number
     memo?: string
     items: { productId: number; quantity: number }[]
@@ -59,9 +62,9 @@ export interface OrderFormBody {
  * 화면에 보인 금액과 저장되는 금액이 어긋나지 않는다.
  */
 export default function OrderForm({
+    round,
     products,
-    rate,
-    bankAccount,
+    currentRate,
     initial,
     loggedIn,
     memberName,
@@ -70,9 +73,10 @@ export default function OrderForm({
     droppedItems = [],
     onSubmit,
 }: {
+    round: PokemonRound
     products: PokemonProduct[]
-    rate: number
-    bankAccount: string
+    /** 지금 환율. 차수가 PER_ORDER 면 이 값이 그대로 쓰인다. */
+    currentRate: number
     initial: OrderFormValues
     loggedIn: boolean
     memberName: string | null
@@ -87,13 +91,15 @@ export default function OrderForm({
     const [applicantName, setApplicantName] = useState(initial.applicantName)
     const [depositorName, setDepositorName] = useState(initial.depositorName)
     const [donation, setDonation] = useState(initial.donation)
-    const [extraInr, setExtraInr] = useState(initial.extraInr)
+    const [extraAmount, setExtraAmount] = useState(initial.extraAmount)
     const [memo, setMemo] = useState(initial.memo)
     const [error, setError] = useState<string | null>(null)
     const [saving, setSaving] = useState(false)
 
     const donationKrw = parseDonation(donation) ?? 0
-    const extra = parseInr(extraInr) ?? 0
+    const extra = parseAmount(extraAmount) ?? 0
+    // 차수가 정한 방식대로 환율을 고른다 — 서버와 같은 규칙이라 미리보기와 저장 금액이 맞는다.
+    const rate = rateFor(round, currentRate)
     const lines = useMemo(() => selectionLines(selection, products), [selection, products])
     const preview = useMemo(
         () => quote(selection, products, rate, donationKrw, extra),
@@ -106,7 +112,7 @@ export default function OrderForm({
 
     const save = async () => {
         const problem = validateOrderForm(
-            { applicantName, depositorName, donation, extraInr, selection },
+            { applicantName, depositorName, donation, extraAmount, selection },
             loggedIn || nameLocked,
         )
         if (problem !== null) {
@@ -156,18 +162,18 @@ export default function OrderForm({
                     />
 
                     <div className="rounded-md border p-3">
-                        <Field label="상품표에 없는 것 — 루피 직접 입력 (선택)">
+                        <Field label="상품표에 없는 것 — 금액 직접 입력 (선택)">
                             <Input
-                                value={extraInr}
-                                onChange={(event) => setExtraInr(event.target.value)}
+                                value={extraAmount}
+                                onChange={(event) => setExtraAmount(event.target.value)}
                                 inputMode="decimal"
                                 placeholder="예) 249.00"
                             />
                         </Field>
                         <p className="mt-2 text-xs text-muted-foreground">
-                            프리미엄 패스처럼 위 목록에 없는 것을 신청할 때 루피 금액을 적습니다.
+                            위 목록에 없는 것을 신청할 때 금액을 적습니다.
                             무엇인지는 아래 메모에 남겨 주세요.
-                            {extra > 0 && ` · ${formatInr(extra)} = ${formatKrw(toKrw(extra, rate))}`}
+                            {extra > 0 && ` · ${formatAmount(extra, round.currency)} = ${formatKrw(toKrw(extra, rate))}`}
                         </p>
                     </div>
                 </CardContent>
@@ -227,17 +233,17 @@ export default function OrderForm({
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">상품 합계</span>
                         <span>
-                            {formatInr(preview.totalInr)} · {formatCoins(preview.totalCoins)}
+                            {formatAmount(preview.totalAmount, round.currency)} · {formatCoins(preview.totalCoins)}
                         </span>
                     </div>
                     {extra > 0 && (
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">└ 직접 입력한 루피</span>
-                            <span>{formatInr(extra)}</span>
+                            <span>{formatAmount(extra, round.currency)}</span>
                         </div>
                     )}
                     <div className="flex justify-between">
-                        <span className="text-muted-foreground">환산 ({formatRate(rate)})</span>
+                        <span className="text-muted-foreground">환산 ({formatRate(rate, round.currency)})</span>
                         <span>{formatKrw(preview.itemsKrw)}</span>
                     </div>
                     <div className="flex justify-between">
@@ -248,7 +254,7 @@ export default function OrderForm({
                         <span>이체할 금액</span>
                         <span>{formatKrw(preview.transferKrw)}</span>
                     </div>
-                    <BankAccountLine account={bankAccount} />
+                    <BankAccountLine account={round.bankAccount} />
 
                     {error !== null && (
                         <Alert variant="destructive">

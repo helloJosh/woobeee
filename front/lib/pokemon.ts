@@ -1,28 +1,55 @@
-// front/lib/pokemon.ts — 포켓코인 공동구매 탭의 React-free 판단 로직.
+// front/lib/pokemon.ts — 포켓코인 공동구매의 React-free 판단 로직.
 // 컴포넌트에는 판단을 두지 않는다 (vitest 가 node 환경이라 컴포넌트는 검증 밖이다).
+//
+// 구조: 주최자가 차수(1차·2차·3차)를 열고 친구들이 거기에 신청한다.
+// 통화·환율·계좌는 차수가 들고, 개인별로 다른 것(입금)은 신청서가 든다.
 
 /* ===== 서버 계약 (app-mvc pokemon 도메인과 1:1) ===== */
 
-/** PokemonOrderStatus.java 와 같아야 한다. */
-export type PokemonOrderStatus =
-    | "ORDERED"
-    | "PREPARING"
-    | "DEPOSIT_CONFIRMED"
-    | "DELIVERED"
-    | "CANCELLED"
+/** 차수의 진행 단계. 주최자가 전체에 대해 하는 일이다. */
+export type PokemonRoundStatus = "OPEN" | "CLOSED" | "PURCHASED" | "DELIVERED" | "CANCELLED"
 
-/**
- * 상품표 한 줄. 운영자가 인게임 상점을 보고 직접 관리한다(`/pokemon/products`) —
- * 패스는 달마다 바뀌므로 프론트에 박아 두지 않는다.
- */
+/** 신청서의 진행 단계. 개인별로 다른 것만 여기 있다. */
+export type PokemonOrderStatus = "ORDERED" | "DEPOSIT_CONFIRMED" | "DELIVERED" | "CANCELLED"
+
+/** 환율을 어떻게 잡을지. 주최자가 차수를 열 때 고른다. */
+export type PokemonRateMode = "FIXED" | "PER_ORDER"
+
+export interface PokemonRound {
+    id: number
+    /** URL 조각 — /pokemon/{hostHandle}/{sequence} */
+    hostHandle: string
+    hostName: string
+    sequence: number
+    title: string | null
+    /** ISO 4217. 이 차수의 상품·금액이 모두 이 통화다. */
+    currency: string
+    rateMode: PokemonRateMode
+    /** 1 currency = N KRW. FIXED 일 때 쓰는 값. */
+    quotedRate: number
+    quotedAt: string
+    bankAccount: string
+    deadline: string | null
+    status: PokemonRoundStatus
+    /** 실제 결제 시점의 환율. 채워져 있으면 환차손익이 확정된 차수다. */
+    settledRate: number | null
+    settledAt: string | null
+    memo: string | null
+    createdAt: string
+    /** 이 화면을 보는 사람이 이 차수를 주무를 수 있는가. 서버가 판단한다. */
+    canManage: boolean
+    orderCount: number
+    transferKrwTotal: number
+}
+
 export interface PokemonProduct {
     id: number
-    /** 스토어에 적힌 이름 그대로. "550 PokéCoins", "Event Ticket" 같은 것. */
+    /** 스토어에 적힌 이름 그대로. */
     name: string
-    /** 포켓코인 수. 이벤트 티켓처럼 코인이 아닌 상품은 0. */
+    currency: string
+    /** 포켓코인 수. 패스·티켓처럼 코인이 아닌 상품은 0. */
     coins: number
-    /** 루피. 서버의 BigDecimal 이 JSON number 로 온다. */
-    priceInr: number
+    price: number
 }
 
 /** 운영자 관리 화면이 보는 상품. 내려간 것까지 나오고 지울 수 있는지도 알려준다. */
@@ -34,50 +61,12 @@ export interface PokemonManagedProduct extends PokemonProduct {
     updatedAt: string | null
 }
 
-export interface PokemonProductDraft {
-    name: string
-    /** 입력 그대로의 문자열. 루피는 소수 둘째 자리까지. */
-    priceInr: string
-    /** 입력 그대로의 문자열. 패스·티켓은 0(빈 값도 0). */
-    coins: string
-    active: boolean
-}
-
-/** 문제가 있으면 사용자에게 보여줄 문구, 없으면 null. */
-export function validateProductDraft(draft: PokemonProductDraft): string | null {
-    if (draft.name.trim() === "") {
-        return "상품 이름을 입력해 주세요."
-    }
-    if (draft.name.trim().length > 200) {
-        return "상품 이름은 200자까지 입력할 수 있습니다."
-    }
-    const price = parseInr(draft.priceInr)
-    if (price === null || price <= 0) {
-        return "루피 가격은 0보다 큰 숫자로 입력해 주세요 (소수점 둘째 자리까지)."
-    }
-    const coins = parseCoins(draft.coins)
-    if (coins === null) {
-        return "포켓코인 수는 0 이상의 정수로 입력해 주세요 (패스·티켓은 0)."
-    }
-    return null
-}
-
-/** 빈 값은 0 — 패스·티켓은 코인이 없다. 음수·소수·문자는 null. */
-export function parseCoins(raw: string): number | null {
-    const trimmed = raw.trim().replace(/,/g, "")
-    if (trimmed === "") return 0
-    if (!/^\d+$/.test(trimmed)) return null
-    const value = Number(trimmed)
-    return Number.isSafeInteger(value) ? value : null
-}
-
 export interface PokemonOrderItem {
-    /** 상품표 참조. 상품이 지워졌으면 null 일 수 있으므로 표시는 productName 으로 한다. */
     productId: number | null
     /** 신청 당시 이름·단가 스냅샷 — 상품표가 바뀌어도 과거 신청서는 이 값을 유지한다. */
     productName: string
     coins: number
-    unitPriceInr: number
+    unitPrice: number
     quantity: number
 }
 
@@ -85,9 +74,8 @@ export interface PokemonComment {
     id: number
     orderId: number
     authorName: string
-    /** 비회원이 쓴 댓글이면 true. */
     guest: boolean
-    /** 이 화면을 보는 사람이 쓴 댓글이면 true. 작성자의 회원 id 를 내보내지 않으려고 서버가 판단한다. */
+    /** 이 화면을 보는 사람이 쓴 댓글이면 true. 서버가 판단한다. */
     mine: boolean
     content: string
     createdAt: string
@@ -95,131 +83,159 @@ export interface PokemonComment {
 
 export interface PokemonOrder {
     id: number
+    roundId: number
     applicantName: string
     depositorName: string | null
-    /** 비회원 신청이면 true. */
     guest: boolean
-    /** 이 화면을 보는 사람이 낸 신청서면 true. 회원 id 를 내보내지 않으려고 서버가 판단한다. */
+    /** 이 화면을 보는 사람이 낸 신청서면 true. 서버가 판단한다. */
     mine: boolean
     status: PokemonOrderStatus
-    totalInr: number
-    /** 상품표에 없는 것을 위한 자유 입력 루피. 없으면 0. */
-    extraInr: number
-    /** 신청 시점에 박힌 환율. 이체 금액의 근거다. */
+    /** 차수 통화 기준의 상품 합계 + 자유 입력 금액. */
+    totalAmount: number
+    /** 상품표에 없는 것을 위한 자유 입력 금액. 없으면 0. */
+    extraAmount: number
+    /** 이 신청서에 적용된 환율. 차수 방식에 따라 차수 환율이거나 신청 시점 환율이다. */
     quotedRate: number
     quotedAt: string
     itemsKrw: number
     donationKrw: number
     /** itemsKrw + donationKrw — 신청자가 실제로 이체해야 하는 금액. */
     transferKrw: number
-    /** 실제 결제 시점의 환율. 채워져 있으면 환차손익이 확정된 건이다. */
-    settledRate: number | null
-    settledAt: string | null
     memo: string | null
     createdAt: string
     items: PokemonOrderItem[]
-    /** 이 신청서로 받는 포켓코인 총합 — 서버가 항목에서 계산해 내려준다. */
     totalCoins: number
-    /** 오래된 것부터. */
     comments: PokemonComment[]
 }
 
 export interface PokemonExchangeRate {
-    /** 1 루피가 몇 원인지. */
-    inrToKrw: number
+    currency: string
+    /** 1 currency = N KRW. */
+    toKrw: number
     fetchedAt: string
     /** 외부 조회가 실패해 마지막 성공값을 쓰는 중이면 true. */
     stale: boolean
 }
 
-/** 세부 페이지가 받는 것 — 신청서 한 건 + 목록과 같은 부속. */
-export interface PokemonOrderDetail {
-    rate: PokemonExchangeRate
-    order: PokemonOrder
-    bankAccount: string
-    canManage: boolean
+export interface PokemonHome {
+    rounds: PokemonRound[]
+    /** 내 주소. 없으면 차수를 열기 전에 먼저 정해야 한다. */
+    myHandle: string | null
+    /** 내 기본 입금 계좌 — 차수를 열 때 자동으로 채운다. */
+    myBankAccount: string | null
+    loggedIn: boolean
+    currencies: string[]
 }
 
-export interface PokemonBoard {
-    rate: PokemonExchangeRate
+export interface PokemonHost {
+    handle: string
+    name: string
+    isMe: boolean
+    /** 기본 입금 계좌. 본인에게만 내려온다. */
+    bankAccount: string | null
+    rounds: PokemonRound[]
+}
+
+export interface PokemonRoundBoard {
+    round: PokemonRound
+    currentRate: PokemonExchangeRate
     products: PokemonProduct[]
     orders: PokemonOrder[]
-    bankAccount: string
-    /** 이 화면을 보는 사람이 진행 상태를 바꿀 수 있는 운영자인가. 서버가 판단한다. */
+}
+
+export interface PokemonOrderDetail {
+    rate: PokemonExchangeRate
+    round: PokemonRound
+    order: PokemonOrder
     canManage: boolean
 }
 
 /* ===== 상태 ===== */
 
-/** 정상 진행 경로. CANCELLED 는 어느 단계에서든 빠져나가므로 여기 없다. */
-export const STATUS_FLOW: PokemonOrderStatus[] = [
-    "ORDERED",
-    "PREPARING",
-    "DEPOSIT_CONFIRMED",
-    "DELIVERED",
-]
+export const ROUND_STATUS_FLOW: PokemonRoundStatus[] = ["OPEN", "CLOSED", "PURCHASED", "DELIVERED"]
 
-export const STATUS_LABELS: Record<PokemonOrderStatus, string> = {
-    ORDERED: "주문",
-    PREPARING: "준비중",
-    DEPOSIT_CONFIRMED: "입금확인",
-    DELIVERED: "배달 완료",
+export const ROUND_STATUS_LABELS: Record<PokemonRoundStatus, string> = {
+    OPEN: "모집중",
+    CLOSED: "마감",
+    PURCHASED: "구매완료",
+    DELIVERED: "배달완료",
     CANCELLED: "취소",
 }
 
-/**
- * 이 신청서가 네 단계 중 몇 번째까지 왔는가. 신청만 한 상태도 1단계를 밟은 것으로 센다 —
- * 진행도를 신청서마다 보여주므로, 갓 낸 신청서가 0% 로 비어 보이면 안 된다.
- *
- * <p>취소는 진행 경로 밖이라 null 이다. 0 이 아니다 — "진행이 없다" 와 "경로에 없다" 는 다르다.
- */
-export function statusStep(status: PokemonOrderStatus): { step: number; total: number } | null {
-    const index = STATUS_FLOW.indexOf(status)
-    if (index < 0) return null
-    return { step: index + 1, total: STATUS_FLOW.length }
+export const ORDER_STATUS_FLOW: PokemonOrderStatus[] = ["ORDERED", "DEPOSIT_CONFIRMED", "DELIVERED"]
+
+export const ORDER_STATUS_LABELS: Record<PokemonOrderStatus, string> = {
+    ORDERED: "주문",
+    DEPOSIT_CONFIRMED: "입금확인",
+    DELIVERED: "전달완료",
+    CANCELLED: "취소",
 }
 
-/** 0~100. 취소는 null. */
-export function statusPercent(status: PokemonOrderStatus): number | null {
-    const at = statusStep(status)
+export const RATE_MODE_LABELS: Record<PokemonRateMode, string> = {
+    FIXED: "차수 환율로 고정",
+    PER_ORDER: "신청 시점 환율",
+}
+
+/**
+ * 몇 단계 중 몇 번째까지 왔는가. 첫 단계도 1로 센다 — 갓 시작한 것이 0% 로 비어 보이면 안 된다.
+ * 취소는 진행 경로 밖이라 null 이다. 0 이 아니다.
+ */
+function stepIn<T extends string>(flow: T[], status: T): { step: number; total: number } | null {
+    const index = flow.indexOf(status)
+    return index < 0 ? null : { step: index + 1, total: flow.length }
+}
+
+export function roundStep(status: PokemonRoundStatus) {
+    return stepIn(ROUND_STATUS_FLOW, status)
+}
+
+export function orderStep(status: PokemonOrderStatus) {
+    return stepIn(ORDER_STATUS_FLOW, status)
+}
+
+export function percentOf(at: { step: number; total: number } | null): number | null {
     return at === null ? null : (at.step / at.total) * 100
 }
 
-export function isActive(order: PokemonOrder): boolean {
+export function isRoundActive(round: PokemonRound): boolean {
+    return round.status !== "CANCELLED"
+}
+
+export function isOrderActive(order: PokemonOrder): boolean {
     return order.status !== "CANCELLED"
 }
 
-/** 준비중으로 넘어갔으면 환율이 박혀 있고, 그때부터 손익은 더 이상 움직이지 않는다. */
-export function isSettled(order: PokemonOrder): boolean {
-    return order.settledRate !== null && order.settledRate > 0
+/** 모집중일 때만 신청을 받는다. */
+export function acceptsOrders(round: PokemonRound): boolean {
+    return round.status === "OPEN"
 }
 
-/* ===== 상품 가성비 ===== */
+/** 결제까지 끝났으면 환율이 박혀 있고, 그때부터 환차손익은 움직이지 않는다. */
+export function isRoundSettled(round: PokemonRound): boolean {
+    return round.settledRate !== null && round.settledRate > 0
+}
 
-/**
- * 포켓코인 1개당 루피. 낮을수록 이득이다.
- *
- * <p>티어가 클수록 싼 것이 아니다 — 500포켓코인(₹149)은 100포켓코인(₹29) 다섯 개(₹145)보다
- * 비싸다. 상품 카드가 이 값을 그대로 보여주어 고르는 사람이 직접 비교할 수 있게 한다.
- */
+/* ===== 상품 ===== */
+
+/** 상품 1코인당 가격(차수 통화). 코인 상품이 아니면 null — 0으로 나누지 않는다. */
 export function pricePerCoin(product: PokemonProduct): number | null {
     if (product.coins <= 0) return null
-    return product.priceInr / product.coins
+    return product.price / product.coins
 }
 
 /* ===== 장바구니 ===== */
 
-/** 상품 id -> 수량. 0 이나 음수는 고르지 않은 것으로 본다. 상품이 매일 바뀌므로 이름이 아닌 id 로 건다. */
+/** 상품 id -> 수량. 0 이나 음수는 고르지 않은 것으로 본다. */
 export type PokemonSelection = Record<number, number>
 
 export interface SelectionLine {
     product: PokemonProduct
     quantity: number
-    lineInr: number
+    lineAmount: number
     lineCoins: number
 }
 
-/** 고른 것만, 상품표 순서로. 상품표에 없는 id 는 조용히 버린다 — 스토어에서 내려간 상품이다. */
+/** 고른 것만, 상품표 순서로. 상품표에 없는 id 는 조용히 버린다 — 내려간 상품이다. */
 export function selectionLines(selection: PokemonSelection, products: PokemonProduct[]): SelectionLine[] {
     return products
         .map((product) => ({ product, quantity: Math.trunc(selection[product.id] ?? 0) }))
@@ -227,150 +243,154 @@ export function selectionLines(selection: PokemonSelection, products: PokemonPro
         .map((line) => ({
             product: line.product,
             quantity: line.quantity,
-            lineInr: round2(line.product.priceInr * line.quantity),
+            lineAmount: round2(line.product.price * line.quantity),
             lineCoins: line.product.coins * line.quantity,
         }))
 }
 
 export interface PokemonQuote {
-    /** 상품 합계 + 자유 입력 루피. */
-    totalInr: number
+    /** 상품 합계 + 자유 입력 금액 (차수 통화). */
+    totalAmount: number
     totalCoins: number
-    /** round(totalInr × rate) — 서버의 HALF_UP 과 같은 결과를 낸다. */
+    /** round(totalAmount × rate) — 서버의 HALF_UP 과 같은 결과를 낸다. */
     itemsKrw: number
     donationKrw: number
-    /** 실제로 이체해야 하는 금액. */
     transferKrw: number
 }
 
-/** 신청 화면의 미리보기. 저장된 신청서는 서버가 박아 둔 금액을 그대로 쓴다. */
+/**
+ * 신청 화면의 미리보기. {@link rateFor} 가 고른 환율을 넘겨야 저장될 금액과 어긋나지 않는다.
+ * 저장된 신청서는 서버가 박아 둔 금액을 그대로 쓴다.
+ */
 export function quote(
     selection: PokemonSelection,
     products: PokemonProduct[],
     rate: number,
     donationKrw: number,
-    extraInr = 0,
+    extraAmount = 0,
 ): PokemonQuote {
     const lines = selectionLines(selection, products)
-    const extra = Math.max(0, round2(extraInr))
-    const totalInr = round2(lines.reduce((sum, line) => sum + line.lineInr, extra))
+    const extra = Math.max(0, round2(extraAmount))
+    const totalAmount = round2(lines.reduce((sum, line) => sum + line.lineAmount, extra))
     const totalCoins = lines.reduce((sum, line) => sum + line.lineCoins, 0)
-    const itemsKrw = toKrw(totalInr, rate)
+    const itemsKrw = toKrw(totalAmount, rate)
     const donation = Math.max(0, Math.trunc(donationKrw))
 
-    return { totalInr, totalCoins, itemsKrw, donationKrw: donation, transferKrw: itemsKrw + donation }
+    return { totalAmount, totalCoins, itemsKrw, donationKrw: donation, transferKrw: itemsKrw + donation }
 }
 
-/** 루피 -> 원. 서버가 BigDecimal.setScale(0, HALF_UP) 로 하는 것과 같은 반올림이다. */
-export function toKrw(inr: number, rate: number): number {
-    return Math.round(inr * rate)
+/** 외화 -> 원. 서버가 BigDecimal.setScale(0, HALF_UP) 로 하는 것과 같은 반올림이다. */
+export function toKrw(amount: number, rate: number): number {
+    return Math.round(amount * rate)
+}
+
+/**
+ * 이 차수에서 지금 신청하면 쓸 환율. FIXED 면 차수 환율, PER_ORDER 면 현재 환율이다 —
+ * 서버의 PokemonRounds.rateFor 와 같은 규칙이라 미리보기와 저장 금액이 어긋나지 않는다.
+ */
+export function rateFor(round: PokemonRound, currentRate: number): number {
+    return round.rateMode === "PER_ORDER" ? currentRate : round.quotedRate
 }
 
 /* ===== 환차손익 ===== */
 
 /**
- * 손익을 재는 기준 환율. 준비중으로 넘어간 건은 그때 박힌 환율로 확정되고,
- * 아직인 건은 현재 환율로 평가한다.
+ * 손익을 재는 기준 환율. 차수가 결제까지 끝났으면 그때 박힌 환율로 확정되고,
+ * 아직이면 현재 환율로 평가한다.
  */
-export function effectiveRate(order: PokemonOrder, currentRate: number): number {
-    return isSettled(order) ? (order.settledRate as number) : currentRate
+export function effectiveRate(round: PokemonRound, currentRate: number): number {
+    return isRoundSettled(round) ? (round.settledRate as number) : currentRate
 }
 
 /**
- * 환차손익(원). 신청자가 낸 상품값에서 그 환율로 실제로 드는 돈을 뺀 값이다.
- * 양수면 남고(이득), 음수면 모자란다(손해).
+ * 신청서 한 건의 환차손익(원). 받아 둔 상품값에서 기준 환율로 실제로 드는 돈을 뺀 값이다.
+ * 양수면 남고(이득), 음수면 모자란다.
  *
  * <p>기부금은 빼고 본다 — 환율과 무관한 순수 이득이라 섞으면 환차가 안 보인다.
  */
-export function fxDelta(order: PokemonOrder, currentRate: number): number {
-    return order.itemsKrw - toKrw(order.totalInr, effectiveRate(order, currentRate))
+export function fxDelta(order: PokemonOrder, round: PokemonRound, currentRate: number): number {
+    return order.itemsKrw - toKrw(order.totalAmount, effectiveRate(round, currentRate))
 }
 
 /* ===== 집계 ===== */
 
-export interface PokemonSummary {
+export interface PokemonRoundSummary {
     statusCounts: Record<PokemonOrderStatus, number>
     /** 취소를 뺀 신청서가 받아 가는 포켓코인 총합. */
     totalCoins: number
-    /** 아직 입금이 확인되지 않은 금액 — 주문·준비중 단계. 입금확인은 세 번째 단계다. */
+    /** 차수 통화 기준 총액 — 주최자가 스토어에서 실제로 써야 할 돈. */
+    totalAmount: number
+    /** 받아야 할 이체 금액 총합. */
+    totalTransferKrw: number
+    /** 기부금을 뺀 상품값 합계. */
+    totalItemsKrw: number
+    /** 아직 입금이 확인되지 않은 금액과 그 사람들. */
     outstandingKrw: number
-    /** 미입금 명단 — 이 페이지를 만드는 실질적인 이유. */
     awaitingDeposit: PokemonOrder[]
-    /**
-     * 배달 완료 전 신청서의 이체 금액 합계 — 운영자가 아직 끝내지 못한 총액이다.
-     * 취소는 처리할 것이 없으므로 뺀다.
-     */
-    inFlightKrw: number
-    inFlightCount: number
-    /** 배달 완료 전 신청서의 루피 합계 — 운영자가 인도 스토어에서 실제로 써야 할 돈이다. */
-    inFlightInr: number
-    /**
-     * 배달 완료 전 신청서의 <b>기부금을 뺀</b> 원화 합계. 기부금은 상품값이 아니라서
-     * 실제로 결제해야 할 금액과 섞이면 안 된다.
-     */
-    inFlightItemsKrw: number
+    /** 차수 전체의 환차손익. */
+    fxKrw: number
 }
 
-/**
- * 목록 화면이 쓰는 집계. 환차손익과 진행도는 여기 없다 — <b>신청서마다</b> 보여주므로
- * 합계를 내지 않는다. {@link fxDelta} 와 {@link statusStep} 을 신청서 단위로 쓴다.
- */
-export function summarize(orders: PokemonOrder[]): PokemonSummary {
+export function summarizeRound(
+    orders: PokemonOrder[],
+    round: PokemonRound,
+    currentRate: number,
+): PokemonRoundSummary {
     const statusCounts: Record<PokemonOrderStatus, number> = {
-        ORDERED: 0, PREPARING: 0, DEPOSIT_CONFIRMED: 0, DELIVERED: 0, CANCELLED: 0,
+        ORDERED: 0, DEPOSIT_CONFIRMED: 0, DELIVERED: 0, CANCELLED: 0,
     }
     for (const order of orders) {
         statusCounts[order.status] += 1
     }
 
-    const active = orders.filter(isActive)
-    const awaitingDeposit = active.filter((order) => order.status !== "DEPOSIT_CONFIRMED"
-        && order.status !== "DELIVERED")
-    const inFlight = active.filter((order) => order.status !== "DELIVERED")
+    const active = orders.filter(isOrderActive)
+    const awaitingDeposit = active.filter((order) => order.status === "ORDERED")
 
     return {
         statusCounts,
         totalCoins: active.reduce((sum, order) => sum + orderCoins(order), 0),
+        totalAmount: round2(active.reduce((sum, order) => sum + order.totalAmount, 0)),
+        totalTransferKrw: active.reduce((sum, order) => sum + order.transferKrw, 0),
+        totalItemsKrw: active.reduce((sum, order) => sum + order.itemsKrw, 0),
         outstandingKrw: awaitingDeposit.reduce((sum, order) => sum + order.transferKrw, 0),
         awaitingDeposit,
-        inFlightKrw: inFlight.reduce((sum, order) => sum + order.transferKrw, 0),
-        inFlightCount: inFlight.length,
-        inFlightInr: round2(inFlight.reduce((sum, order) => sum + order.totalInr, 0)),
-        inFlightItemsKrw: inFlight.reduce((sum, order) => sum + order.itemsKrw, 0),
+        fxKrw: active.reduce((sum, order) => sum + fxDelta(order, round, currentRate), 0),
     }
 }
 
 /**
- * 신청서가 받아 가는 포켓코인 총합. 서버가 {@code totalCoins} 를 내려주지만 항목에서 다시 세어
- * 쓴다 — 표에 찍히는 항목과 합계가 같은 출처에서 나와야 어긋나지 않는다.
+ * 신청서가 받아 가는 포켓코인 총합. 서버가 totalCoins 를 내려주지만 항목에서 다시 세어 쓴다 —
+ * 표에 찍히는 항목과 합계가 같은 출처에서 나와야 어긋나지 않는다.
  */
 export function orderCoins(order: PokemonOrder): number {
     return order.items.reduce((sum, item) => sum + item.coins * item.quantity, 0)
 }
 
-/* ===== 신청 폼 검증 ===== */
-
-export interface OrderFormInput {
-    /** 비회원만 쓴다. 로그인 신청은 서버가 닉네임으로 덮는다. */
-    applicantName: string
-    depositorName: string
-    /** 입력 그대로의 문자열. 빈 값은 기부 없음이다. */
-    donation: string
-    /** 입력 그대로의 문자열. 상품표에 없는 것을 신청할 때 쓴다. 빈 값은 0. */
-    extraInr: string
-    selection: PokemonSelection
-}
+/* ===== 권한 ===== */
 
 /**
- * 자유 입력 루피. 빈 값은 0, 소수 둘째 자리까지 허용한다 — 스토어 가격이 ₹29.00 꼴이라
- * 소수를 막으면 그대로 옮겨 적을 수가 없다. 음수와 숫자 아닌 값은 null.
+ * 신청서를 고치거나 지울 수 있는가 — 서버 판정과 같은 규칙이다.
+ * 주최자는 언제든, 회원이 낸 것은 그 회원만, 비회원이 낸 것은 누구나(본인 확인 수단이 없는데
+ * 막아 두면 잘못 낸 신청서를 아무도 거두지 못한다). 단 입금이 확인된 뒤로는 주최자만이다.
  */
-export function parseInr(raw: string): number | null {
-    const trimmed = raw.trim().replace(/,/g, "")
-    if (trimmed === "") return 0
-    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null
-    const value = Number(trimmed)
-    return Number.isFinite(value) ? value : null
+export function canModifyOrder(order: PokemonOrder, canManage: boolean): boolean {
+    if (canManage) return true
+    if (order.status !== "ORDERED") return false
+    return order.guest || order.mine
+}
+
+export function canDeleteComment(comment: PokemonComment, canManage: boolean): boolean {
+    return canManage || comment.mine
+}
+
+/* ===== 입력 검증 ===== */
+
+export interface OrderFormInput {
+    applicantName: string
+    depositorName: string
+    donation: string
+    extraAmount: string
+    selection: PokemonSelection
 }
 
 /** 빈 값은 0. 콤마는 허용하고, 숫자가 아니거나 음수면 null 이다. */
@@ -382,7 +402,24 @@ export function parseDonation(raw: string): number | null {
     return Number.isSafeInteger(value) ? value : null
 }
 
-/** 문제가 있으면 사용자에게 보여줄 문구, 없으면 null. */
+/** 외화 금액. 소수 둘째 자리까지 — 스토어 가격이 ₹29.00 / $0.99 꼴이다. */
+export function parseAmount(raw: string): number | null {
+    const trimmed = raw.trim().replace(/,/g, "")
+    if (trimmed === "") return 0
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return null
+    const value = Number(trimmed)
+    return Number.isFinite(value) ? value : null
+}
+
+/** 빈 값은 0 — 패스·티켓은 코인이 없다. 음수·소수·문자는 null. */
+export function parseCoins(raw: string): number | null {
+    const trimmed = raw.trim().replace(/,/g, "")
+    if (trimmed === "") return 0
+    if (!/^\d+$/.test(trimmed)) return null
+    const value = Number(trimmed)
+    return Number.isSafeInteger(value) ? value : null
+}
+
 export function validateOrderForm(input: OrderFormInput, loggedIn: boolean): string | null {
     if (!loggedIn && input.applicantName.trim() === "") {
         return "이름을 입력해 주세요."
@@ -391,15 +428,14 @@ export function validateOrderForm(input: OrderFormInput, loggedIn: boolean): str
         return "이름은 60자까지 입력할 수 있습니다."
     }
 
-    const extra = parseInr(input.extraInr)
+    const extra = parseAmount(input.extraAmount)
     if (extra === null) {
-        return "루피는 0 이상의 숫자로 입력해 주세요 (소수점 둘째 자리까지)."
+        return "금액은 0 이상의 숫자로 입력해 주세요 (소수점 둘째 자리까지)."
     }
 
     const quantities = Object.values(input.selection).map((value) => Math.trunc(value))
-    // 상품을 고르지 않았어도 루피를 직접 적었으면 살 것이 있다.
     if (quantities.every((quantity) => quantity <= 0) && extra <= 0) {
-        return "상품을 고르거나 루피를 직접 입력해 주세요."
+        return "상품을 고르거나 금액을 직접 입력해 주세요."
     }
     if (quantities.some((quantity) => quantity > 99)) {
         return "상품 하나당 99개까지 신청할 수 있습니다."
@@ -407,21 +443,16 @@ export function validateOrderForm(input: OrderFormInput, loggedIn: boolean): str
     if (parseDonation(input.donation) === null) {
         return "기부금은 0 이상의 정수로 입력해 주세요."
     }
-
     return null
 }
-
-/* ===== 댓글 ===== */
 
 export const MAX_COMMENT_LENGTH = 500
 
 export interface CommentFormInput {
-    /** 비회원만 쓴다. 로그인 댓글은 서버가 닉네임으로 덮는다. */
     authorName: string
     content: string
 }
 
-/** 문제가 있으면 사용자에게 보여줄 문구, 없으면 null. */
 export function validateComment(input: CommentFormInput, loggedIn: boolean): string | null {
     if (!loggedIn && input.authorName.trim() === "") {
         return "이름을 입력해 주세요."
@@ -435,35 +466,104 @@ export function validateComment(input: CommentFormInput, loggedIn: boolean): str
     return null
 }
 
-/**
- * 신청서를 <b>고치거나 지울 수 있는가</b> — 서버 판정과 같은 규칙이다. 수정과 삭제는
- * 같은 규칙을 쓴다: 둘 다 남의 신청서를 건드리는 일이고, 준비가 시작되면 둘 다 막힌다.
- *
- * <ul>
- *   <li>운영자는 언제든
- *   <li>회원이 낸 신청서는 <b>그 회원만</b>
- *   <li>비회원이 낸 신청서는 주인이 없으므로 <b>누구나</b> — 본인 확인 수단이 없는데 막아 두면
- *       잘못 낸 신청서를 아무도 거두지 못한다
- * </ul>
- *
- * <p>단 준비가 시작된 뒤로는 운영자만 지운다. 이미 물건을 사러 갔기 때문이다.
- * 여기는 버튼을 그릴지 말지일 뿐이고, 진짜 방어는 서버가 한다.
- */
-export function canModifyOrder(order: PokemonOrder, canManage: boolean): boolean {
-    if (canManage) return true
-    if (order.status !== "ORDERED") return false
-    return order.guest || order.mine
+export interface PokemonProductDraft {
+    name: string
+    currency: string
+    price: string
+    coins: string
+    active: boolean
+}
+
+export function validateProductDraft(draft: PokemonProductDraft, currencies: string[]): string | null {
+    if (draft.name.trim() === "") {
+        return "상품 이름을 입력해 주세요."
+    }
+    if (draft.name.trim().length > 200) {
+        return "상품 이름은 200자까지 입력할 수 있습니다."
+    }
+    if (!currencies.includes(draft.currency)) {
+        return "지원하지 않는 통화입니다."
+    }
+    const price = parseAmount(draft.price)
+    if (price === null || price <= 0) {
+        return "가격은 0보다 큰 숫자로 입력해 주세요 (소수점 둘째 자리까지)."
+    }
+    if (parseCoins(draft.coins) === null) {
+        return "포켓코인 수는 0 이상의 정수로 입력해 주세요 (패스·티켓은 0)."
+    }
+    return null
+}
+
+export interface PokemonRoundDraft {
+    title: string
+    currency: string
+    rateMode: PokemonRateMode
+    /** 비우면 지금 환율을 그대로 쓴다. */
+    quotedRate: string
+    bankAccount: string
+    deadline: string
+    memo: string
 }
 
 /**
- * 운영자이거나 본인이 쓴 댓글일 때만 지울 수 있다 — 서버 판정과 같은 규칙이다.
- * 여기는 버튼을 그릴지 말지일 뿐이고, 진짜 방어는 서버가 한다.
+ * @param hasDefaultAccount 주최자 기본 계좌가 있으면 차수에서 비워도 된다 — 서버가 그것을 쓴다.
  */
-export function canDeleteComment(comment: PokemonComment, canManage: boolean): boolean {
-    return canManage || comment.mine
+export function validateRoundDraft(
+    draft: PokemonRoundDraft,
+    currencies: string[],
+    hasDefaultAccount = false,
+): string | null {
+    if (!currencies.includes(draft.currency)) {
+        return "지원하지 않는 통화입니다."
+    }
+    if (draft.bankAccount.trim() === "" && !hasDefaultAccount) {
+        return "입금받을 계좌를 적어 주세요. 상품 관리에서 기본 계좌를 정해 두면 자동으로 채워집니다."
+    }
+    if (draft.bankAccount.trim().length > 200) {
+        return "계좌는 200자까지 입력할 수 있습니다."
+    }
+    if (draft.title.trim().length > 100) {
+        return "제목은 100자까지 입력할 수 있습니다."
+    }
+    if (draft.rateMode === "FIXED" && draft.quotedRate.trim() !== "") {
+        const rate = Number(draft.quotedRate.trim())
+        if (!Number.isFinite(rate) || rate <= 0) {
+            return "환율은 0보다 큰 숫자로 입력해 주세요."
+        }
+    }
+    return null
+}
+
+/**
+ * URL 에 들어가는 주소. 서버·DB 와 같은 규칙이고, Next 의 정적 경로와 겹치는 말은 막는다 —
+ * /pokemon/products 가 주소인 사람에게 가려 버리기 때문이다.
+ */
+export const RESERVED_HANDLES = ["products", "orders", "new", "rounds", "hosts", "home"]
+
+export function validateHandle(raw: string): string | null {
+    const handle = raw.trim().toLowerCase()
+    if (!/^[a-z0-9][a-z0-9-]{1,29}$/.test(handle)) {
+        return "주소는 영소문자·숫자·하이픈으로 2~30자입니다. 첫 글자는 영소문자나 숫자여야 합니다."
+    }
+    if (RESERVED_HANDLES.includes(handle)) {
+        return "이미 쓰이고 있는 주소입니다. 다른 주소를 골라 주세요."
+    }
+    return null
 }
 
 /* ===== 표시 ===== */
+
+const CURRENCY_SYMBOLS: Record<string, string> = { INR: "₹", USD: "$", JPY: "¥", KRW: "₩" }
+
+export function currencySymbol(currency: string): string {
+    return CURRENCY_SYMBOLS[currency] ?? `${currency} `
+}
+
+/** 차수 통화 금액. 소수는 있을 때만 보인다 — ₹29 는 ₹29.00 보다 읽기 쉽다. */
+export function formatAmount(value: number, currency: string): string {
+    const fixed = Number.isInteger(value) ? value.toLocaleString("en-US") : value.toFixed(2)
+    return `${currencySymbol(currency)}${fixed}`
+}
 
 export function formatKrw(value: number): string {
     return `${Math.round(value).toLocaleString("ko-KR")}원`
@@ -473,23 +573,22 @@ export function formatKrw(value: number): string {
 export function formatSignedKrw(value: number): string {
     const rounded = Math.round(value)
     if (rounded === 0) return "0원"
-    const sign = rounded > 0 ? "+" : "−"
-    return `${sign}${Math.abs(rounded).toLocaleString("ko-KR")}원`
+    return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded).toLocaleString("ko-KR")}원`
 }
 
-export function formatInr(value: number): string {
-    return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
-}
-
-export function formatRate(rate: number): string {
-    return `₹1 = ${rate.toFixed(4)}원`
+export function formatRate(rate: number, currency: string): string {
+    return `${currencySymbol(currency)}1 = ${rate.toFixed(4)}원`
 }
 
 export function formatCoins(coins: number): string {
     return `${coins.toLocaleString("ko-KR")} 포켓코인`
 }
 
-/** 루피 금액은 소수 둘째 자리까지다. 부동소수 누적 오차가 표시에 새지 않게 잘라 둔다. */
+export function roundTitle(round: PokemonRound): string {
+    return round.title ?? `${round.sequence}차 공동구매`
+}
+
+/** 소수 둘째 자리까지. 부동소수 누적 오차가 표시에 새지 않게 잘라 둔다. */
 function round2(value: number): number {
     return Math.round(value * 100) / 100
 }

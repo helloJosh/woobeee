@@ -27,13 +27,15 @@ import {
 import { normalizeTree, type ScheduleIssue, type ScheduleStatus, type ScheduleTree } from "@/lib/schedule"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
 import type {
-    PokemonBoard,
-    PokemonComment,
-    PokemonExchangeRate,
+    PokemonHome,
+    PokemonHost,
     PokemonManagedProduct,
     PokemonOrder,
     PokemonOrderDetail,
     PokemonOrderStatus,
+    PokemonRound,
+    PokemonRoundBoard,
+    PokemonRoundStatus,
 } from "@/lib/pokemon";
 import {describeHttpFailure} from "@/lib/errors/http-failure";
 
@@ -869,33 +871,71 @@ export interface PokemonOrderBody {
     applicantName?: string
     depositorName?: string
     donationKrw: number
-    /** 상품표에 없는 것을 위한 자유 입력 루피. 생략하면 0. */
-    extraInr?: number
+    /** 상품표에 없는 것을 위한 자유 입력 금액(차수 통화). 서버 필드명은 extraInr 로 남아 있다. */
+    extraInr: number
     memo?: string
     items: { productId: number; quantity: number }[]
 }
 
+export interface PokemonRoundBody {
+    title?: string
+    currency: string
+    rateMode: "FIXED" | "PER_ORDER"
+    /** 비우면 서버가 지금 환율을 쓴다. */
+    quotedRate?: number
+    /** 비우면 주최자 기본 계좌를 쓴다. */
+    bankAccount?: string
+    deadline?: string | null
+    memo?: string
+}
+
 export interface PokemonProductBody {
     name: string
-    priceInr: number
+    currency: string
+    price: number
     coins: number
     active: boolean
 }
 
 export const pokemonAPI = {
-    getBoard: (): Promise<PokemonBoard> =>
-        pokemonRequest<PokemonBoard>("/api/back/pokemon/board", "GET"),
+    /* 첫 화면 · 주최자 */
+    getHome: (): Promise<PokemonHome> =>
+        pokemonRequest<PokemonHome>("/api/back/pokemon/home", "GET"),
+
+    getHost: (handle: string): Promise<PokemonHost> =>
+        pokemonRequest<PokemonHost>(`/api/back/pokemon/hosts/${encodeURIComponent(handle)}`, "GET"),
+
+    claimHandle: (handle: string): Promise<PokemonHost> =>
+        pokemonRequest<PokemonHost>("/api/back/pokemon/hosts", "POST", { handle }),
+
+    /** 주최자 설정 — 기본 입금 계좌. 차수를 열 때 자동으로 채워진다. */
+    updateHostSettings: (bankAccount: string): Promise<PokemonHost> =>
+        pokemonRequest<PokemonHost>("/api/back/pokemon/hosts/me", "PUT", { bankAccount }),
+
+    /* 차수 */
+    openRound: (body: PokemonRoundBody): Promise<PokemonRound> =>
+        pokemonRequest<PokemonRound>("/api/back/pokemon/rounds", "POST", body),
+
+    getRoundBoard: (handle: string, sequence: number): Promise<PokemonRoundBoard> =>
+        pokemonRequest<PokemonRoundBoard>(
+            `/api/back/pokemon/hosts/${encodeURIComponent(handle)}/rounds/${sequence}`, "GET"),
+
+    updateRound: (roundId: number, body: Omit<PokemonRoundBody, "currency">): Promise<PokemonRound> =>
+        pokemonRequest<PokemonRound>(`/api/back/pokemon/rounds/${roundId}`, "PUT", body),
+
+    changeRoundStatus: (roundId: number, status: PokemonRoundStatus): Promise<PokemonRound> =>
+        pokemonRequest<PokemonRound>(`/api/back/pokemon/rounds/${roundId}/status`, "PATCH", { status }),
+
+    deleteRound: (roundId: number): Promise<void> =>
+        pokemonRequest<void>(`/api/back/pokemon/rounds/${roundId}`, "DELETE"),
+
+    /* 신청서 */
+    createOrder: (roundId: number, body: PokemonOrderBody): Promise<PokemonOrder> =>
+        pokemonRequest<PokemonOrder>(`/api/back/pokemon/rounds/${roundId}/orders`, "POST", body),
 
     getOrder: (orderId: number): Promise<PokemonOrderDetail> =>
         pokemonRequest<PokemonOrderDetail>(`/api/back/pokemon/orders/${orderId}`, "GET"),
 
-    getRate: (): Promise<PokemonExchangeRate> =>
-        pokemonRequest<PokemonExchangeRate>("/api/back/pokemon/rate", "GET"),
-
-    createOrder: (body: PokemonOrderBody): Promise<PokemonOrder> =>
-        pokemonRequest<PokemonOrder>("/api/back/pokemon/orders", "POST", body),
-
-    /** 전체 교체. 금액은 서버가 수정 시점 환율로 다시 계산한다. */
     updateOrder: (orderId: number, body: PokemonOrderBody): Promise<PokemonOrder> =>
         pokemonRequest<PokemonOrder>(`/api/back/pokemon/orders/${orderId}`, "PUT", body),
 
@@ -905,13 +945,14 @@ export const pokemonAPI = {
     deleteOrder: (orderId: number): Promise<void> =>
         pokemonRequest<void>(`/api/back/pokemon/orders/${orderId}`, "DELETE"),
 
-    createComment: (orderId: number, body: { authorName?: string; content: string }): Promise<PokemonComment> =>
-        pokemonRequest<PokemonComment>(`/api/back/pokemon/orders/${orderId}/comments`, "POST", body),
+    /* 댓글 */
+    createComment: (orderId: number, body: { authorName?: string; content: string }) =>
+        pokemonRequest(`/api/back/pokemon/orders/${orderId}/comments`, "POST", body),
 
     deleteComment: (commentId: number): Promise<void> =>
         pokemonRequest<void>(`/api/back/pokemon/comments/${commentId}`, "DELETE"),
 
-    /* 상품 관리 — 운영자 전용 */
+    /* 상품 관리 — 주최자 각자의 상품표 */
     getManagedProducts: (): Promise<PokemonManagedProduct[]> =>
         pokemonRequest<PokemonManagedProduct[]>("/api/back/pokemon/products", "GET"),
 

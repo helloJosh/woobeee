@@ -11,6 +11,8 @@ import java.util.List;
 public record PokemonHomeResponse(
         List<PokemonRoundResponse> rounds,
         String myHandle,
+        /** 내 기본 입금 계좌 — 차수를 열 때 자동으로 채운다. */
+        String myBankAccount,
         boolean loggedIn,
         List<String> currencies
 ) {}

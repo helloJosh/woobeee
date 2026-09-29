@@ -27,6 +27,13 @@ public class PokemonHosts {
     @Column(nullable = false, length = 30, unique = true)
     private String handle;
 
+    /**
+     * 차수를 열 때 자동으로 채워지는 기본 계좌. 차수는 자기 계좌를 따로 들고 있으므로
+     * 여기를 고쳐도 이미 연 차수는 바뀌지 않는다 — 그 계좌로 이미 입금한 사람이 있다.
+     */
+    @Column(length = 200)
+    private String bankAccount;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -39,5 +46,10 @@ public class PokemonHosts {
 
     public static PokemonHosts claim(Long memberId, String handle) {
         return PokemonHosts.builder().memberId(memberId).handle(handle).build();
+    }
+
+    /** 주소는 바꾸지 않는다 — 바꾸면 이전 주소로 공유한 링크가 전부 죽는다. */
+    public void updateBankAccount(String bankAccount) {
+        this.bankAccount = bankAccount;
     }
 }

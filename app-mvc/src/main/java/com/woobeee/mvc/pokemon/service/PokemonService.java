@@ -18,6 +18,9 @@ public interface PokemonService {
     /** 주소 정하기. 회원당 한 번이고, 정해야 차수를 열 수 있다. */
     PokemonHostResponse claimHandle(String loginId, PokemonHandleRequest request);
 
+    /** 주최자 설정 — 기본 입금 계좌. 주소는 바꾸지 않는다. */
+    PokemonHostResponse updateHostSettings(String loginId, PokemonHostSettingsRequest request);
+
     /* ===== 차수 ===== */
 
     PokemonRoundResponse openRound(String loginId, PostPokemonRoundRequest request);
