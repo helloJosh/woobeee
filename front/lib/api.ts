@@ -26,6 +26,14 @@ import {
 } from "./types"
 import { normalizeTree, type ScheduleIssue, type ScheduleStatus, type ScheduleTree } from "@/lib/schedule"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
+import type {
+    PokemonBoard,
+    PokemonComment,
+    PokemonExchangeRate,
+    PokemonOrder,
+    PokemonOrderDetail,
+    PokemonOrderStatus,
+} from "@/lib/pokemon";
 import {describeHttpFailure} from "@/lib/errors/http-failure";
 
 // API 기본 설정
@@ -834,6 +842,66 @@ export const scheduleAPI = {
         scheduleRequest("/api/back/schedule/notification", "PUT", { webhookUrl }),
     deleteNotification: () =>
         scheduleRequest("/api/back/schedule/notification", "DELETE"),
+}
+
+/* ===== 포켓코인 공동구매 =====
+ * 조회와 신청은 공개다 — 비회원도 쓸 수 있어야 하므로 토큰이 없어도 그냥 보낸다.
+ * suppressAlert 를 켜는 이유는 game API 와 같다: 이 화면은 인라인 배너로 안내한다. */
+
+async function pokemonRequest<T>(endpoint: string, method: string, body?: unknown): Promise<T> {
+    const response = await apiRequest(
+        endpoint,
+        { method, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) },
+        true,
+        { suppressAlert: true, suppressUnauthorizedHandler: true },
+    )
+
+    const json: ApiResponse<T> = await response.json()
+    if (!isApiSuccessful(json)) {
+        throw new Error(getFriendlyErrorMessage(json.header?.message))
+    }
+    return json.data
+}
+
+export interface PokemonOrderBody {
+    /** 비회원만 쓴다. 로그인 신청이면 서버가 닉네임으로 덮는다. */
+    applicantName?: string
+    depositorName?: string
+    donationKrw: number
+    /** 상품표에 없는 것을 위한 자유 입력 루피. 생략하면 0. */
+    extraInr?: number
+    memo?: string
+    items: { productId: number; quantity: number }[]
+}
+
+export const pokemonAPI = {
+    getBoard: (): Promise<PokemonBoard> =>
+        pokemonRequest<PokemonBoard>("/api/back/pokemon/board", "GET"),
+
+    getOrder: (orderId: number): Promise<PokemonOrderDetail> =>
+        pokemonRequest<PokemonOrderDetail>(`/api/back/pokemon/orders/${orderId}`, "GET"),
+
+    getRate: (): Promise<PokemonExchangeRate> =>
+        pokemonRequest<PokemonExchangeRate>("/api/back/pokemon/rate", "GET"),
+
+    createOrder: (body: PokemonOrderBody): Promise<PokemonOrder> =>
+        pokemonRequest<PokemonOrder>("/api/back/pokemon/orders", "POST", body),
+
+    /** 전체 교체. 금액은 서버가 수정 시점 환율로 다시 계산한다. */
+    updateOrder: (orderId: number, body: PokemonOrderBody): Promise<PokemonOrder> =>
+        pokemonRequest<PokemonOrder>(`/api/back/pokemon/orders/${orderId}`, "PUT", body),
+
+    changeStatus: (orderId: number, status: PokemonOrderStatus): Promise<PokemonOrder> =>
+        pokemonRequest<PokemonOrder>(`/api/back/pokemon/orders/${orderId}/status`, "PATCH", { status }),
+
+    deleteOrder: (orderId: number): Promise<void> =>
+        pokemonRequest<void>(`/api/back/pokemon/orders/${orderId}`, "DELETE"),
+
+    createComment: (orderId: number, body: { authorName?: string; content: string }): Promise<PokemonComment> =>
+        pokemonRequest<PokemonComment>(`/api/back/pokemon/orders/${orderId}/comments`, "POST", body),
+
+    deleteComment: (commentId: number): Promise<void> =>
+        pokemonRequest<void>(`/api/back/pokemon/comments/${commentId}`, "DELETE"),
 }
 
 export const productAPI = {

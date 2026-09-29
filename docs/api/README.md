@@ -91,6 +91,36 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 본인 소유가 아니거나 존재하지 않는 리소스는 구분 없이 404 로 응답한다. FK 제약은 두지 않고
 같은 계층에서 프로젝트 간 이동 금지·깊이 제한·순환 참조·날짜 범위·색상 형식을 검증한다.
 
+### pokemon — `/api/back/pokemon`
+
+| 메서드 | 경로 | 설명 | 접근 |
+| --- | --- | --- | --- |
+| GET | `/api/back/pokemon/board` | 진행도 화면이 쓰는 단일 조회 — 현재 환율, 상품표(App Store 에서 매일 동기화, 활성 상품만), 신청서 전체(항목·댓글 포함, 최신순), 입금 계좌, 요청자의 운영자 여부(`canManage`). 항목과 댓글은 각각 `orderId IN (...)` 한 번으로 모아 온다 | 공개 |
+| GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 조회 — 신청서 한 건(항목·댓글) + 현재 환율 + 계좌 + `canManage`. 세부 페이지가 쓴다 | 공개 |
+| GET | `/api/back/pokemon/rate` | 현재 INR→KRW. Redis 캐시(TTL 1시간)를 거치고, 외부 조회 실패 시 마지막 성공값을 `stale: true` 로 내보낸다 | 공개 |
+| POST | `/api/back/pokemon/orders` | 신청서 제출. 로그인이면 회원 닉네임이 신청자명(요청 값 무시), 비회원은 `applicantName` 필수. 환율·환산액·이체액을 이 시점 값으로 행에 박는다. `extraInr` 로 상품표에 없는 금액을 직접 넣을 수 있고, 그때는 `items` 가 비어도 된다 | 공개 |
+| PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 — 항목·기부금·자유 루피·메모 전체 교체. 금액은 **수정 시점 환율**로 다시 계산되고 환율 스냅샷도 갱신된다(`settled_rate` 는 그대로) | 삭제와 같은 규칙 |
+| PATCH | `/api/back/pokemon/orders/{orderId}/status` | 진행 상태 변경. `PREPARING`(= 실제로 결제하는 단계)으로 처음 넘어갈 때 그 순간의 환율이 `settled_rate` 에 박혀 환차손익이 확정된다 | 운영자 |
+| DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 (항목·댓글 함께) | 운영자. 그 밖에는 아직 `ORDERED` 일 때만 — 회원이 낸 것은 그 회원, **비회원이 낸 것은 누구나**(주인이 없어 본인 확인이 성립하지 않는다) |
+| POST | `/api/back/pokemon/orders/{orderId}/comments` | 신청서에 댓글. 로그인이면 닉네임이 작성자, 비회원은 `authorName` 필수 | 공개 |
+| DELETE | `/api/back/pokemon/comments/{commentId}` | 댓글 삭제 | 운영자 또는 본인 |
+
+진행 상태는 `ORDERED`(주문) → `PREPARING`(준비중) → `DEPOSIT_CONFIRMED`(입금확인)
+→ `DELIVERED`(배달 완료)이고, `CANCELLED` 는 어느 단계에서든 빠져나간다.
+**준비중이 입금확인보다 앞이다** — 돈을 받기 전에 먼저 사 두는 운영 방식이기 때문이다.
+
+**운영자는 blog 의 `ROLE_ADMIN` 이 아니다.** `pokemon.manager-member-ids`(기본 `1,3`) 명단으로
+판정하며, 필터가 아니라 서비스 계층에서 본다 — 같은 경로 prefix 안에 공개 쓰기(신청·댓글)와
+운영자 전용 쓰기가 섞여 있어 `AccessTokenLoginIdHeaderFilter` 의 경로 prefix 게이팅으로는
+나눌 수 없기 때문이다.
+
+상품표는 매일 06:00(Asia/Seoul) `PokemonProductSyncService` 가 App Store 제품 페이지를 읽어
+갱신한다. 신청 항목은 상품 **id** 로 보내고, 서버가 상품표에서 가격을 읽어 금액을 만든다 —
+클라이언트가 보낸 금액은 쓰지 않는다.
+
+집계(총액·진행률·환차손익·미입금 명단)는 서버가 계산하지 않는다. 원천 데이터와 현재 환율만
+내려주고 `front/lib/pokemon.ts` 가 계산한다 — 인수 기준은 `docs/pokemon/PRD.md`.
+
 ## app-webflux (:8001)
 
 ### game — `/api/game`
