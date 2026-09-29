@@ -11,6 +11,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -25,10 +27,17 @@ import java.util.Optional;
  * 클라이언트가 보낸 loginId 헤더는 항상 제거한다 — 신뢰하면 타인 신원 위조가 된다.
  */
 @Component
+@Order(Ordered.LOWEST_PRECEDENCE - 100)
 @RequiredArgsConstructor
 public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String LOGIN_ID_HEADER = "loginId";
+    /**
+     * 같은 값을 attribute 로도 남긴다. 헤더는 아래로만 흐르는 래퍼에 붙어 있어서 <b>바깥</b>
+     * 필터가 볼 수 없는데, attribute 는 원본 요청에 붙으므로 체인이 끝난 뒤에도 읽힌다 —
+     * RequestAccessLogFilter 가 이것으로 신원을 적는다.
+     */
+    public static final String LOGIN_ID_ATTRIBUTE = "woobeee.loginId";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ADMIN_WRITE_PATH_PREFIX_POSTS = "/api/back/posts";
     private static final String ADMIN_WRITE_PATH_PREFIX_CATEGORIES = "/api/back/categories";
@@ -57,6 +66,11 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
                 .flatMap(token -> tokenStore.find(token, AuthTokenType.ACCESS))
                 .map(snapshot -> snapshot.metadata());
 
+        // 거절하기 전에 신원을 먼저 남긴다 — 누가 막혔는지가 접근 로그의 요점이다.
+        metadata.map(this::resolveLoginId)
+                .filter(StringUtils::hasText)
+                .ifPresent(loginId -> request.setAttribute(LOGIN_ID_ATTRIBUTE, loginId));
+
         if (requiresAdmin(request.getMethod(), request.getRequestURI())) {
             if (metadata.isEmpty()) {
                 writeEnvelope(response, HttpStatus.UNAUTHORIZED, UNAUTHORIZED_BODY);
@@ -70,7 +84,10 @@ public class AccessTokenLoginIdHeaderFilter extends OncePerRequestFilter {
 
         metadata.map(this::resolveLoginId)
                 .filter(StringUtils::hasText)
-                .ifPresent(loginId -> wrappedRequest.putHeader(LOGIN_ID_HEADER, loginId));
+                .ifPresent(loginId -> {
+                    wrappedRequest.putHeader(LOGIN_ID_HEADER, loginId);
+                    request.setAttribute(LOGIN_ID_ATTRIBUTE, loginId);
+                });
 
         filterChain.doFilter(wrappedRequest, response);
     }
