@@ -60,34 +60,55 @@ CREATE TABLE pokemon_rounds (
 CREATE INDEX idx_pokemon_rounds_host ON pokemon_rounds (host_member_id, sequence DESC);
 CREATE INDEX idx_pokemon_rounds_status ON pokemon_rounds (status);
 
--- 신청서는 차수에 속한다. 금액 컬럼은 통화 중립 이름으로 바꾼다 — 더 이상 루피만이 아니다.
+-- 신청서는 차수에 속한다.
 ALTER TABLE pokemon_orders ADD COLUMN round_id BIGINT REFERENCES pokemon_rounds (id);
-ALTER TABLE pokemon_orders RENAME COLUMN total_inr TO total_amount;
-ALTER TABLE pokemon_orders RENAME COLUMN extra_inr TO extra_amount;
-ALTER TABLE pokemon_order_items RENAME COLUMN unit_price_inr TO unit_price;
 
--- 환율·계좌·"준비중"·결제 환율은 차수로 올라갔다. 신청서에 남는 것은 주문/입금확인/전달완료뿐.
-ALTER TABLE pokemon_orders DROP CONSTRAINT pokemon_orders_status_check;
-UPDATE pokemon_orders SET status = 'DEPOSIT_CONFIRMED' WHERE status = 'PREPARING';
-ALTER TABLE pokemon_orders ADD CONSTRAINT pokemon_orders_status_check
-    CHECK (status IN ('ORDERED', 'DEPOSIT_CONFIRMED', 'DELIVERED', 'CANCELLED'));
-ALTER TABLE pokemon_orders DROP COLUMN settled_rate;
-ALTER TABLE pokemon_orders DROP COLUMN settled_at;
-
--- 차수가 생기기 전에 들어온 신청서가 있으면 "0차" 로 묶어 옮긴다. 차수 없이 떠 있는 신청서를
--- 허용하면 조회·집계마다 NULL 분기가 생기므로, 하나로 몰아넣고 round_id 를 NOT NULL 로 만든다.
+-- 차수가 생기기 전에 들어온 신청서를 "이전 신청서" 차수 하나로 묶는다.
+--
+-- 이 블록은 컬럼 이름을 바꾸거나 지우기 **전에** 돌아야 한다. 신청서가 각자 들고 있던
+-- settled_rate 를 차수로 옮겨야 하는데, 먼저 DROP 하면 옮길 값이 이미 없다.
 DO $$
-DECLARE legacy_id BIGINT;
+DECLARE
+    -- 차수가 없던 시절의 공동구매는 운영자가 굴렸다.
+    legacy_host  BIGINT := 1;
+    legacy_id    BIGINT;
+    legacy_handle VARCHAR(30);
+    carried_rate NUMERIC(14, 6);
+    carried_at   TIMESTAMP(6);
+    legacy_status VARCHAR(20);
 BEGIN
     IF EXISTS (SELECT 1 FROM pokemon_orders WHERE round_id IS NULL) THEN
+        -- 결제 환율을 차수 하나로 모은다. 총액 가중평균이라 합계가 그대로 보존된다
+        -- (단순 평균은 큰 신청서를 과소평가해 환차손익이 어긋난다).
+        SELECT SUM(settled_rate * total_inr) / NULLIF(SUM(total_inr), 0), MAX(settled_at)
+          INTO carried_rate, carried_at
+          FROM pokemon_orders
+         WHERE round_id IS NULL AND settled_rate IS NOT NULL;
+
+        -- 결제까지 갔던 흔적이 있으면 구매완료, 아니면 마감으로 둔다. 배달까지 끝났는지는
+        -- 알 수 없으므로 단정하지 않고 주최자가 직접 올리게 한다.
+        legacy_status := CASE WHEN carried_rate IS NULL THEN 'CLOSED' ELSE 'PURCHASED' END;
+
+        -- 주최자에게 주소가 없으면 차수 URL(/pokemon/{handle}/{n})이 만들어지지 않아
+        -- 옮긴 신청서에 영영 닿지 못한다. 없으면 여기서 만들어 준다.
+        SELECT handle INTO legacy_handle FROM pokemon_hosts WHERE member_id = legacy_host;
+        IF legacy_handle IS NULL THEN
+            INSERT INTO pokemon_hosts (member_id, handle, created_at)
+            VALUES (legacy_host, 'host-' || legacy_host, now());
+        END IF;
+
         INSERT INTO pokemon_rounds (host_member_id, sequence, title, currency, rate_mode,
-                                    quoted_rate, quoted_at, bank_account, status, created_at)
-        SELECT 1, 1, '이전 신청서', 'INR', 'PER_ORDER',
-               -- 차수가 없던 시절의 신청서는 각자 환율을 들고 있었다. 대표값으로 평균을 쓰되
-               -- 신청서의 quoted_rate 는 그대로 두므로 금액은 흔들리지 않는다.
+                                    quoted_rate, quoted_at, bank_account, status,
+                                    settled_rate, settled_at, memo, created_at)
+        SELECT legacy_host, 1, '이전 신청서', 'INR',
+               -- 신청서마다 환율이 달랐으므로 PER_ORDER 다. 각 신청서의 quoted_rate 를
+               -- 그대로 쓰게 되어 이미 알려 준 이체 금액이 흔들리지 않는다.
+               'PER_ORDER',
                COALESCE(AVG(quoted_rate), 1), now(),
-               '이전 신청서 — 계좌 정보 없음', 'DELIVERED', now()
-        FROM pokemon_orders WHERE round_id IS NULL
+               '이전 신청서 — 주최자가 계좌를 채워 주세요', legacy_status,
+               carried_rate, carried_at,
+               '차수 기능이 생기기 전에 들어온 신청서를 옮긴 것입니다.', now()
+          FROM pokemon_orders WHERE round_id IS NULL
         RETURNING id INTO legacy_id;
 
         UPDATE pokemon_orders SET round_id = legacy_id WHERE round_id IS NULL;
@@ -95,5 +116,19 @@ BEGIN
 END $$;
 
 ALTER TABLE pokemon_orders ALTER COLUMN round_id SET NOT NULL;
-
 CREATE INDEX idx_pokemon_orders_round ON pokemon_orders (round_id);
+
+-- 금액 컬럼은 통화 중립 이름으로 바꾼다 — 더 이상 루피만이 아니다. 이름만 바뀌고 값은 그대로다.
+ALTER TABLE pokemon_orders RENAME COLUMN total_inr TO total_amount;
+ALTER TABLE pokemon_orders RENAME COLUMN extra_inr TO extra_amount;
+ALTER TABLE pokemon_order_items RENAME COLUMN unit_price_inr TO unit_price;
+
+-- "준비중" 과 결제 환율은 차수로 올라갔다. 신청서에 남는 것은 주문/입금확인/전달완료뿐이다.
+ALTER TABLE pokemon_orders DROP CONSTRAINT pokemon_orders_status_check;
+UPDATE pokemon_orders SET status = 'DEPOSIT_CONFIRMED' WHERE status = 'PREPARING';
+ALTER TABLE pokemon_orders ADD CONSTRAINT pokemon_orders_status_check
+    CHECK (status IN ('ORDERED', 'DEPOSIT_CONFIRMED', 'DELIVERED', 'CANCELLED'));
+
+-- 위 블록이 차수로 옮겨 놓은 뒤라 지워도 잃는 것이 없다.
+ALTER TABLE pokemon_orders DROP COLUMN settled_rate;
+ALTER TABLE pokemon_orders DROP COLUMN settled_at;
