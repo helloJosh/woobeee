@@ -28,11 +28,19 @@ public class PokemonProducts {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 200, unique = true)
+    /** 상품표는 주최자마다 따로다 — (주최자, 이름, 통화)가 유일하다. */
+    @Column(nullable = false)
+    private Long hostMemberId;
+
+    @Column(nullable = false, length = 200)
     private String name;
 
+    /** ISO 4217. 같은 이름이라도 스토어가 다르면 통화와 가격이 다르다 — (이름, 통화)가 유일하다. */
+    @Column(nullable = false, length = 3)
+    private String currency;
+
     @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal priceInr;
+    private BigDecimal price;
 
     /** 이름에서 뽑은 포켓코인 수. 이벤트 티켓처럼 코인이 아닌 상품은 0. */
     @Column(nullable = false)
@@ -55,10 +63,12 @@ public class PokemonProducts {
     private LocalDateTime updatedAt;
 
     @Builder
-    private PokemonProducts(String name, BigDecimal priceInr, int coins, int sortOrder,
+    private PokemonProducts(Long hostMemberId, String name, String currency, BigDecimal price, int coins, int sortOrder,
                             boolean active, LocalDateTime firstSeenAt, LocalDateTime lastSeenAt) {
+        this.hostMemberId = hostMemberId;
         this.name = name;
-        this.priceInr = priceInr;
+        this.currency = currency;
+        this.price = price;
         this.coins = coins;
         this.sortOrder = sortOrder;
         this.active = active;
@@ -66,18 +76,20 @@ public class PokemonProducts {
         this.lastSeenAt = lastSeenAt;
     }
 
-    public static PokemonProducts create(String name, BigDecimal priceInr, int coins,
+    public static PokemonProducts create(Long hostMemberId, String name, String currency, BigDecimal price, int coins,
                                          int sortOrder, LocalDateTime now) {
         return PokemonProducts.builder()
-                .name(name).priceInr(priceInr).coins(coins).sortOrder(sortOrder)
+                .hostMemberId(hostMemberId).name(name).currency(currency).price(price).coins(coins).sortOrder(sortOrder)
                 .active(true).firstSeenAt(now).lastSeenAt(now)
                 .build();
     }
 
-    public void update(String name, BigDecimal priceInr, int coins, boolean active,
+    public void update(String name, String currency, BigDecimal price, int coins, boolean active,
                        LocalDateTime now) {
+        this.hostMemberId = hostMemberId;
         this.name = name;
-        this.priceInr = priceInr;
+        this.currency = currency;
+        this.price = price;
         this.coins = coins;
         this.active = active;
         this.lastSeenAt = now;

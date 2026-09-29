@@ -149,7 +149,7 @@ docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test 
 
 - app-mvc: `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 - app-webflux: `R2DBC_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (기보 업로드와 presign 에 쓴다 — 미설정이면 조용히 기본 버킷으로 간다)
-- app-mvc (pokemon, 선택): `POKEMON_BANK_ACCOUNT`, `POKEMON_MANAGER_MEMBER_IDS`(기본 `1,3`), `POKEMON_RATE_URL`, `POKEMON_RATE_CACHE_TTL`
+- app-mvc (pokemon, 선택): `POKEMON_BANK_ACCOUNT`, `POKEMON_MANAGER_MEMBER_IDS`(기본 `1,3`), `POKEMON_RATE_URL_TEMPLATE`, `POKEMON_RATE_CACHE_TTL`, `POKEMON_CURRENCIES`(기본 `INR,USD,JPY`)
 - front: `MVC_ORIGIN`, `WEBFLUX_ORIGIN`, `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_WS_BASE_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`front/.env.local.example` 참조)
 
 ## API 엔드포인트
@@ -162,7 +162,7 @@ docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test 
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/tags`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/태그/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용, 태그는 글쓰기 안에서만 생성 |
 | app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
-| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 프론트는 `/pokemon` 목록 → `/pokemon/new` 작성 → `/pokemon/{id}` 세부(진행도·금액·환차·댓글) → `/{id}/edit` 수정. 조회/신청/댓글은 **공개**(비회원 가능), 진행 상태 변경은 `pokemon.manager-member-ids` 명단 전용. 상품표는 운영자가 `/pokemon/products` 에서 직접 관리 |
+| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 주최자가 **차수**(1차·2차·3차)를 열고 친구들이 신청한다. `/pokemon/{handle}/{sequence}` 로 주최자별 URL. 통화(INR/USD/JPY)·환율 방식·계좌는 차수가, 상품표는 주최자마다 따로 든다. 조회·신청·댓글은 **공개**(비회원 가능) |
 | app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
 ## 안전 수칙

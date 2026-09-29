@@ -33,6 +33,22 @@ public enum PokemonErrorCode {
 
     RATE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE, "pokemon_rateUnavailable",
             "Exchange rate is temporarily unavailable"),
+    UNSUPPORTED_CURRENCY(HttpStatus.BAD_REQUEST, "pokemon_unsupportedCurrency",
+            "That currency is not available"),
+
+    ROUND_NOT_FOUND(HttpStatus.NOT_FOUND, "pokemon_roundNotFound", "Round not found"),
+    NOT_THE_HOST(HttpStatus.FORBIDDEN, "pokemon_notTheHost",
+            "Only the host of this round can do that"),
+    ROUND_CLOSED(HttpStatus.BAD_REQUEST, "pokemon_roundClosed",
+            "This round is no longer accepting requests"),
+    ROUND_HAS_ORDERS(HttpStatus.BAD_REQUEST, "pokemon_roundHasOrders",
+            "A round with requests cannot be deleted — cancel it instead"),
+    HANDLE_TAKEN(HttpStatus.BAD_REQUEST, "pokemon_handleTaken", "That address is already taken"),
+    INVALID_HANDLE(HttpStatus.BAD_REQUEST, "pokemon_invalidHandle",
+            "The address may use lowercase letters, digits and hyphens only"),
+    HOST_REQUIRED(HttpStatus.BAD_REQUEST, "pokemon_hostRequired",
+            "Pick your address before opening a round"),
+    LOGIN_REQUIRED(HttpStatus.UNAUTHORIZED, "pokemon_loginRequired", "Please log in first"),
 
     BAD_REQUEST(HttpStatus.BAD_REQUEST, "pokemon_badRequest", "Malformed request"),
     UNEXPECTED(HttpStatus.INTERNAL_SERVER_ERROR, "pokemon_unexpected", "Unexpected server error");

@@ -20,6 +20,10 @@ public class PokemonOrders {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** 어느 차수의 신청인가. 환율·계좌·통화는 차수가 들고 있다. */
+    @Column(nullable = false)
+    private Long roundId;
+
     /** 로그인 신청이면 회원 id, 비회원 신청이면 null. */
     private Long memberId;
 
@@ -33,13 +37,13 @@ public class PokemonOrders {
     @Column(nullable = false, length = 20)
     private PokemonOrderStatus status;
 
-    /** 상품 합계 + {@link #extraInr}. 이체 금액의 근거가 되는 루피 총액이다. */
+    /** 상품 합계 + {@link #extraAmount}. 차수 통화 기준의 총액이다. */
     @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal totalInr;
+    private BigDecimal totalAmount;
 
-    /** 상품표에 없는 것을 위한 자유 입력 루피. 없으면 0. */
+    /** 상품표에 없는 것을 위한 자유 입력 금액(차수 통화). 없으면 0. */
     @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal extraInr;
+    private BigDecimal extraAmount;
 
     @Column(nullable = false, precision = 14, scale = 6)
     private BigDecimal quotedRate;
@@ -56,12 +60,6 @@ public class PokemonOrders {
     @Column(nullable = false)
     private long transferKrw;
 
-    /** 실제 결제 시점의 환율. PREPARING 으로 처음 넘어갈 때 한 번 박히고 이후 환차손익이 확정된다. */
-    @Column(precision = 14, scale = 6)
-    private BigDecimal settledRate;
-
-    @Column
-    private LocalDateTime settledAt;
 
     @Column(length = 500)
     private String memo;
@@ -74,17 +72,18 @@ public class PokemonOrders {
     private LocalDateTime updatedAt;
 
     @Builder
-    private PokemonOrders(Long memberId, String applicantName, String depositorName,
-                          PokemonOrderStatus status, BigDecimal totalInr, BigDecimal extraInr,
+    private PokemonOrders(Long roundId, Long memberId, String applicantName, String depositorName,
+                          PokemonOrderStatus status, BigDecimal totalAmount, BigDecimal extraAmount,
                           BigDecimal quotedRate,
                           LocalDateTime quotedAt, long itemsKrw, long donationKrw, long transferKrw,
                           String memo) {
+        this.roundId = roundId;
         this.memberId = memberId;
         this.applicantName = applicantName;
         this.depositorName = depositorName;
         this.status = status;
-        this.totalInr = totalInr;
-        this.extraInr = extraInr;
+        this.totalAmount = totalAmount;
+        this.extraAmount = extraAmount;
         this.quotedRate = quotedRate;
         this.quotedAt = quotedAt;
         this.itemsKrw = itemsKrw;
@@ -93,17 +92,18 @@ public class PokemonOrders {
         this.memo = memo;
     }
 
-    public static PokemonOrders create(Long memberId, String applicantName, String depositorName,
-                                       BigDecimal totalInr, BigDecimal extraInr,
+    public static PokemonOrders create(Long roundId, Long memberId, String applicantName, String depositorName,
+                                       BigDecimal totalAmount, BigDecimal extraAmount,
                                        BigDecimal quotedRate, LocalDateTime quotedAt,
                                        long itemsKrw, long donationKrw, String memo) {
         return PokemonOrders.builder()
+                .roundId(roundId)
                 .memberId(memberId)
                 .applicantName(applicantName)
                 .depositorName(depositorName)
                 .status(PokemonOrderStatus.ORDERED)
-                .totalInr(totalInr)
-                .extraInr(extraInr)
+                .totalAmount(totalAmount)
+                .extraAmount(extraAmount)
                 .quotedRate(quotedRate)
                 .quotedAt(quotedAt)
                 .itemsKrw(itemsKrw)
@@ -114,23 +114,18 @@ public class PokemonOrders {
     }
 
     /**
-     * PREPARING(= 실제로 결제하는 단계)으로 <b>처음</b> 넘어갈 때만 결제 환율을 박는다. 되돌렸다가 다시 넘어가도
-     * 최초 값을 유지한다 — 확정된 손익이 상태를 만질 때마다 움직이면 근거가 못 된다.
-     */
-    /**
      * 수정 — 금액을 통째로 다시 세운다. 주문 내용이 바뀌면 이체할 금액도 바뀌므로 환율
      * 스냅샷도 함께 갱신한다. 그래야 {@code quotedRate} 가 계속 "이 금액의 근거" 로 남는다.
      *
-     * <p>{@code settledRate} 는 건드리지 않는다 — 이미 결제한 건의 확정 손익은 나중에
-     * 신청서를 고쳤다고 움직이면 안 된다.
+     * <p>환차손익은 차수가 확정하므로(차수의 {@code settledRate}) 여기서는 신경 쓰지 않는다.
      */
-    public void reprice(String applicantName, String depositorName, BigDecimal totalInr,
-                        BigDecimal extraInr, BigDecimal quotedRate, LocalDateTime quotedAt,
+    public void reprice(String applicantName, String depositorName, BigDecimal totalAmount,
+                        BigDecimal extraAmount, BigDecimal quotedRate, LocalDateTime quotedAt,
                         long itemsKrw, long donationKrw, String memo) {
         this.applicantName = applicantName;
         this.depositorName = depositorName;
-        this.totalInr = totalInr;
-        this.extraInr = extraInr;
+        this.totalAmount = totalAmount;
+        this.extraAmount = extraAmount;
         this.quotedRate = quotedRate;
         this.quotedAt = quotedAt;
         this.itemsKrw = itemsKrw;
@@ -139,12 +134,9 @@ public class PokemonOrders {
         this.memo = memo;
     }
 
-    public void changeStatus(PokemonOrderStatus next, BigDecimal currentRate, LocalDateTime now) {
+    /** 환율을 박지 않는다 — 결제는 차수 단위라 환차 확정도 차수가 한다. */
+    public void changeStatus(PokemonOrderStatus next) {
         this.status = next;
-        if (next == PokemonOrderStatus.PREPARING && settledRate == null) {
-            this.settledRate = currentRate;
-            this.settledAt = now;
-        }
     }
 
     /**

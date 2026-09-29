@@ -30,20 +30,20 @@ public class PokemonOrderItems {
     @Column(nullable = false)
     private int coins;
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    private BigDecimal unitPriceInr;
+    @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
+    private BigDecimal unitPrice;
 
     @Column(nullable = false)
     private int quantity;
 
     @Builder
     private PokemonOrderItems(Long orderId, Long productId, String productName, int coins,
-                              BigDecimal unitPriceInr, int quantity) {
+                              BigDecimal unitPrice, int quantity) {
         this.orderId = orderId;
         this.productId = productId;
         this.productName = productName;
         this.coins = coins;
-        this.unitPriceInr = unitPriceInr;
+        this.unitPrice = unitPrice;
         this.quantity = quantity;
     }
 
@@ -53,7 +53,7 @@ public class PokemonOrderItems {
                 .productId(product.getId())
                 .productName(product.getName())
                 .coins(product.getCoins())
-                .unitPriceInr(product.getPriceInr())
+                .unitPrice(product.getPrice())
                 .quantity(quantity)
                 .build();
     }

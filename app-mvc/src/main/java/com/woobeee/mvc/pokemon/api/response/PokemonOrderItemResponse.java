@@ -8,13 +8,13 @@ public record PokemonOrderItemResponse(
         Long productId,
         String productName,
         int coins,
-        BigDecimal unitPriceInr,
+        BigDecimal unitPrice,
         int quantity
 ) {
 
     public static PokemonOrderItemResponse from(PokemonOrderItems item) {
         return new PokemonOrderItemResponse(
                 item.getProductId(), item.getProductName(), item.getCoins(),
-                item.getUnitPriceInr(), item.getQuantity());
+                item.getUnitPrice(), item.getQuantity());
     }
 }

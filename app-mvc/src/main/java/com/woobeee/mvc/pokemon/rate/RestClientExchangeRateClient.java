@@ -30,32 +30,27 @@ public class RestClientExchangeRateClient implements ExchangeRateClient {
 
     @Override
     @SuppressWarnings("unchecked")
-    public Optional<ExchangeRate> fetchInrToKrw() {
+    public Optional<ExchangeRate> fetchToKrw(String currency) {
         try {
             Map<String, Object> body = restClient.get()
-                    .uri(properties.url())
+                    .uri(properties.urlFor(currency))
                     .retrieve()
                     .body(Map.class);
-            if (body == null) {
+            if (body == null || !(body.get("rates") instanceof Map<?, ?> rates)) {
                 return Optional.empty();
             }
-
-            Object rates = body.get("rates");
-            if (!(rates instanceof Map<?, ?> rateMap)) {
-                return Optional.empty();
-            }
-            Object krw = rateMap.get(KRW);
-            if (!(krw instanceof Number rate) || rate.doubleValue() <= 0) {
+            if (!(rates.get(KRW) instanceof Number rate) || rate.doubleValue() <= 0) {
                 return Optional.empty();
             }
 
             return Optional.of(new ExchangeRate(
+                    currency,
                     BigDecimal.valueOf(rate.doubleValue()),
                     updatedAt(body.get("time_last_update_unix")),
                     false));
         } catch (Exception ex) {
-            // 환율 제공자가 죽어도 신청 페이지는 마지막 값으로 계속 돌아야 한다.
-            log.warn("exchange rate lookup failed: {}", ex.toString());
+            // 환율 제공자가 죽어도 화면은 마지막 값으로 계속 돌아야 한다.
+            log.warn("exchange rate lookup failed for {}: {}", currency, ex.toString());
             return Optional.empty();
         }
     }

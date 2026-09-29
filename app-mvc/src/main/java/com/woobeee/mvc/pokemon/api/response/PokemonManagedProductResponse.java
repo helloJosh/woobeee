@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
 public record PokemonManagedProductResponse(
         Long id,
         String name,
-        BigDecimal priceInr,
+        String currency,
+        BigDecimal price,
         int coins,
         int sortOrder,
         boolean active,
@@ -24,7 +25,8 @@ public record PokemonManagedProductResponse(
 
     public static PokemonManagedProductResponse of(PokemonProducts product, boolean inUse) {
         return new PokemonManagedProductResponse(
-                product.getId(), product.getName(), product.getPriceInr(), product.getCoins(),
+                product.getId(), product.getName(), product.getCurrency(), product.getPrice(),
+                product.getCoins(),
                 product.getSortOrder(), product.isActive(), inUse, product.getUpdatedAt());
     }
 }

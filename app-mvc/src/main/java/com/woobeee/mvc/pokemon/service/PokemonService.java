@@ -1,45 +1,57 @@
 package com.woobeee.mvc.pokemon.service;
 
-import com.woobeee.mvc.pokemon.api.request.PatchPokemonOrderStatusRequest;
-import com.woobeee.mvc.pokemon.api.request.PokemonProductRequest;
-import com.woobeee.mvc.pokemon.api.request.PostPokemonCommentRequest;
-import com.woobeee.mvc.pokemon.api.request.PostPokemonOrderRequest;
-import com.woobeee.mvc.pokemon.api.request.PutPokemonOrderRequest;
-import com.woobeee.mvc.pokemon.api.response.ExchangeRateResponse;
-import com.woobeee.mvc.pokemon.api.response.PokemonBoardResponse;
-import com.woobeee.mvc.pokemon.api.response.PokemonCommentResponse;
-import com.woobeee.mvc.pokemon.api.response.PokemonManagedProductResponse;
-import com.woobeee.mvc.pokemon.api.response.PokemonOrderDetailResponse;
-import com.woobeee.mvc.pokemon.api.response.PokemonOrderResponse;
+import com.woobeee.mvc.pokemon.api.request.*;
+import com.woobeee.mvc.pokemon.api.response.*;
 
 import java.util.List;
 
 public interface PokemonService {
 
-    /** 진행도 페이지가 쓰는 단일 조회 — 환율·상품표·신청서 전체(댓글 포함)·계좌·운영자 여부. */
-    PokemonBoardResponse getBoard(String loginId);
+    /* ===== 첫 화면 · 주최자 ===== */
 
-    /** 세부 페이지용 단건 조회 — 목록과 같은 부속(환율·계좌·운영자 여부)을 함께 준다. */
+    /** {@code /pokemon} — 최근에 열린 차수들과 내 주소. */
+    PokemonHomeResponse getHome(String loginId);
+
+    /** {@code /pokemon/{handle}} — 한 주최자와 그가 연 차수들. */
+    PokemonHostResponse getHost(String loginId, String handle);
+
+    /** 주소 정하기. 회원당 한 번이고, 정해야 차수를 열 수 있다. */
+    PokemonHostResponse claimHandle(String loginId, PokemonHandleRequest request);
+
+    /* ===== 차수 ===== */
+
+    PokemonRoundResponse openRound(String loginId, PostPokemonRoundRequest request);
+
+    /** {@code /pokemon/{handle}/{sequence}} — 차수·상품표·신청서 전체. */
+    PokemonRoundBoardResponse getRoundBoard(String loginId, String handle, int sequence);
+
+    PokemonRoundResponse updateRound(String loginId, Long roundId, PutPokemonRoundRequest request);
+
+    PokemonRoundResponse changeRoundStatus(String loginId, Long roundId,
+                                           PatchPokemonRoundStatusRequest request);
+
+    void deleteRound(String loginId, Long roundId);
+
+    /* ===== 신청서 ===== */
+
     PokemonOrderDetailResponse getOrder(String loginId, Long orderId);
 
-    ExchangeRateResponse getRate();
+    PokemonOrderResponse createOrder(String loginId, Long roundId, PostPokemonOrderRequest request);
 
-    PokemonOrderResponse createOrder(String loginId, PostPokemonOrderRequest request);
-
-    /** 전체 교체. 금액은 수정 시점 환율로 다시 계산된다. */
     PokemonOrderResponse updateOrder(String loginId, Long orderId, PutPokemonOrderRequest request);
 
     PokemonOrderResponse changeStatus(String loginId, Long orderId, PatchPokemonOrderStatusRequest request);
 
     void deleteOrder(String loginId, Long orderId);
 
+    /* ===== 댓글 ===== */
+
     PokemonCommentResponse createComment(String loginId, Long orderId, PostPokemonCommentRequest request);
 
     void deleteComment(String loginId, Long commentId);
 
-    /* ===== 상품 관리 (운영자 전용) ===== */
+    /* ===== 상품 관리 (주최자 각자의 상품표) ===== */
 
-    /** 내려간 것까지 전부. 신청 화면의 상품표와 달리 관리용이다. */
     List<PokemonManagedProductResponse> getManagedProducts(String loginId);
 
     PokemonManagedProductResponse createProduct(String loginId, PokemonProductRequest request);

@@ -1,22 +1,17 @@
 package com.woobeee.mvc.pokemon.entity;
 
 /**
- * 신청서의 진행 단계. 코인 지급은 수동이라 상태만 관리한다.
+ * 신청서 한 건의 진행 단계. <b>개인별로 다른 것</b>만 여기 있다 — 이 사람이 돈을 냈는가,
+ * 받았는가. 주최자가 전체에 대해 하는 일(마감·결제·수령)은 {@link PokemonRoundStatus} 다.
  *
- * <p>ORDERED -> PREPARING -> DEPOSIT_CONFIRMED -> DELIVERED 가 정상 경로이고,
- * CANCELLED 는 어느 단계에서든 갈 수 있다.
- *
- * <p>준비중이 입금확인보다 <b>앞</b>이다 — 돈을 받기 전에 먼저 사 두는 운영 방식이기 때문이다.
- * 그래서 환차손익도 준비중으로 넘어갈 때 확정된다(그때가 실제로 돈을 쓰는 시점이다).
+ * <p>ORDERED -> DEPOSIT_CONFIRMED -> DELIVERED 가 정상 경로이고, CANCELLED 는 어디서든 갈 수 있다.
  */
 public enum PokemonOrderStatus {
-    /** 신청서만 들어온 상태. */
+    /** 신청서만 들어온 상태. 입금 대기. */
     ORDERED,
-    /** 인도 스토어에서 결제하고 물건을 준비하는 중 — 환차손익이 여기서 확정된다. */
-    PREPARING,
-    /** 계좌 입금을 확인했다. */
+    /** 이 사람의 입금을 확인했다. */
     DEPOSIT_CONFIRMED,
-    /** 코인이 신청자 계정에 들어갔다. */
+    /** 이 사람에게 전달을 마쳤다. */
     DELIVERED,
     /** 취소. 집계에서 제외한다. */
     CANCELLED;

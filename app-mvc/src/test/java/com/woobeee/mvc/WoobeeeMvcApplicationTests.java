@@ -13,7 +13,9 @@ import com.woobeee.mvc.blog.repository.TagRepository;
 import com.woobeee.mvc.pokemon.repository.PokemonOrderCommentRepository;
 import com.woobeee.mvc.pokemon.repository.PokemonOrderItemRepository;
 import com.woobeee.mvc.pokemon.repository.PokemonOrderRepository;
+import com.woobeee.mvc.pokemon.repository.PokemonHostRepository;
 import com.woobeee.mvc.pokemon.repository.PokemonProductRepository;
+import com.woobeee.mvc.pokemon.repository.PokemonRoundRepository;
 import com.woobeee.mvc.schedule.repository.MilestoneRepository;
 import com.woobeee.mvc.schedule.repository.ProjectRepository;
 import com.woobeee.mvc.schedule.repository.TaskIssueRepository;
@@ -88,6 +90,12 @@ class WoobeeeMvcApplicationTests {
 
     @MockitoBean
     private PokemonProductRepository pokemonProductRepository;
+
+    @MockitoBean
+    private PokemonRoundRepository pokemonRoundRepository;
+
+    @MockitoBean
+    private PokemonHostRepository pokemonHostRepository;
 
     @Test
     void contextLoads() {

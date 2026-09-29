@@ -7,8 +7,12 @@
 모두가 볼 수 있게 한다.
 
 - 백엔드: app-mvc `com.woobeee.mvc.pokemon`, 베이스 경로 `/api/back/pokemon`
-- 프론트: `/pokemon` 목록 → `/pokemon/new` 작성 → `/pokemon/{orderId}` 세부(진행도·금액·환차·댓글)
-  → `/pokemon/{orderId}/edit` 수정. 작성과 수정은 `components/pokemon/order-form.tsx` 한 벌을 함께 쓴다
+- **차수(1차·2차·3차) 단위로 연다.** 여는 사람이 그 차수의 주최자이고 URL 이 갈린다:
+  `/pokemon` → `/pokemon/{handle}` → `/pokemon/{handle}/{sequence}`
+- **통화를 차수가 고른다**(INR/USD/JPY, 설정으로 늘린다). 상품표도 **주최자마다 따로**라
+  (주최자, 이름, 통화)가 유일하다 — 스토어가 다르면 가격이 다르고, 주최자끼리 서로의 상품을
+  건드리면 안 된다
+- **환율을 어떻게 잡을지 주최자가 고른다**: `FIXED`(차수 환율 하나로) 또는 `PER_ORDER`(신청마다)
 - **상품표는 운영자가 직접 관리한다** (`/pokemon/products`). 코드가 아니라 DB 에 있으므로
   가격도 구성도 배포 없이 바뀐다. 한때 App Store 의 IAP 목록을 긁었으나, 거기에는 패스가
   `Event Pass Deluxe` 같은 자리표시 이름으로만 떠서 인게임 상점과 맞지 않아 걷어냈다
@@ -34,9 +38,9 @@
 | POKEMON-AC-05 | 신청 뒤 환율이 움직임 | 신청 행의 `quoted_rate`/`quoted_at` 은 바뀌지 않는다. 이체 금액의 근거이므로 조회 때 다시 계산하지 않는다 |
 | POKEMON-AC-06 | 환율 조회 | Redis 신선값(TTL 1시간) → 없으면 외부 조회 → 실패하면 마지막 성공값을 `stale: true` 로 → 그것도 없으면 503 + `pokemon_rateUnavailable`. 환율을 모른 채 추정값을 만들지 않는다 |
 | POKEMON-AC-07 | 로그인/비회원 신청 | 로그인이면 회원 닉네임이 신청자명이 된다(요청 값 무시 — 남의 이름을 적을 수 없다). 비회원은 이름 필수, 없으면 400 + `pokemon_nameRequired` |
-| POKEMON-AC-08 | 진행 상태 | `ORDERED`(주문) → `PREPARING`(준비중) → `DEPOSIT_CONFIRMED`(입금확인) → `DELIVERED`(배달 완료), 그리고 `CANCELLED`. **준비중이 입금확인보다 앞이다** — 돈을 받기 전에 먼저 사 두는 운영 방식이기 때문이다. 취소는 금액·코인·진행도 집계에서 빠진다 |
+| POKEMON-AC-08 | 진행 상태 | **차수**: `OPEN`(모집중) → `CLOSED`(마감) → `PURCHASED`(구매완료) → `DELIVERED`(배달완료) + `CANCELLED`. **신청서**: `ORDERED`(주문) → `DEPOSIT_CONFIRMED`(입금확인) → `DELIVERED`(전달완료) + `CANCELLED`. 주최자가 전체에 대해 하는 일은 차수가, 개인별로 다른 것(입금)은 신청서가 든다 |
 | POKEMON-AC-09 | 운영자가 아닌 사람이 상태 변경 시도 | 403 + `pokemon_managerRequired`. 운영자 여부는 `PokemonProperties.managerMemberIds` 명단으로 판정하고, 화면은 서버가 준 `canManage` 로만 조작 UI 를 그린다 |
-| POKEMON-AC-10 | `PREPARING` 으로 **처음** 넘어감 | 실제로 결제하는 단계이므로 그 순간의 환율이 `settled_rate` 에 박힌다. 상태를 되돌렸다 다시 넘겨도 최초 값을 유지한다 — 확정된 손익이 상태를 만질 때마다 움직이면 근거가 못 된다 |
+| POKEMON-AC-10 | 환율 확정 | 차수가 `PURCHASED` 로 **처음** 넘어갈 때 그 순간 환율이 `settled_rate` 에 박힌다. 되돌렸다 다시 넘어가도 최초 값을 유지한다 — 확정된 손익이 상태를 만질 때마다 움직이면 근거가 못 된다 |
 | POKEMON-AC-11 | 환차손익 | **신청서마다** 낸다 — `받아 둔 상품값 − round(루피합계 × 기준환율)`. 기준환율은 확정 건이면 `settled_rate`, 아니면 현재 환율이다. 양수면 남고 음수면 모자란다. **기부금은 섞지 않는다**(환율과 무관한 순수 이득이라 섞으면 환차가 안 보인다). 목록 전체의 환차 합계는 두지 않는다 |
 | POKEMON-AC-12 | 신청서 삭제 | 운영자는 언제든. **회원이 낸 신청서는 그 회원만**(남이 시도하면 403 + `pokemon_notYours`). **비회원이 낸 신청서는 주인이 없으므로 누구나** — 본인 확인 수단이 없는데 막아 두면 잘못 낸 신청서를 아무도 거두지 못한다. 단 준비가 시작된 뒤로는 어느 쪽이든 운영자만(400 + `pokemon_alreadySettled`) |
 | POKEMON-AC-13 | 신청서 댓글 | 누구나(비회원 포함) 달 수 있다. 삭제는 운영자이거나 본인이 쓴 댓글만 — 작성자 회원 id 를 내보내지 않고 서버가 `mine` 으로 판단해 내려준다 |
@@ -51,6 +55,11 @@
 | POKEMON-AC-22 | 내려간 상품 신청 | 비활성 상품이나 없는 id 로 신청하면 404 + `pokemon_productNotFound`. 가격은 요청이 아니라 상품표에서 읽는다 — 클라이언트가 보낸 금액은 믿지 않는다. 상품 가격을 고쳐도 **과거 신청서는 움직이지 않는다**(항목이 당시 단가를 스냅샷으로 들고 있다) |
 | POKEMON-AC-23 | 신청서 수정 | 항목·기부금·자유 루피·메모를 **전체 교체**한다. 금액은 **수정 시점 환율**로 다시 계산되고 `quoted_rate`/`quoted_at` 도 함께 갱신된다 — 주문 내용이 바뀌면 이체할 금액도 바뀌므로 옛 환율이 더 이상 근거가 아니다. `settled_rate` 는 건드리지 않는다(이미 결제한 건의 확정 손익은 나중에 고쳤다고 움직이면 안 된다). 권한은 삭제와 같은 규칙이다 |
 | POKEMON-AC-24 | 상품 입력 검증 | 이름 필수(200자), 루피는 0보다 큰 수(소수 둘째 자리까지), 포켓코인은 0 이상 정수(패스·티켓은 0, 빈 값도 0) |
+| POKEMON-AC-25 | 차수 개설 | 로그인해야 하고, 먼저 주소(`handle`)를 정해야 한다(400 + `pokemon_hostRequired`). 차수 번호는 주최자 안에서 1부터 자동으로 매겨진다 |
+| POKEMON-AC-26 | 주최자 주소 | 소문자·숫자·하이픈만(400 + `pokemon_invalidHandle`), 이미 쓰는 주소면 거절(400 + `pokemon_handleTaken`). 회원당 하나이고 바꾸면 이전 주소가 죽으므로 한 번만 정한다 |
+| POKEMON-AC-27 | 차수 환율 | 주최자가 `FIXED`/`PER_ORDER` 를 고른다. `FIXED` 면 차수 환율로 전부 계산하고, 주최자가 값을 고칠 수 있지만 **이미 들어온 신청서는 각자 박아 둔 환율을 유지한다** — 알려 준 이체 금액이 나중에 달라지면 안 된다. 통화는 바꿀 수 없다 |
+| POKEMON-AC-28 | 차수 범위 | 신청은 **모집중**인 차수에만 받는다(400 + `pokemon_roundClosed`). 담을 수 있는 상품은 **그 차수 주최자의, 그 차수 통화의, 살아 있는 것**뿐이다(404 + `pokemon_productNotFound`) |
+| POKEMON-AC-29 | 차수 권한 | 차수를 주무르는 것은 그 차수의 주최자 또는 전역 운영자뿐이다(403 + `pokemon_notTheHost`). 신청서가 있는 차수는 지울 수 없다(400 + `pokemon_roundHasOrders`) — 취소 상태로 둔다 |
 
 ## 테스트 매핑
 

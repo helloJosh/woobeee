@@ -93,36 +93,37 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 
 ### pokemon — `/api/back/pokemon`
 
+주최자가 **차수**(1차·2차·3차)를 열고 친구들이 거기에 신청한다. 통화·환율·계좌·마감일은 차수가
+들고 있고, 상품표는 **주최자마다 따로**다.
+
 | 메서드 | 경로 | 설명 | 접근 |
 | --- | --- | --- | --- |
-| GET | `/api/back/pokemon/board` | 진행도 화면이 쓰는 단일 조회 — 현재 환율, 상품표(운영자가 관리, 활성 상품만), 신청서 전체(항목·댓글 포함, 최신순), 입금 계좌, 요청자의 운영자 여부(`canManage`). 항목과 댓글은 각각 `orderId IN (...)` 한 번으로 모아 온다 | 공개 |
-| GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 조회 — 신청서 한 건(항목·댓글) + 현재 환율 + 계좌 + `canManage`. 세부 페이지가 쓴다 | 공개 |
-| GET | `/api/back/pokemon/rate` | 현재 INR→KRW. Redis 캐시(TTL 1시간)를 거치고, 외부 조회 실패 시 마지막 성공값을 `stale: true` 로 내보낸다 | 공개 |
-| POST | `/api/back/pokemon/orders` | 신청서 제출. 로그인이면 회원 닉네임이 신청자명(요청 값 무시), 비회원은 `applicantName` 필수. 환율·환산액·이체액을 이 시점 값으로 행에 박는다. `extraInr` 로 상품표에 없는 금액을 직접 넣을 수 있고, 그때는 `items` 가 비어도 된다 | 공개 |
-| PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 — 항목·기부금·자유 루피·메모 전체 교체. 금액은 **수정 시점 환율**로 다시 계산되고 환율 스냅샷도 갱신된다(`settled_rate` 는 그대로) | 삭제와 같은 규칙 |
-| PATCH | `/api/back/pokemon/orders/{orderId}/status` | 진행 상태 변경. `PREPARING`(= 실제로 결제하는 단계)으로 처음 넘어갈 때 그 순간의 환율이 `settled_rate` 에 박혀 환차손익이 확정된다 | 운영자 |
-| DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 (항목·댓글 함께) | 운영자. 그 밖에는 아직 `ORDERED` 일 때만 — 회원이 낸 것은 그 회원, **비회원이 낸 것은 누구나**(주인이 없어 본인 확인이 성립하지 않는다) |
-| GET | `/api/back/pokemon/products` | 상품 관리 목록 — 내려간 상품과 `inUse`(신청서에 쓰였는지)까지 | 운영자 |
-| POST | `/api/back/pokemon/products` | 상품 등록. 이름은 유일하다 | 운영자 |
-| PUT | `/api/back/pokemon/products/{productId}` | 상품 수정(이름·가격·코인·활성). 가격을 고쳐도 과거 신청서 금액은 안 움직인다 | 운영자 |
-| DELETE | `/api/back/pokemon/products/{productId}` | 상품 삭제 — 신청서에 쓰인 적 없을 때만(있으면 400 `pokemon_productInUse`, 내리기를 쓴다) | 운영자 |
-| POST | `/api/back/pokemon/orders/{orderId}/comments` | 신청서에 댓글. 로그인이면 닉네임이 작성자, 비회원은 `authorName` 필수 | 공개 |
-| DELETE | `/api/back/pokemon/comments/{commentId}` | 댓글 삭제 | 운영자 또는 본인 |
+| GET | `/api/back/pokemon/home` | 첫 화면 — 최근 차수들, 내 주소, 고를 수 있는 통화 | 공개 |
+| GET | `/api/back/pokemon/hosts/{handle}` | 한 주최자와 그가 연 차수들 (`/pokemon/{handle}`) | 공개 |
+| POST | `/api/back/pokemon/hosts` | 내 주소 정하기. 회원당 한 번, 소문자·숫자·하이픈만 | 로그인 |
+| POST | `/api/back/pokemon/rounds` | 차수 개설. 통화·환율 방식(`FIXED`/`PER_ORDER`)을 정한다. 번호는 주최자 안에서 자동 | 로그인 + 주소 있음 |
+| GET | `/api/back/pokemon/hosts/{handle}/rounds/{sequence}` | 차수 화면 — 차수·상품표(그 통화만)·신청서 전체·현재 환율 | 공개 |
+| PUT | `/api/back/pokemon/rounds/{roundId}` | 차수 수정. 통화는 불변, 환율 변경은 **앞으로의 신청서에만** 적용 | 주최자 |
+| PATCH | `/api/back/pokemon/rounds/{roundId}/status` | 차수 상태. `PURCHASED` 최초 진입에 환율이 박혀 환차손익 확정 | 주최자 |
+| DELETE | `/api/back/pokemon/rounds/{roundId}` | 차수 삭제 — 신청서가 없을 때만 | 주최자 |
+| POST | `/api/back/pokemon/rounds/{roundId}/orders` | 신청서 제출. **모집중**인 차수에만 | 공개 |
+| GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 — 신청서 + 그 차수 + 현재 환율 | 공개 |
+| PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 (전체 교체) | 주최자, 또는 아직 `ORDERED` 인 본인 |
+| PATCH | `/api/back/pokemon/orders/{orderId}/status` | 신청서 상태 | 주최자 |
+| DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 | 주최자, 또는 아직 `ORDERED` 인 본인(비회원 건은 누구나) |
+| POST | `/api/back/pokemon/orders/{orderId}/comments` | 댓글 | 공개 |
+| DELETE | `/api/back/pokemon/comments/{commentId}` | 댓글 삭제 | 주최자 또는 본인 |
+| GET · POST · PUT · DELETE | `/api/back/pokemon/products[/{id}]` | 내 상품표 관리(이름·통화·가격·코인·활성) | 주최자 |
 
-진행 상태는 `ORDERED`(주문) → `PREPARING`(준비중) → `DEPOSIT_CONFIRMED`(입금확인)
-→ `DELIVERED`(배달 완료)이고, `CANCELLED` 는 어느 단계에서든 빠져나간다.
-**준비중이 입금확인보다 앞이다** — 돈을 받기 전에 먼저 사 두는 운영 방식이기 때문이다.
+상태는 두 층이다. **차수** `OPEN → CLOSED → PURCHASED → DELIVERED`, **신청서**
+`ORDERED → DEPOSIT_CONFIRMED → DELIVERED`. 주최자가 전체에 대해 하는 일은 차수가,
+개인별로 다른 것(입금)은 신청서가 든다. 둘 다 `CANCELLED` 로 빠질 수 있다.
 
-**운영자는 blog 의 `ROLE_ADMIN` 이 아니다.** `pokemon.manager-member-ids`(기본 `1,3`) 명단으로
-판정하며, 필터가 아니라 서비스 계층에서 본다 — 같은 경로 prefix 안에 공개 쓰기(신청·댓글)와
-운영자 전용 쓰기가 섞여 있어 `AccessTokenLoginIdHeaderFilter` 의 경로 prefix 게이팅으로는
-나눌 수 없기 때문이다.
+가격은 요청이 아니라 상품표에서 읽는다 — 클라이언트가 보낸 금액은 쓰지 않는다. 상품 가격을
+고쳐도 과거 신청서는 움직이지 않는다(항목이 당시 이름·단가를 스냅샷으로 든다).
 
-상품표는 운영자가 `/pokemon/products` 에서 직접 관리한다. 신청 항목은 상품 **id** 로 보내고,
-서버가 상품표에서 가격을 읽어 금액을 만든다 — 클라이언트가 보낸 금액은 쓰지 않는다.
-
-집계(총액·진행률·환차손익·미입금 명단)는 서버가 계산하지 않는다. 원천 데이터와 현재 환율만
-내려주고 `front/lib/pokemon.ts` 가 계산한다 — 인수 기준은 `docs/pokemon/PRD.md`.
+집계와 환차손익은 서버가 계산하지 않고 `front/lib/pokemon.ts` 가 한다 — 인수 기준은
+`docs/pokemon/PRD.md`.
 
 ## app-webflux (:8001)
 
