@@ -25,8 +25,6 @@ public enum PokemonErrorCode {
     EMPTY_ORDER(HttpStatus.BAD_REQUEST, "pokemon_emptyOrder", "Pick at least one product"),
     DUPLICATE_PRODUCT(HttpStatus.BAD_REQUEST, "pokemon_duplicateProduct",
             "Each product may appear at most once — use quantity instead"),
-    NAME_REQUIRED(HttpStatus.BAD_REQUEST, "pokemon_nameRequired",
-            "Guests must provide a name"),
     EMPTY_COMMENT(HttpStatus.BAD_REQUEST, "pokemon_emptyComment", "Write something first"),
     ALREADY_SETTLED(HttpStatus.BAD_REQUEST, "pokemon_alreadySettled",
             "Only a request that has not been prepared yet can be withdrawn"),

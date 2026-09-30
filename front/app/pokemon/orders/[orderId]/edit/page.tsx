@@ -21,7 +21,7 @@ import {
 export default function PokemonEditOrderPage() {
     const params = useParams<{ orderId: string }>()
     const router = useRouter()
-    const { user, isAuthenticated } = useAuth()
+    const { user } = useAuth()
     const orderId = Number(params?.orderId)
 
     const [detail, setDetail] = useState<PokemonOrderDetail | null>(null)
@@ -68,7 +68,6 @@ export default function PokemonEditOrderPage() {
         }
         return {
             selection,
-            applicantName: detail.order.guest ? detail.order.applicantName : "",
             depositorName: detail.order.depositorName ?? "",
             donation: detail.order.donationKrw > 0 ? String(detail.order.donationKrw) : "",
             extraAmount: detail.order.extraAmount > 0 ? String(detail.order.extraAmount) : "",
@@ -155,9 +154,7 @@ export default function PokemonEditOrderPage() {
                 products={products}
                 currentRate={rate.toKrw}
                 initial={initial}
-                loggedIn={isAuthenticated}
-                memberName={order.guest ? null : (user?.name ?? order.applicantName)}
-                nameLocked={!order.guest}
+                memberName={user?.name ?? order.applicantName}
                 submitLabel="수정 저장"
                 droppedItems={droppedItems}
                 onSubmit={async (body) => {

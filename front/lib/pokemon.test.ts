@@ -17,6 +17,8 @@ import {
     isRoundSettled,
     orderCoins,
     orderStep,
+    paginate,
+    ORDERS_PER_PAGE,
     parseAmount,
     parseCoins,
     parseDonation,
@@ -295,13 +297,14 @@ describe("신청서 수정·삭제 권한", () => {
         expect(canModifyOrder(order({ guest: false, mine: false }), false)).toBe(false)
     })
 
-    it("비회원이 낸 것은 주인이 없으므로 누구나", () => {
-        expect(canModifyOrder(order({ guest: true, mine: false }), false)).toBe(true)
+    it("주인이 없는 옛 비회원 신청서는 주최자만 — 본인 확인이 성립하지 않는다", () => {
+        expect(canModifyOrder(order({ guest: true, mine: false }), false)).toBe(false)
+        expect(canModifyOrder(order({ guest: true, mine: false }), true)).toBe(true)
     })
 
     it("입금이 확인된 뒤로는 주최자만", () => {
         for (const status of ["DEPOSIT_CONFIRMED", "DELIVERED", "CANCELLED"] as const) {
-            expect(canModifyOrder(order({ guest: true, mine: true, status }), false)).toBe(false)
+            expect(canModifyOrder(order({ mine: true, status }), false)).toBe(false)
         }
     })
 })
@@ -319,46 +322,36 @@ describe("댓글", () => {
         expect(canDeleteComment(comment({ mine: false }), false)).toBe(false)
     })
 
-    it("비회원은 이름이 필요하고, 빈 댓글은 거절한다", () => {
-        expect(validateComment({ authorName: " ", content: "안녕" }, false)).toBe("이름을 입력해 주세요.")
-        expect(validateComment({ authorName: "", content: "안녕" }, true)).toBeNull()
-        expect(validateComment({ authorName: "친구", content: "  " }, false))
-            .toBe("댓글 내용을 입력해 주세요.")
+    it("빈 댓글은 거절한다 — 이름은 회원 닉네임이라 받지 않는다", () => {
+        expect(validateComment({ content: "안녕" })).toBeNull()
+        expect(validateComment({ content: "  " })).toBe("댓글 내용을 입력해 주세요.")
     })
 })
 
 /** POKEMON-AC-03/07 */
 describe("신청 폼 검증", () => {
-    const filled = {
-        applicantName: "친구", depositorName: "", donation: "", extraAmount: "",
-        selection: { 1: 1 },
-    }
+    const filled = { depositorName: "", donation: "", extraAmount: "", selection: { 1: 1 } }
 
     it("통과하면 null 이다", () => {
-        expect(validateOrderForm(filled, false)).toBeNull()
-    })
-
-    it("비회원은 이름이 필요하지만 로그인했으면 비워도 된다", () => {
-        expect(validateOrderForm({ ...filled, applicantName: " " }, false)).toBe("이름을 입력해 주세요.")
-        expect(validateOrderForm({ ...filled, applicantName: "" }, true)).toBeNull()
+        expect(validateOrderForm(filled)).toBeNull()
     })
 
     it("상품도 금액도 없으면 거절한다", () => {
-        expect(validateOrderForm({ ...filled, selection: {} }, true))
+        expect(validateOrderForm({ ...filled, selection: {} }))
             .toBe("상품을 고르거나 금액을 직접 입력해 주세요.")
     })
 
     it("상품 없이 금액만 적었으면 통과한다", () => {
-        expect(validateOrderForm({ ...filled, selection: {}, extraAmount: "250" }, true)).toBeNull()
+        expect(validateOrderForm({ ...filled, selection: {}, extraAmount: "250" })).toBeNull()
     })
 
     it("상품 하나당 99개까지다", () => {
-        expect(validateOrderForm({ ...filled, selection: { 1: 100 } }, true))
+        expect(validateOrderForm({ ...filled, selection: { 1: 100 } }))
             .toBe("상품 하나당 99개까지 신청할 수 있습니다.")
     })
 
     it("기부금이 숫자가 아니면 거절한다", () => {
-        expect(validateOrderForm({ ...filled, donation: "만원" }, true))
+        expect(validateOrderForm({ ...filled, donation: "만원" }))
             .toBe("기부금은 0 이상의 정수로 입력해 주세요.")
         expect(parseDonation("10,000")).toBe(10000)
         expect(parseDonation("-1")).toBeNull()
@@ -472,5 +465,40 @@ describe("표시", () => {
     it("제목이 없으면 몇 차인지로 부른다", () => {
         expect(roundTitle(round({ title: null, sequence: 3 }))).toBe("3차 공동구매")
         expect(roundTitle(round({ title: "추석 공구" }))).toBe("추석 공구")
+    })
+})
+
+/** POKEMON-AC-31 */
+describe("페이징", () => {
+    const items = Array.from({ length: 23 }, (_, i) => i + 1)
+
+    it("한 페이지에 10개씩 자른다", () => {
+        expect(ORDERS_PER_PAGE).toBe(10)
+        expect(paginate(items, 1).items).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+        expect(paginate(items, 3).items).toEqual([21, 22, 23])
+        expect(paginate(items, 1).totalPages).toBe(3)
+        expect(paginate(items, 1).total).toBe(23)
+    })
+
+    it("빈 목록도 1페이지다 — 0페이지는 없다", () => {
+        const page = paginate([], 1)
+
+        expect(page.page).toBe(1)
+        expect(page.totalPages).toBe(1)
+        expect(page.items).toEqual([])
+    })
+
+    it("범위를 벗어난 페이지는 끝으로 당긴다 — 마지막 항목을 지워도 빈 화면이 뜨지 않게", () => {
+        expect(paginate(items, 99).page).toBe(3)
+        expect(paginate(items, 99).items).toEqual([21, 22, 23])
+    })
+
+    it("0이나 음수도 1페이지로 본다", () => {
+        expect(paginate(items, 0).page).toBe(1)
+        expect(paginate(items, -5).page).toBe(1)
+    })
+
+    it("딱 나눠떨어지면 빈 마지막 페이지를 만들지 않는다", () => {
+        expect(paginate(Array.from({ length: 20 }, (_, i) => i), 1).totalPages).toBe(2)
     })
 })

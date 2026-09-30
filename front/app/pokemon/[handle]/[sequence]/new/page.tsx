@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useParams, usePathname, useRouter } from "next/navigation"
 import { AlertTriangle, ArrowLeft, RefreshCw } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import OrderForm, { EMPTY_ORDER_FORM } from "@/components/pokemon/order-form"
 import { RateLine } from "@/components/pokemon/pokemon-bits"
 import { useAuth } from "@/hooks/use-auth"
+import { buildAuthHref } from "@/lib/auth-redirect"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
@@ -21,7 +22,8 @@ import {
 export default function PokemonNewOrderPage() {
     const params = useParams<{ handle: string; sequence: string }>()
     const router = useRouter()
-    const { user, isAuthenticated } = useAuth()
+    const { user, isAuthenticated, loading: authLoading } = useAuth()
+    const pathname = usePathname()
     const handle = params?.handle ?? ""
     const sequence = Number(params?.sequence)
 
@@ -48,6 +50,13 @@ export default function PokemonNewOrderPage() {
     useEffect(() => {
         void load()
     }, [load])
+
+    // 신청은 회원만 할 수 있다. 폼을 그려 놓고 저장에서 튕기는 것보다 바로 로그인으로 보낸다.
+    useEffect(() => {
+        if (!authLoading && !isAuthenticated) {
+            router.replace(buildAuthHref("/login", pathname))
+        }
+    }, [authLoading, isAuthenticated, pathname, router])
 
     if (loadState === "loading") {
         return (
@@ -120,9 +129,7 @@ export default function PokemonNewOrderPage() {
                 products={products}
                 currentRate={currentRate.toKrw}
                 initial={EMPTY_ORDER_FORM}
-                loggedIn={isAuthenticated}
                 memberName={user?.name ?? null}
-                nameLocked={isAuthenticated}
                 submitLabel="신청서 저장"
                 onSubmit={async (body) => {
                     const created = await pokemonAPI.createOrder(round.id, body)

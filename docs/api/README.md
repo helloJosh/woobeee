@@ -93,8 +93,10 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 
 ### pokemon — `/api/back/pokemon`
 
-주최자가 **차수**(1차·2차·3차)를 열고 친구들이 거기에 신청한다. 통화·환율·계좌·마감일은 차수가
-들고 있고, 상품표는 **주최자마다 따로**다.
+주최자가 **차수**(1차·2차·3차)를 열고 회원들이 거기에 신청한다. 통화·환율·계좌·마감일은 차수가
+들고 있고, **상품표도 차수마다** 따로다(내 상품표를 틀로 복사해 심는다).
+
+조회는 공개지만 **쓰는 것은 로그인이 필요하다** — 신청·댓글·차수 개설 모두.
 
 | 메서드 | 경로 | 설명 | 접근 |
 | --- | --- | --- | --- |
@@ -107,14 +109,14 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 | PUT | `/api/back/pokemon/rounds/{roundId}` | 차수 수정. 통화는 불변, 환율 변경은 **앞으로의 신청서에만** 적용 | 주최자 |
 | PATCH | `/api/back/pokemon/rounds/{roundId}/status` | 차수 상태. `PURCHASED` 최초 진입에 환율이 박혀 환차손익 확정 | 주최자 |
 | DELETE | `/api/back/pokemon/rounds/{roundId}` | 차수 삭제 — 신청서가 없을 때만 | 주최자 |
-| POST | `/api/back/pokemon/rounds/{roundId}/orders` | 신청서 제출. **모집중**인 차수에만 | 공개 |
+| POST | `/api/back/pokemon/rounds/{roundId}/orders` | 신청서 제출. **모집중**인 차수에만. 신청자는 회원 닉네임이다 | 로그인 |
 | GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 — 신청서 + 그 차수 + 현재 환율 | 공개 |
 | PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 (전체 교체) | 주최자, 또는 아직 `ORDERED` 인 본인 |
 | PATCH | `/api/back/pokemon/orders/{orderId}/status` | 신청서 상태 | 주최자 |
-| DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 | 주최자, 또는 아직 `ORDERED` 인 본인(비회원 건은 누구나) |
-| POST | `/api/back/pokemon/orders/{orderId}/comments` | 댓글 | 공개 |
+| DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 | 주최자, 또는 아직 `ORDERED` 인 본인 |
+| POST | `/api/back/pokemon/orders/{orderId}/comments` | 댓글. 작성자는 회원 닉네임이다 | 로그인 |
 | DELETE | `/api/back/pokemon/comments/{commentId}` | 댓글 삭제 | 주최자 또는 본인 |
-| GET · POST · PUT · DELETE | `/api/back/pokemon/products[/{id}]` | 내 상품표 관리(이름·통화·가격·코인·활성) | 주최자 |
+| GET · POST · PUT · DELETE | `/api/back/pokemon/products[/{id}]` | 내 상품표(틀) 관리. 차수를 열 때 그 통화의 것이 복사돼 차수 상품표가 된다 | 주최자 |
 
 상태는 두 층이다. **차수** `OPEN → CLOSED → PURCHASED → DELIVERED`, **신청서**
 `ORDERED → DEPOSIT_CONFIRMED → DELIVERED`. 주최자가 전체에 대해 하는 일은 차수가,

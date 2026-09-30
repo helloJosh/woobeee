@@ -1,9 +1,12 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { MessageSquare, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { buildAuthHref } from "@/lib/auth-redirect"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
     MAX_COMMENT_LENGTH,
@@ -13,7 +16,7 @@ import {
 } from "@/lib/pokemon"
 
 /**
- * 신청서 세부 페이지의 댓글. 비회원도 쓸 수 있으므로 로그인하지 않았으면 이름 칸이 함께 뜬다.
+ * 신청서 세부 페이지의 댓글. 로그인해야 쓸 수 있고 작성자는 회원 닉네임이다.
  * 삭제 버튼을 그릴지는 서버가 준 comment.mine 과 canManage 만 본다 (POKEMON-AC-13).
  */
 export default function CommentThread({
@@ -26,16 +29,16 @@ export default function CommentThread({
     comments: PokemonComment[]
     canManage: boolean
     loggedIn: boolean
-    onCreate: (authorName: string, content: string) => Promise<void>
+    onCreate: (content: string) => Promise<void>
     onDelete: (commentId: number) => Promise<void>
 }) {
-    const [authorName, setAuthorName] = useState("")
+    const pathname = usePathname()
     const [content, setContent] = useState("")
     const [error, setError] = useState<string | null>(null)
     const [sending, setSending] = useState(false)
 
     const send = async () => {
-        const problem = validateComment({ authorName, content }, loggedIn)
+        const problem = validateComment({ content })
         if (problem !== null) {
             setError(problem)
             return
@@ -44,7 +47,7 @@ export default function CommentThread({
         setError(null)
         setSending(true)
         try {
-            await onCreate(authorName, content)
+            await onCreate(content)
             setContent("")
         } catch (caught) {
             setError(describeGameApiError(caught, "댓글을 남기지 못했습니다."))
@@ -88,16 +91,16 @@ export default function CommentThread({
                 </div>
             ))}
 
+            {!loggedIn ? (
+                <p className="text-sm text-muted-foreground">
+                    댓글을 쓰려면{" "}
+                    <Link href={buildAuthHref("/login", pathname)} className="underline">
+                        로그인
+                    </Link>
+                    이 필요합니다.
+                </p>
+            ) : (
             <div className="flex flex-wrap items-start gap-2">
-                {!loggedIn && (
-                    <Input
-                        className="h-9 w-32"
-                        value={authorName}
-                        onChange={(event) => setAuthorName(event.target.value)}
-                        placeholder="이름"
-                        maxLength={60}
-                    />
-                )}
                 <Input
                     className="h-9 flex-1"
                     value={content}
@@ -109,6 +112,7 @@ export default function CommentThread({
                     {sending ? "…" : "등록"}
                 </Button>
             </div>
+            )}
 
             {error !== null && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
         </div>

@@ -257,11 +257,8 @@ export default function PokemonOrderDetailPage() {
                         comments={order.comments}
                         canManage={canManage}
                         loggedIn={isAuthenticated}
-                        onCreate={async (authorName, content) => {
-                            await pokemonAPI.createComment(orderId, {
-                                authorName: authorName.trim() || undefined,
-                                content: content.trim(),
-                            })
+                        onCreate={async (content) => {
+                            await pokemonAPI.createComment(orderId, { content: content.trim() })
                             await load()
                         }}
                         onDelete={async (commentId) => {

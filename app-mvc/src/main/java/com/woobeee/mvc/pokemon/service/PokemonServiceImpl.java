@@ -144,6 +144,11 @@ public class PokemonServiceImpl implements PokemonService {
                 rateMode, quotedRate, live.fetchedAt(), bankAccount,
                 request.deadline(), trimmedOrNull(request.memo())));
 
+        // 내 상품표(틀)를 이 차수로 복사한다. 이 뒤로 둘은 서로 영향을 주지 않으므로,
+        // 다음 달 패스로 틀을 고쳐도 이미 연 차수의 목록은 그대로다.
+        LocalDateTime now = LocalDateTime.now();
+        itemTemplateCopy(member.getId(), currency, saved.getId(), now);
+
         return PokemonRoundResponse.of(saved, host.getHandle(), member.getNickname(), true, 0, 0);
     }
 
@@ -166,9 +171,7 @@ public class PokemonServiceImpl implements PokemonService {
                 PokemonRoundResponse.of(round, host.getHandle(), memberName(host.getMemberId()),
                         canManage(round, viewerId), activeCount(orders), transferTotal(orders)),
                 ExchangeRateResponse.from(exchangeRateService.current(round.getCurrency())),
-                productRepository
-                        .findAllByHostMemberIdAndCurrencyAndActiveTrueOrderBySortOrderAsc(
-                                host.getMemberId(), round.getCurrency())
+                productRepository.findAllByRoundIdAndActiveTrueOrderBySortOrderAsc(round.getId())
                         .stream().map(PokemonProductResponse::from).toList(),
                 orders.stream()
                         .map(order -> PokemonOrderResponse.of(
@@ -240,10 +243,12 @@ public class PokemonServiceImpl implements PokemonService {
             throw PokemonErrorCode.ROUND_CLOSED.asException();
         }
 
+        // 신청은 로그인해야 한다. 누가 냈는지 모르는 신청서는 정산할 수 없다.
+        Member member = memberResolver.optionalMember(loginId)
+                .orElseThrow(PokemonErrorCode.LOGIN_REQUIRED::asException);
+
         BigDecimal extraAmount = request.extraInr() == null ? BigDecimal.ZERO : request.extraInr();
         List<PokemonOrderItemRequest> items = validatedItems(request.items(), extraAmount);
-        Member member = memberResolver.optionalMember(loginId).orElse(null);
-        String applicantName = resolveName(member, request.applicantName());
 
         Map<Long, PokemonProducts> products = loadProducts(items, round);
         BigDecimal totalAmount = items.stream()
@@ -258,8 +263,8 @@ public class PokemonServiceImpl implements PokemonService {
 
         PokemonOrders saved = orderRepository.save(PokemonOrders.create(
                 round.getId(),
-                member == null ? null : member.getId(),
-                applicantName,
+                member.getId(),
+                member.getNickname(),
                 trimmedOrNull(request.depositorName()),
                 totalAmount,
                 extraAmount,
@@ -278,7 +283,7 @@ public class PokemonServiceImpl implements PokemonService {
                 saved,
                 savedItems.stream().map(PokemonOrderItemResponse::from).toList(),
                 List.of(),
-                member == null ? null : member.getId());
+                member.getId());
     }
 
     @Override
@@ -301,11 +306,7 @@ public class PokemonServiceImpl implements PokemonService {
         ExchangeRate live = exchangeRateService.current(round.getCurrency());
         BigDecimal rate = round.rateFor(live.toKrw());
 
-        String applicantName = order.getMemberId() == null
-                ? resolveName(null, request.applicantName())
-                : order.getApplicantName();
-
-        order.reprice(applicantName, trimmedOrNull(request.depositorName()), totalAmount, extraAmount,
+        order.reprice(order.getApplicantName(), trimmedOrNull(request.depositorName()), totalAmount, extraAmount,
                 rate, live.fetchedAt(), toKrw(totalAmount, rate), request.donationKrw(),
                 trimmedOrNull(request.memo()));
 
@@ -359,10 +360,10 @@ public class PokemonServiceImpl implements PokemonService {
             throw PokemonErrorCode.EMPTY_COMMENT.asException();
         }
 
-        Member member = memberResolver.optionalMember(loginId).orElse(null);
+        Member member = memberResolver.optionalMember(loginId)
+                .orElseThrow(PokemonErrorCode.LOGIN_REQUIRED::asException);
         PokemonOrderComments saved = commentRepository.save(PokemonOrderComments.create(
-                orderId, member == null ? null : member.getId(),
-                resolveName(member, request.authorName()), content));
+                orderId, member.getId(), member.getNickname(), content));
 
         return PokemonCommentResponse.of(saved, saved.getMemberId());
     }
@@ -391,7 +392,7 @@ public class PokemonServiceImpl implements PokemonService {
         Long hostId = requireHostMemberId(loginId);
         Set<Long> used = Set.copyOf(itemRepository.findUsedProductIds());
 
-        return productRepository.findAllByHostMemberIdOrderBySortOrderAsc(hostId).stream()
+        return productRepository.findAllByHostMemberIdAndRoundIdIsNullOrderBySortOrderAsc(hostId).stream()
                 .map(product -> PokemonManagedProductResponse.of(product, used.contains(product.getId())))
                 .toList();
     }
@@ -403,15 +404,17 @@ public class PokemonServiceImpl implements PokemonService {
         String name = requireName(request.name());
         String currency = requireCurrency(request.currency());
 
-        if (productRepository.existsByHostMemberIdAndNameAndCurrency(hostId, name, currency)) {
+        if (productRepository.existsByHostMemberIdAndNameAndCurrencyAndRoundIdIsNull(hostId, name, currency)) {
             throw PokemonErrorCode.DUPLICATE_PRODUCT_NAME.asException();
         }
 
-        int nextOrder = productRepository.findAllByHostMemberIdOrderBySortOrderAsc(hostId).stream()
+        int nextOrder = productRepository
+                .findAllByHostMemberIdAndRoundIdIsNullOrderBySortOrderAsc(hostId).stream()
                 .mapToInt(PokemonProducts::getSortOrder).max().orElse(0) + 1;
 
         PokemonProducts saved = productRepository.save(PokemonProducts.create(
-                hostId, name, currency, request.price(), request.coins(), nextOrder, LocalDateTime.now()));
+                hostId, null, name, currency, request.price(), request.coins(), nextOrder,
+                LocalDateTime.now()));
         return PokemonManagedProductResponse.of(saved, false);
     }
 
@@ -424,8 +427,11 @@ public class PokemonServiceImpl implements PokemonService {
         String currency = requireCurrency(request.currency());
 
         boolean renamed = !name.equals(product.getName()) || !currency.equals(product.getCurrency());
-        if (renamed && productRepository.existsByHostMemberIdAndNameAndCurrency(
-                product.getHostMemberId(), name, currency)) {
+        boolean taken = product.isTemplate()
+                ? productRepository.existsByHostMemberIdAndNameAndCurrencyAndRoundIdIsNull(
+                        product.getHostMemberId(), name, currency)
+                : productRepository.existsByRoundIdAndNameAndCurrency(product.getRoundId(), name, currency);
+        if (renamed && taken) {
             throw PokemonErrorCode.DUPLICATE_PRODUCT_NAME.asException();
         }
 
@@ -448,6 +454,16 @@ public class PokemonServiceImpl implements PokemonService {
     }
 
     /* ===== 공통 ===== */
+
+    /** 차수를 열 때 주최자의 틀을 그 차수 상품표로 복사한다. */
+    private void itemTemplateCopy(Long hostMemberId, String currency, Long roundId, LocalDateTime now) {
+        List<PokemonProducts> template = productRepository
+                .findAllByHostMemberIdAndCurrencyAndRoundIdIsNullOrderBySortOrderAsc(hostMemberId, currency);
+        if (!template.isEmpty()) {
+            productRepository.saveAll(template.stream()
+                    .map(product -> product.copyInto(roundId, now)).toList());
+        }
+    }
 
     /** 주최자이거나 전역 운영자. 차수를 주무를 수 있는 사람이다. */
     private boolean canManage(PokemonRounds round, Long viewerId) {
@@ -472,16 +488,18 @@ public class PokemonServiceImpl implements PokemonService {
     }
 
     /**
-     * 신청서 수정·삭제 규칙. 주최자는 언제든, 회원이 낸 것은 그 회원만, 비회원이 낸 것은
-     * 누구나(본인 확인 수단이 없는데 막아 두면 잘못 낸 신청서를 아무도 거두지 못한다).
-     * 단 입금이 확인된 뒤로는 주최자만이다.
+     * 신청서 수정·삭제 규칙. 주최자는 언제든, 그 밖에는 본인이 낸 것만이고 입금이 확인되기
+     * 전까지다.
+     *
+     * <p>주인이 없는 신청서(회원 전용으로 바꾸기 전에 비회원이 낸 것)는 본인 확인이
+     * 성립하지 않으므로 주최자만 손댈 수 있다.
      */
     private void assertCanModify(String loginId, PokemonOrders order, PokemonRounds round) {
         Long viewerId = memberResolver.optionalMemberId(loginId);
         if (canManage(round, viewerId)) {
             return;
         }
-        if (order.hasOwner() && !order.isOwnedBy(viewerId)) {
+        if (!order.isOwnedBy(viewerId)) {
             throw PokemonErrorCode.NOT_YOURS.asException();
         }
         if (order.getStatus() != PokemonOrderStatus.ORDERED) {
@@ -605,7 +623,7 @@ public class PokemonServiceImpl implements PokemonService {
         return items;
     }
 
-    /** 그 차수 주최자의, 그 통화의, 살아 있는 상품만 담을 수 있다. */
+    /** 그 차수 상품표의 살아 있는 상품만 담을 수 있다. */
     private Map<Long, PokemonProducts> loadProducts(List<PokemonOrderItemRequest> items,
                                                     PokemonRounds round) {
         if (items.isEmpty()) {
@@ -614,8 +632,8 @@ public class PokemonServiceImpl implements PokemonService {
         List<Long> ids = items.stream().map(PokemonOrderItemRequest::productId).toList();
         Map<Long, PokemonProducts> found = productRepository.findAllByIdIn(ids).stream()
                 .filter(PokemonProducts::isActive)
-                .filter(product -> product.getHostMemberId().equals(round.getHostMemberId()))
-                .filter(product -> product.getCurrency().equals(round.getCurrency()))
+                // 그 차수의 상품표에 있는 것만. 틀이나 남의 차수 상품은 담을 수 없다.
+                .filter(product -> round.getId().equals(product.getRoundId()))
                 .collect(Collectors.toMap(PokemonProducts::getId, product -> product));
         if (found.size() != ids.size()) {
             throw PokemonErrorCode.PRODUCT_NOT_FOUND.asException();
@@ -623,16 +641,6 @@ public class PokemonServiceImpl implements PokemonService {
         return found;
     }
 
-    private String resolveName(Member member, String requested) {
-        if (member != null) {
-            return member.getNickname();
-        }
-        String trimmed = trimmedOrNull(requested);
-        if (trimmed == null) {
-            throw PokemonErrorCode.NAME_REQUIRED.asException();
-        }
-        return trimmed;
-    }
 
     private static long toKrw(BigDecimal amount, BigDecimal rate) {
         return amount.multiply(rate).setScale(0, RoundingMode.HALF_UP).longValue();

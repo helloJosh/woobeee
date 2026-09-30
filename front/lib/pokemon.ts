@@ -366,17 +366,47 @@ export function orderCoins(order: PokemonOrder): number {
     return order.items.reduce((sum, item) => sum + item.coins * item.quantity, 0)
 }
 
+/* ===== 페이징 ===== */
+
+export const ORDERS_PER_PAGE = 10
+
+export interface Page<T> {
+    items: T[]
+    /** 1부터. 범위를 벗어나면 가장 가까운 쪽으로 당겨 준다. */
+    page: number
+    totalPages: number
+    total: number
+}
+
+/**
+ * 목록을 페이지로 자른다. 신청서는 한 차수에 몇십 건 규모라 서버가 전부 내려주고
+ * 여기서 자른다 — 페이지마다 조회하면 왕복이 늘고 집계(총액·미입금)는 어차피 전부 필요하다.
+ *
+ * <p>빈 목록도 1페이지다(0페이지는 없다). 범위를 벗어난 page 는 끝으로 당긴다 —
+ * 마지막 항목을 지워 페이지가 줄었을 때 빈 화면이 뜨지 않게 한다.
+ */
+export function paginate<T>(items: T[], page: number, size = ORDERS_PER_PAGE): Page<T> {
+    const total = items.length
+    const totalPages = Math.max(1, Math.ceil(total / size))
+    const current = Math.min(Math.max(1, Math.trunc(page) || 1), totalPages)
+    const start = (current - 1) * size
+
+    return { items: items.slice(start, start + size), page: current, totalPages, total }
+}
+
 /* ===== 권한 ===== */
 
 /**
  * 신청서를 고치거나 지울 수 있는가 — 서버 판정과 같은 규칙이다.
- * 주최자는 언제든, 회원이 낸 것은 그 회원만, 비회원이 낸 것은 누구나(본인 확인 수단이 없는데
- * 막아 두면 잘못 낸 신청서를 아무도 거두지 못한다). 단 입금이 확인된 뒤로는 주최자만이다.
+ * 주최자는 언제든, 그 밖에는 본인이 낸 것만이고 입금이 확인되기 전까지다.
+ *
+ * <p>주인이 없는 신청서(회원 전용으로 바꾸기 전에 비회원이 낸 것)는 본인 확인이 성립하지
+ * 않으므로 주최자만 손댈 수 있다.
  */
 export function canModifyOrder(order: PokemonOrder, canManage: boolean): boolean {
     if (canManage) return true
     if (order.status !== "ORDERED") return false
-    return order.guest || order.mine
+    return order.mine
 }
 
 export function canDeleteComment(comment: PokemonComment, canManage: boolean): boolean {
@@ -386,7 +416,6 @@ export function canDeleteComment(comment: PokemonComment, canManage: boolean): b
 /* ===== 입력 검증 ===== */
 
 export interface OrderFormInput {
-    applicantName: string
     depositorName: string
     donation: string
     extraAmount: string
@@ -420,12 +449,10 @@ export function parseCoins(raw: string): number | null {
     return Number.isSafeInteger(value) ? value : null
 }
 
-export function validateOrderForm(input: OrderFormInput, loggedIn: boolean): string | null {
-    if (!loggedIn && input.applicantName.trim() === "") {
-        return "이름을 입력해 주세요."
-    }
-    if (input.applicantName.trim().length > 60 || input.depositorName.trim().length > 60) {
-        return "이름은 60자까지 입력할 수 있습니다."
+/** 신청은 로그인해야 한다 — 신청자 이름은 회원 닉네임이라 폼에 없다. */
+export function validateOrderForm(input: OrderFormInput): string | null {
+    if (input.depositorName.trim().length > 60) {
+        return "입금자명은 60자까지 입력할 수 있습니다."
     }
 
     const extra = parseAmount(input.extraAmount)
@@ -449,14 +476,11 @@ export function validateOrderForm(input: OrderFormInput, loggedIn: boolean): str
 export const MAX_COMMENT_LENGTH = 500
 
 export interface CommentFormInput {
-    authorName: string
     content: string
 }
 
-export function validateComment(input: CommentFormInput, loggedIn: boolean): string | null {
-    if (!loggedIn && input.authorName.trim() === "") {
-        return "이름을 입력해 주세요."
-    }
+/** 댓글도 로그인해야 쓴다 — 작성자는 회원 닉네임이다. */
+export function validateComment(input: CommentFormInput): string | null {
     if (input.content.trim() === "") {
         return "댓글 내용을 입력해 주세요."
     }

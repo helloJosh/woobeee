@@ -162,7 +162,7 @@ docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test 
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/tags`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/태그/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용, 태그는 글쓰기 안에서만 생성 |
 | app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
-| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 주최자가 **차수**(1차·2차·3차)를 열고 친구들이 신청한다. `/pokemon/{handle}/{sequence}` 로 주최자별 URL. 통화(INR/USD/JPY)·환율 방식·계좌는 차수가, 상품표는 주최자마다 따로 든다. 조회·신청·댓글은 **공개**(비회원 가능) |
+| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 주최자가 **차수**(1차·2차·3차)를 열고 회원들이 신청한다. `/pokemon/{handle}/{sequence}` 로 주최자별 URL. 통화·환율·계좌·**상품표**를 차수가 든다. 조회는 공개, 신청·댓글·개설은 **로그인 필수** |
 | app-webflux | game | `/api/game`, `/ws/game` | `health`, `me`, `rooms*`, `me/results`, `results/{id}/replay`, WebSocket 실시간 |
 
 ## 안전 수칙

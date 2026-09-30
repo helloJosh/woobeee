@@ -28,9 +28,14 @@ public class PokemonProducts {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 상품표는 주최자마다 따로다 — (주최자, 이름, 통화)가 유일하다. */
     @Column(nullable = false)
     private Long hostMemberId;
+
+    /**
+     * 어느 차수의 상품표인가. {@code null} 이면 주최자의 <b>틀</b>이고, 차수를 열 때 이것을
+     * 복사해 차수 상품표를 만든다. 틀은 신청 화면에 뜨지 않는다.
+     */
+    private Long roundId;
 
     @Column(nullable = false, length = 200)
     private String name;
@@ -63,9 +68,10 @@ public class PokemonProducts {
     private LocalDateTime updatedAt;
 
     @Builder
-    private PokemonProducts(Long hostMemberId, String name, String currency, BigDecimal price, int coins, int sortOrder,
+    private PokemonProducts(Long hostMemberId, Long roundId, String name, String currency, BigDecimal price, int coins, int sortOrder,
                             boolean active, LocalDateTime firstSeenAt, LocalDateTime lastSeenAt) {
         this.hostMemberId = hostMemberId;
+        this.roundId = roundId;
         this.name = name;
         this.currency = currency;
         this.price = price;
@@ -76,10 +82,10 @@ public class PokemonProducts {
         this.lastSeenAt = lastSeenAt;
     }
 
-    public static PokemonProducts create(Long hostMemberId, String name, String currency, BigDecimal price, int coins,
+    public static PokemonProducts create(Long hostMemberId, Long roundId, String name, String currency, BigDecimal price, int coins,
                                          int sortOrder, LocalDateTime now) {
         return PokemonProducts.builder()
-                .hostMemberId(hostMemberId).name(name).currency(currency).price(price).coins(coins).sortOrder(sortOrder)
+                .hostMemberId(hostMemberId).roundId(roundId).name(name).currency(currency).price(price).coins(coins).sortOrder(sortOrder)
                 .active(true).firstSeenAt(now).lastSeenAt(now)
                 .build();
     }
@@ -87,6 +93,7 @@ public class PokemonProducts {
     public void update(String name, String currency, BigDecimal price, int coins, boolean active,
                        LocalDateTime now) {
         this.hostMemberId = hostMemberId;
+        this.roundId = roundId;
         this.name = name;
         this.currency = currency;
         this.price = price;
@@ -97,5 +104,15 @@ public class PokemonProducts {
 
     public void moveTo(int sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    /** 틀을 차수 상품표로 복사한다. 그 뒤로 둘은 서로 영향을 주지 않는다. */
+    public PokemonProducts copyInto(Long targetRoundId, LocalDateTime now) {
+        return PokemonProducts.create(hostMemberId, targetRoundId, name, currency, price, coins,
+                sortOrder, now);
+    }
+
+    public boolean isTemplate() {
+        return roundId == null;
     }
 }

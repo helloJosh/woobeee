@@ -29,7 +29,6 @@ import {
 
 export interface OrderFormValues {
     selection: PokemonSelection
-    applicantName: string
     depositorName: string
     donation: string
     extraAmount: string
@@ -38,7 +37,6 @@ export interface OrderFormValues {
 
 export const EMPTY_ORDER_FORM: OrderFormValues = {
     selection: {},
-    applicantName: "",
     depositorName: "",
     donation: "",
     extraAmount: "",
@@ -46,7 +44,6 @@ export const EMPTY_ORDER_FORM: OrderFormValues = {
 }
 
 export interface OrderFormBody {
-    applicantName?: string
     depositorName?: string
     donationKrw: number
     /** 차수 통화 기준의 자유 입력 금액. 서버 필드명은 extraInr 로 남아 있다. */
@@ -66,9 +63,7 @@ export default function OrderForm({
     products,
     currentRate,
     initial,
-    loggedIn,
     memberName,
-    nameLocked,
     submitLabel,
     droppedItems = [],
     onSubmit,
@@ -78,17 +73,13 @@ export default function OrderForm({
     /** 지금 환율. 차수가 PER_ORDER 면 이 값이 그대로 쓰인다. */
     currentRate: number
     initial: OrderFormValues
-    loggedIn: boolean
     memberName: string | null
-    /** 회원 신청서는 이름이 닉네임으로 고정된다 — 서버도 요청 값을 무시한다. */
-    nameLocked: boolean
     submitLabel: string
     /** 상품표에서 내려가 더 이상 고를 수 없게 된 기존 항목 이름. */
     droppedItems?: string[]
     onSubmit: (body: OrderFormBody) => Promise<void>
 }) {
     const [selection, setSelection] = useState<PokemonSelection>(initial.selection)
-    const [applicantName, setApplicantName] = useState(initial.applicantName)
     const [depositorName, setDepositorName] = useState(initial.depositorName)
     const [donation, setDonation] = useState(initial.donation)
     const [extraAmount, setExtraAmount] = useState(initial.extraAmount)
@@ -112,8 +103,7 @@ export default function OrderForm({
 
     const save = async () => {
         const problem = validateOrderForm(
-            { applicantName, depositorName, donation, extraAmount, selection },
-            loggedIn || nameLocked,
+            { depositorName, donation, extraAmount, selection },
         )
         if (problem !== null) {
             setError(problem)
@@ -124,7 +114,6 @@ export default function OrderForm({
         setSaving(true)
         try {
             await onSubmit({
-                applicantName: applicantName.trim() || undefined,
                 depositorName: depositorName.trim() || undefined,
                 donationKrw,
                 extraInr: extra,
@@ -184,22 +173,11 @@ export default function OrderForm({
                     <CardTitle className="text-base">신청자 정보</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2">
-                    {nameLocked ? (
-                        <Field label="신청자">
-                            <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm">
-                                {memberName ?? "로그인한 계정"}
-                            </div>
-                        </Field>
-                    ) : (
-                        <Field label="이름">
-                            <Input
-                                value={applicantName}
-                                onChange={(event) => setApplicantName(event.target.value)}
-                                placeholder="누구인지 알 수 있게 적어 주세요"
-                                maxLength={60}
-                            />
-                        </Field>
-                    )}
+                    <Field label="신청자">
+                        <div className="flex h-10 items-center rounded-md border bg-muted px-3 text-sm">
+                            {memberName ?? "로그인한 계정"}
+                        </div>
+                    </Field>
                     <Field label="입금자명 (다를 때만)">
                         <Input
                             value={depositorName}

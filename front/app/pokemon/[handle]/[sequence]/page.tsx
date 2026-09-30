@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import Pager from "@/components/pokemon/pager"
 import { OrderProgressBar, RoundProgressSteps } from "@/components/pokemon/progress-steps"
+import RoundTabs from "@/components/pokemon/round-tabs"
 import {
     BankAccountLine, FxDelta, OrderStatusBadge, RateLine, Stat,
 } from "@/components/pokemon/pokemon-bits"
@@ -19,8 +21,8 @@ import { describeGameApiError } from "@/lib/game-errors"
 import {
     ORDER_STATUS_LABELS, RATE_MODE_LABELS, ROUND_STATUS_FLOW, ROUND_STATUS_LABELS,
     acceptsOrders, formatAmount, formatCoins, formatKrw, formatRate, formatSignedKrw,
-    fxDelta, isRoundSettled, orderCoins, rateFor, roundTitle, summarizeRound,
-    type PokemonRoundBoard, type PokemonRoundStatus,
+    fxDelta, isRoundSettled, orderCoins, paginate, rateFor, roundTitle, summarizeRound,
+    type PokemonHost, type PokemonRoundBoard, type PokemonRoundStatus,
 } from "@/lib/pokemon"
 
 const ALL_ROUND_STATUSES: PokemonRoundStatus[] = [...ROUND_STATUS_FLOW, "CANCELLED"]
@@ -33,6 +35,9 @@ export default function PokemonRoundPage() {
     const sequence = Number(params?.sequence)
 
     const [board, setBoard] = useState<PokemonRoundBoard | null>(null)
+    // 폴더 카드에 쓸 형제 차수들. 차수 조회는 한 건만 주므로 주최자 조회를 함께 한다.
+    const [siblings, setSiblings] = useState<PokemonHost | null>(null)
+    const [page, setPage] = useState(1)
     const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading")
     const [error, setError] = useState<string | null>(null)
 
@@ -43,7 +48,12 @@ export default function PokemonRoundPage() {
             return
         }
         try {
-            setBoard(await pokemonAPI.getRoundBoard(handle, sequence))
+            const [loadedBoard, loadedHost] = await Promise.all([
+                pokemonAPI.getRoundBoard(handle, sequence),
+                pokemonAPI.getHost(handle),
+            ])
+            setBoard(loadedBoard)
+            setSiblings(loadedHost)
             setLoadState("ready")
             setError(null)
         } catch (caught) {
@@ -55,6 +65,11 @@ export default function PokemonRoundPage() {
     useEffect(() => {
         void load()
     }, [load])
+
+    // 다른 차수로 옮기면 목록도 처음부터 본다.
+    useEffect(() => {
+        setPage(1)
+    }, [sequence])
 
     const summary = useMemo(
         () => board === null
@@ -152,6 +167,10 @@ export default function PokemonRoundPage() {
                 )}
             </header>
 
+            {siblings !== null && siblings.rounds.length > 1 && (
+                <RoundTabs rounds={siblings.rounds} currentId={round.id} />
+            )}
+
             {error !== null && (
                 <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
@@ -224,7 +243,7 @@ export default function PokemonRoundPage() {
                             )}
                         </div>
                     ) : (
-                        orders.map((order) => (
+                        paginate(orders, page).items.map((order) => (
                             <Link
                                 key={order.id}
                                 href={`/pokemon/orders/${order.id}`}
@@ -280,6 +299,13 @@ export default function PokemonRoundPage() {
                             </Link>
                         ))
                     )}
+
+                    <Pager
+                        page={paginate(orders, page).page}
+                        totalPages={paginate(orders, page).totalPages}
+                        total={orders.length}
+                        onChange={setPage}
+                    />
                 </CardContent>
             </Card>
         </main>

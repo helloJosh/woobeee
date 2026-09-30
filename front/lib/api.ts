@@ -946,7 +946,7 @@ export const pokemonAPI = {
         pokemonRequest<void>(`/api/back/pokemon/orders/${orderId}`, "DELETE"),
 
     /* 댓글 */
-    createComment: (orderId: number, body: { authorName?: string; content: string }) =>
+    createComment: (orderId: number, body: { content: string }) =>
         pokemonRequest(`/api/back/pokemon/orders/${orderId}/comments`, "POST", body),
 
     deleteComment: (commentId: number): Promise<void> =>
