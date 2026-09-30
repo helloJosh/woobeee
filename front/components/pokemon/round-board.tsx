@@ -160,7 +160,7 @@ export default function RoundBoard({
                         </div>
                     ) : (
                         <>
-                            <OrderRows orders={paged.items} rounds={[round]} currentRate={currentRate.toKrw} />
+                            <OrderRows orders={paged.items} round={round} currentRate={currentRate.toKrw} />
                             <Pager page={paged.page} totalPages={paged.totalPages}
                                    total={orders.length} onChange={setPage} />
                         </>

@@ -74,37 +74,9 @@ public class PokemonServiceImpl implements PokemonService {
                 isMe,
                 // 계좌는 본인에게만. 차수를 열기 전이라면 아직 공개할 이유가 없다.
                 isMe ? host.getBankAccount() : null,
-                toRoundResponses(rounds, viewerId),
-                ordersOf(rounds, viewerId));
+                toRoundResponses(rounds, viewerId));
     }
 
-    /**
-     * 여러 차수의 신청서를 최신순으로 모은다. 차수마다 조회하면 N+1 이라 한 번에 읽고,
-     * 항목·댓글도 각각 IN 조회 한 번으로 붙인다.
-     */
-    private List<PokemonOrderResponse> ordersOf(List<PokemonRounds> rounds, Long viewerId) {
-        if (rounds.isEmpty()) {
-            return List.of();
-        }
-        List<PokemonOrders> orders = orderRepository.findAllByRoundIdIn(
-                rounds.stream().map(PokemonRounds::getId).toList());
-        if (orders.isEmpty()) {
-            return List.of();
-        }
-
-        List<Long> orderIds = orders.stream().map(PokemonOrders::getId).toList();
-        Map<Long, List<PokemonOrderItemResponse>> itemsByOrder = loadItems(orderIds);
-        Map<Long, List<PokemonCommentResponse>> commentsByOrder = loadComments(orderIds, viewerId);
-
-        return orders.stream()
-                .sorted(Comparator.comparing(PokemonOrders::getCreatedAt).reversed())
-                .map(order -> PokemonOrderResponse.of(
-                        order,
-                        itemsByOrder.getOrDefault(order.getId(), List.of()),
-                        commentsByOrder.getOrDefault(order.getId(), List.of()),
-                        viewerId))
-                .toList();
-    }
 
     @Override
     @Transactional

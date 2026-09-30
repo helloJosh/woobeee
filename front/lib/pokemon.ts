@@ -134,13 +134,6 @@ export interface PokemonHost {
     /** 기본 입금 계좌. 본인에게만 내려온다. */
     bankAccount: string | null
     rounds: PokemonRound[]
-    /** 모든 차수의 신청서를 최신순으로 모은 것. 어느 차수인지는 roundId 로 찾는다. */
-    orders: PokemonOrder[]
-}
-
-/** 신청서가 속한 차수. 목록에 "몇 차" 를 붙일 때 쓴다. */
-export function roundOf(order: PokemonOrder, rounds: PokemonRound[]): PokemonRound | null {
-    return rounds.find((round) => round.id === order.roundId) ?? null
 }
 
 export interface PokemonRoundBoard {
