@@ -1,17 +1,20 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { AlertTriangle, ArrowLeft, Plus, RefreshCw } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import OrderRows from "@/components/pokemon/order-rows"
+import Pager from "@/components/pokemon/pager"
 import RoundList from "@/components/pokemon/round-list"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
-import type { PokemonHost } from "@/lib/pokemon"
+import { ORDER_STATUS_LABELS, formatKrw, paginate, type PokemonHost } from "@/lib/pokemon"
 
 /** /pokemon/{handle} — 한 주최자가 연 차수들. */
 export default function PokemonHostPage() {
@@ -21,6 +24,7 @@ export default function PokemonHostPage() {
     const [host, setHost] = useState<PokemonHost | null>(null)
     const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading")
     const [error, setError] = useState<string | null>(null)
+    const [page, setPage] = useState(1)
 
     const load = useCallback(async () => {
         try {
@@ -36,6 +40,17 @@ export default function PokemonHostPage() {
     useEffect(() => {
         void load()
     }, [load])
+
+    // 여러 차수가 섞이면 통화가 달라 외화 합계는 의미가 없다. 원화(이체액)만 모은다.
+    const { statusCounts, transferTotal } = useMemo(() => {
+        const counts = { ORDERED: 0, DEPOSIT_CONFIRMED: 0, DELIVERED: 0, CANCELLED: 0 }
+        let total = 0
+        for (const order of host?.orders ?? []) {
+            counts[order.status] += 1
+            if (order.status !== "CANCELLED") total += order.transferKrw
+        }
+        return { statusCounts: counts, transferTotal: total }
+    }, [host])
 
     if (loadState === "loading") {
         return (
@@ -95,10 +110,48 @@ export default function PokemonHostPage() {
                     <CardTitle className="text-base">차수 {host.rounds.length}개</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <RoundList
-                        rounds={host.rounds}
-                        emptyMessage={host.isMe ? "아직 연 차수가 없습니다." : "아직 연 차수가 없습니다."}
-                    />
+                    <RoundList rounds={host.rounds} emptyMessage="아직 연 차수가 없습니다." />
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">
+                        전체 신청서 {host.orders.length}건
+                    </CardTitle>
+                    <p className="text-xs text-muted-foreground">
+                        모든 차수의 신청서를 최신순으로 모았습니다. 금액은 각 차수 통화로 찍힙니다.
+                    </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                        {(Object.keys(ORDER_STATUS_LABELS) as (keyof typeof ORDER_STATUS_LABELS)[])
+                            .map((s) => (
+                                <Badge key={s} variant="outline">
+                                    {ORDER_STATUS_LABELS[s]} {statusCounts[s]}
+                                </Badge>
+                            ))}
+                        <Badge variant="secondary">받을 금액 {formatKrw(transferTotal)}</Badge>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                    {host.orders.length === 0 ? (
+                        <p className="py-8 text-center text-sm text-muted-foreground">
+                            아직 신청서가 없습니다.
+                        </p>
+                    ) : (
+                        <>
+                            <OrderRows
+                                orders={paginate(host.orders, page).items}
+                                rounds={host.rounds}
+                                showRound
+                            />
+                            <Pager
+                                page={paginate(host.orders, page).page}
+                                totalPages={paginate(host.orders, page).totalPages}
+                                total={host.orders.length}
+                                onChange={setPage}
+                            />
+                        </>
+                    )}
                 </CardContent>
             </Card>
         </main>

@@ -55,7 +55,18 @@ public interface PokemonService {
 
     /* ===== 상품 관리 (주최자 각자의 상품표) ===== */
 
+    /** 내 상품표(틀). 차수를 열 때 복사되는 원본이다. */
     List<PokemonManagedProductResponse> getManagedProducts(String loginId);
+
+    /** 그 차수의 상품표 — 내려간 것까지. 차수마다 따로 고친다. */
+    List<PokemonManagedProductResponse> getRoundProducts(String loginId, Long roundId);
+
+    /** 그 차수에 상품을 더한다. 통화는 차수를 따라간다. */
+    PokemonManagedProductResponse createRoundProduct(String loginId, Long roundId,
+                                                     PokemonProductRequest request);
+
+    /** 내 틀을 그 차수로 다시 복사한다 — 비어 있거나 틀을 고친 뒤 맞추고 싶을 때. */
+    List<PokemonManagedProductResponse> copyTemplateInto(String loginId, Long roundId);
 
     PokemonManagedProductResponse createProduct(String loginId, PokemonProductRequest request);
 

@@ -952,7 +952,19 @@ export const pokemonAPI = {
     deleteComment: (commentId: number): Promise<void> =>
         pokemonRequest<void>(`/api/back/pokemon/comments/${commentId}`, "DELETE"),
 
-    /* 상품 관리 — 주최자 각자의 상품표 */
+    /* 차수 상품표 — 차수마다 따로 고친다 */
+    getRoundProducts: (roundId: number): Promise<PokemonManagedProduct[]> =>
+        pokemonRequest<PokemonManagedProduct[]>(`/api/back/pokemon/rounds/${roundId}/products`, "GET"),
+
+    createRoundProduct: (roundId: number, body: PokemonProductBody): Promise<PokemonManagedProduct> =>
+        pokemonRequest<PokemonManagedProduct>(`/api/back/pokemon/rounds/${roundId}/products`, "POST", body),
+
+    /** 내 상품표(틀)에서 그 차수로 복사. 이미 있는 이름은 건너뛴다. */
+    copyTemplateInto: (roundId: number): Promise<PokemonManagedProduct[]> =>
+        pokemonRequest<PokemonManagedProduct[]>(
+            `/api/back/pokemon/rounds/${roundId}/products/from-template`, "POST"),
+
+    /* 내 상품표(틀) — 차수를 열 때 복사되는 원본 */
     getManagedProducts: (): Promise<PokemonManagedProduct[]> =>
         pokemonRequest<PokemonManagedProduct[]>("/api/back/pokemon/products", "GET"),
 

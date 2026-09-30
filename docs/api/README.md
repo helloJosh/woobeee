@@ -101,7 +101,7 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 | 메서드 | 경로 | 설명 | 접근 |
 | --- | --- | --- | --- |
 | GET | `/api/back/pokemon/home` | 첫 화면 — 최근 차수들, 내 주소, 고를 수 있는 통화 | 공개 |
-| GET | `/api/back/pokemon/hosts/{handle}` | 한 주최자와 그가 연 차수들 (`/pokemon/{handle}`) | 공개 |
+| GET | `/api/back/pokemon/hosts/{handle}` | 한 주최자 — 그가 연 차수들과 **모든 차수의 신청서를 모은 것** (`/pokemon/{handle}`) | 공개 |
 | POST | `/api/back/pokemon/hosts` | 내 주소 정하기. 회원당 한 번, 소문자·숫자·하이픈만 | 로그인 |
 | PUT | `/api/back/pokemon/hosts/me` | 주최자 설정 — 기본 입금 계좌. 차수를 열 때 자동으로 채워진다 | 주최자 |
 | POST | `/api/back/pokemon/rounds` | 차수 개설. 통화·환율 방식(`FIXED`/`PER_ORDER`)을 정한다. 번호는 주최자 안에서 자동. 계좌를 비우면 주최자 기본 계좌를 쓴다 | 로그인 + 주소 있음 |
@@ -109,6 +109,8 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 | PUT | `/api/back/pokemon/rounds/{roundId}` | 차수 수정. 통화는 불변, 환율 변경은 **앞으로의 신청서에만** 적용 | 주최자 |
 | PATCH | `/api/back/pokemon/rounds/{roundId}/status` | 차수 상태. `PURCHASED` 최초 진입에 환율이 박혀 환차손익 확정 | 주최자 |
 | DELETE | `/api/back/pokemon/rounds/{roundId}` | 차수 삭제 — 신청서가 없을 때만 | 주최자 |
+| GET · POST | `/api/back/pokemon/rounds/{roundId}/products` | **그 차수의** 상품표 조회·추가. 통화는 차수를 따라간다 | 주최자 |
+| POST | `/api/back/pokemon/rounds/{roundId}/products/from-template` | 내 상품표(틀)에서 그 차수로 복사. 이미 있는 이름은 건너뛴다 | 주최자 |
 | POST | `/api/back/pokemon/rounds/{roundId}/orders` | 신청서 제출. **모집중**인 차수에만. 신청자는 회원 닉네임이다 | 로그인 |
 | GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 — 신청서 + 그 차수 + 현재 환율 | 공개 |
 | PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 (전체 교체) | 주최자, 또는 아직 `ORDERED` 인 본인 |

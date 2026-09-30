@@ -65,15 +65,45 @@ public class PokemonServiceImpl implements PokemonService {
         Long viewerId = memberResolver.optionalMemberId(loginId);
 
         boolean isMe = host.getMemberId().equals(viewerId);
+        List<PokemonRounds> rounds =
+                roundRepository.findAllByHostMemberIdOrderBySequenceDesc(host.getMemberId());
+
         return new PokemonHostResponse(
                 host.getHandle(),
                 memberName(host.getMemberId()),
                 isMe,
                 // 계좌는 본인에게만. 차수를 열기 전이라면 아직 공개할 이유가 없다.
                 isMe ? host.getBankAccount() : null,
-                toRoundResponses(
-                        roundRepository.findAllByHostMemberIdOrderBySequenceDesc(host.getMemberId()),
-                        viewerId));
+                toRoundResponses(rounds, viewerId),
+                ordersOf(rounds, viewerId));
+    }
+
+    /**
+     * 여러 차수의 신청서를 최신순으로 모은다. 차수마다 조회하면 N+1 이라 한 번에 읽고,
+     * 항목·댓글도 각각 IN 조회 한 번으로 붙인다.
+     */
+    private List<PokemonOrderResponse> ordersOf(List<PokemonRounds> rounds, Long viewerId) {
+        if (rounds.isEmpty()) {
+            return List.of();
+        }
+        List<PokemonOrders> orders = orderRepository.findAllByRoundIdIn(
+                rounds.stream().map(PokemonRounds::getId).toList());
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> orderIds = orders.stream().map(PokemonOrders::getId).toList();
+        Map<Long, List<PokemonOrderItemResponse>> itemsByOrder = loadItems(orderIds);
+        Map<Long, List<PokemonCommentResponse>> commentsByOrder = loadComments(orderIds, viewerId);
+
+        return orders.stream()
+                .sorted(Comparator.comparing(PokemonOrders::getCreatedAt).reversed())
+                .map(order -> PokemonOrderResponse.of(
+                        order,
+                        itemsByOrder.getOrDefault(order.getId(), List.of()),
+                        commentsByOrder.getOrDefault(order.getId(), List.of()),
+                        viewerId))
+                .toList();
     }
 
     @Override
@@ -395,6 +425,67 @@ public class PokemonServiceImpl implements PokemonService {
         return productRepository.findAllByHostMemberIdAndRoundIdIsNullOrderBySortOrderAsc(hostId).stream()
                 .map(product -> PokemonManagedProductResponse.of(product, used.contains(product.getId())))
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PokemonManagedProductResponse> getRoundProducts(String loginId, Long roundId) {
+        PokemonRounds round = requireManagedRound(loginId, roundId);
+        Set<Long> used = Set.copyOf(itemRepository.findUsedProductIds());
+
+        return productRepository.findAllByRoundIdOrderBySortOrderAsc(round.getId()).stream()
+                .map(product -> PokemonManagedProductResponse.of(product, used.contains(product.getId())))
+                .toList();
+    }
+
+    @Override
+    @Transactional
+    public PokemonManagedProductResponse createRoundProduct(String loginId, Long roundId,
+                                                            PokemonProductRequest request) {
+        PokemonRounds round = requireManagedRound(loginId, roundId);
+        String name = requireName(request.name());
+        // 통화는 차수를 따라간다 — 다른 통화 상품이 섞이면 금액을 한 환율로 계산할 수 없다.
+        String currency = round.getCurrency();
+
+        if (productRepository.existsByRoundIdAndNameAndCurrency(roundId, name, currency)) {
+            throw PokemonErrorCode.DUPLICATE_PRODUCT_NAME.asException();
+        }
+
+        int nextOrder = productRepository.findAllByRoundIdOrderBySortOrderAsc(roundId).stream()
+                .mapToInt(PokemonProducts::getSortOrder).max().orElse(0) + 1;
+
+        PokemonProducts saved = productRepository.save(PokemonProducts.create(
+                round.getHostMemberId(), roundId, name, currency, request.price(), request.coins(),
+                nextOrder, LocalDateTime.now()));
+        return PokemonManagedProductResponse.of(saved, false);
+    }
+
+    @Override
+    @Transactional
+    public List<PokemonManagedProductResponse> copyTemplateInto(String loginId, Long roundId) {
+        PokemonRounds round = requireManagedRound(loginId, roundId);
+        LocalDateTime now = LocalDateTime.now();
+
+        // 이미 있는 이름은 건너뛴다 — 차수에서 고친 가격을 틀이 덮어쓰면 안 된다.
+        Set<String> existing = productRepository.findAllByRoundIdOrderBySortOrderAsc(roundId).stream()
+                .map(PokemonProducts::getName).collect(Collectors.toSet());
+        int nextOrder = productRepository.findAllByRoundIdOrderBySortOrderAsc(roundId).stream()
+                .mapToInt(PokemonProducts::getSortOrder).max().orElse(0);
+
+        List<PokemonProducts> toAdd = new ArrayList<>();
+        for (PokemonProducts template : productRepository
+                .findAllByHostMemberIdAndCurrencyAndRoundIdIsNullOrderBySortOrderAsc(
+                        round.getHostMemberId(), round.getCurrency())) {
+            if (existing.contains(template.getName())) {
+                continue;
+            }
+            PokemonProducts copy = template.copyInto(roundId, now);
+            copy.moveTo(++nextOrder);
+            toAdd.add(copy);
+        }
+        productRepository.saveAll(toAdd);
+
+        return getRoundProducts(loginId, roundId);
     }
 
     @Override

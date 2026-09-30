@@ -115,6 +115,35 @@ public class PokemonController {
         return ApiResponse.success("Round deleted");
     }
 
+    @GetMapping("/rounds/{roundId}/products")
+    @Operation(summary = "차수 상품표", description = "그 차수의 상품 — 내려간 것까지. 차수마다 따로 고친다.")
+    public ApiResponse<List<PokemonManagedProductResponse>> getRoundProducts(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long roundId) {
+        return ApiResponse.success(
+                pokemonService.getRoundProducts(loginId, roundId), "Round products retrieved");
+    }
+
+    @PostMapping("/rounds/{roundId}/products")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "차수에 상품 추가", description = "통화는 차수를 따라간다.")
+    public ApiResponse<PokemonManagedProductResponse> createRoundProduct(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long roundId,
+            @Valid @RequestBody PokemonProductRequest request) {
+        return ApiResponse.createSuccess(
+                pokemonService.createRoundProduct(loginId, roundId, request), "Product created");
+    }
+
+    @PostMapping("/rounds/{roundId}/products/from-template")
+    @Operation(summary = "내 상품표에서 가져오기",
+            description = "그 차수 통화의 틀을 복사한다. 이미 있는 이름은 건너뛴다.")
+    public ApiResponse<List<PokemonManagedProductResponse>> copyTemplate(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long roundId) {
+        return ApiResponse.success(pokemonService.copyTemplateInto(loginId, roundId), "Template copied");
+    }
+
     /* ===== 신청서 ===== */
 
     @PostMapping("/rounds/{roundId}/orders")

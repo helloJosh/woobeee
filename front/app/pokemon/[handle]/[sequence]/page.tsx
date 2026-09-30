@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { AlertTriangle, ArrowLeft, MessageSquare, Plus, RefreshCw } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Plus, RefreshCw, Settings } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import OrderRows from "@/components/pokemon/order-rows"
 import Pager from "@/components/pokemon/pager"
 import { OrderProgressBar, RoundProgressSteps } from "@/components/pokemon/progress-steps"
 import RoundTabs from "@/components/pokemon/round-tabs"
@@ -141,6 +142,13 @@ export default function PokemonRoundPage() {
                                 {ROUND_STATUS_LABELS[round.status]}
                             </Badge>
                         )}
+                        {round.canManage && (
+                            <Button asChild size="sm" variant="outline">
+                                <Link href={`/pokemon/${round.hostHandle}/${round.sequence}/manage`}>
+                                    <Settings className="mr-1 h-4 w-4" /> 차수 관리
+                                </Link>
+                            </Button>
+                        )}
                         {acceptsOrders(round) && (
                             <Button asChild>
                                 <Link href={`/pokemon/${round.hostHandle}/${round.sequence}/new`}>
@@ -243,61 +251,11 @@ export default function PokemonRoundPage() {
                             )}
                         </div>
                     ) : (
-                        paginate(orders, page).items.map((order) => (
-                            <Link
-                                key={order.id}
-                                href={`/pokemon/orders/${order.id}`}
-                                className={`block rounded-md border p-3 transition-colors hover:bg-accent ${
-                                    order.status === "CANCELLED" ? "opacity-50" : ""
-                                }`}
-                            >
-                                <div className="flex flex-wrap items-start justify-between gap-2">
-                                    <div>
-                                        <div className="font-medium">
-                                            {order.applicantName}
-                                            {order.guest && (
-                                                <span className="ml-1 text-xs text-muted-foreground">비회원</span>
-                                            )}
-                                        </div>
-                                        <div className="text-xs text-muted-foreground">
-                                            {new Date(order.createdAt).toLocaleString("ko-KR")}
-                                            {order.comments.length > 0 && (
-                                                <span className="ml-2 inline-flex items-center gap-1">
-                                                    <MessageSquare className="h-3 w-3" />
-                                                    {order.comments.length}
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <OrderStatusBadge status={order.status} />
-                                </div>
-
-                                <div className="mt-3">
-                                    <OrderProgressBar status={order.status} />
-                                </div>
-
-                                <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-                                    <div>
-                                        <dt className="text-xs text-muted-foreground">받는 포켓코인</dt>
-                                        <dd className="font-semibold">{formatCoins(orderCoins(order))}</dd>
-                                    </div>
-                                    <div>
-                                        <dt className="text-xs text-muted-foreground">상품 합계</dt>
-                                        <dd>{formatAmount(order.totalAmount, round.currency)}</dd>
-                                    </div>
-                                    <div>
-                                        <dt className="text-xs text-muted-foreground">이체할 금액</dt>
-                                        <dd className="font-semibold">{formatKrw(order.transferKrw)}</dd>
-                                    </div>
-                                    <div>
-                                        <dt className="text-xs text-muted-foreground">환차손익</dt>
-                                        <dd className="text-sm">
-                                            {formatSignedKrw(fxDelta(order, round, currentRate.toKrw))}
-                                        </dd>
-                                    </div>
-                                </dl>
-                            </Link>
-                        ))
+                        <OrderRows
+                            orders={paginate(orders, page).items}
+                            rounds={[round]}
+                            currentRate={currentRate.toKrw}
+                        />
                     )}
 
                     <Pager

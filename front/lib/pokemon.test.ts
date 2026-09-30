@@ -26,6 +26,7 @@ import {
     pricePerCoin,
     quote,
     rateFor,
+    roundOf,
     roundStep,
     roundTitle,
     selectionLines,
@@ -500,5 +501,19 @@ describe("페이징", () => {
 
     it("딱 나눠떨어지면 빈 마지막 페이지를 만들지 않는다", () => {
         expect(paginate(Array.from({ length: 20 }, (_, i) => i), 1).totalPages).toBe(2)
+    })
+})
+
+/** POKEMON-AC-33 */
+describe("모아 보기", () => {
+    const rounds = [round({ id: 1, sequence: 1 }), round({ id: 2, sequence: 2, title: "2차" })]
+
+    it("신청서가 속한 차수를 찾는다", () => {
+        expect(roundOf(order({ roundId: 2 }), rounds)?.sequence).toBe(2)
+    })
+
+    it("차수를 못 찾으면 null 이다 — 목록에 없는 차수의 신청서라도 화면이 죽지 않는다", () => {
+        expect(roundOf(order({ roundId: 99 }), rounds)).toBeNull()
+        expect(roundOf(order({ roundId: 1 }), [])).toBeNull()
     })
 })
