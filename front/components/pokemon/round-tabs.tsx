@@ -1,52 +1,73 @@
 "use client"
 
-import Link from "next/link"
-import { Folder, FolderOpen } from "lucide-react"
+import { Folder, FolderOpen, Layers } from "lucide-react"
 import { ROUND_STATUS_LABELS, roundTitle, type PokemonRound } from "@/lib/pokemon"
 
 /**
- * 한 주최자의 차수들을 폴더 카드처럼 늘어놓는다. 누르면 그 차수 화면으로 간다 —
- * 주소가 유지되므로 링크를 그대로 공유할 수 있다.
+ * 차수를 폴더 카드처럼 늘어놓은 탭. 누르면 옮겨 다니지 않고 <b>그 자리에서</b> 내용이 바뀐다.
+ *
+ * <p>맨 앞의 "전체" 는 모든 차수의 신청서를 모아 보는 탭이다.
  */
 export default function RoundTabs({
     rounds,
-    currentId,
+    selected,
+    totalOrders,
+    onSelect,
 }: {
     rounds: PokemonRound[]
-    currentId: number
+    /** "all" 이거나 차수 번호 문자열. */
+    selected: string
+    totalOrders: number
+    onSelect: (next: string) => void
 }) {
-    if (rounds.length === 0) {
-        return null
-    }
+    const card = (active: boolean, cancelled = false) =>
+        `rounded-md border p-3 text-left transition-colors ${
+            active ? "border-primary bg-accent" : "hover:bg-accent/50"
+        } ${cancelled ? "opacity-50" : ""}`
 
     return (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+            <button
+                type="button"
+                onClick={() => onSelect("all")}
+                aria-current={selected === "all" ? "page" : undefined}
+                className={card(selected === "all")}
+            >
+                <div className="flex items-center gap-2">
+                    <Layers className={`h-4 w-4 shrink-0 ${selected === "all" ? "" : "text-muted-foreground"}`} />
+                    <span className={`truncate text-sm ${selected === "all" ? "font-semibold" : ""}`}>
+                        전체
+                    </span>
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-1 text-xs text-muted-foreground">
+                    <span>모든 차수</span>
+                    <span>{totalOrders}건</span>
+                </div>
+            </button>
+
             {rounds.map((round) => {
-                const current = round.id === currentId
-                const Icon = current ? FolderOpen : Folder
+                const active = selected === String(round.sequence)
+                const Icon = active ? FolderOpen : Folder
 
                 return (
-                    <Link
+                    <button
                         key={round.id}
-                        href={`/pokemon/${round.hostHandle}/${round.sequence}`}
-                        aria-current={current ? "page" : undefined}
-                        className={`rounded-md border p-3 transition-colors ${
-                            current
-                                ? "border-primary bg-accent"
-                                : "hover:bg-accent/50"
-                        } ${round.status === "CANCELLED" ? "opacity-50" : ""}`}
+                        type="button"
+                        onClick={() => onSelect(String(round.sequence))}
+                        aria-current={active ? "page" : undefined}
+                        className={card(active, round.status === "CANCELLED")}
                     >
                         <div className="flex items-center gap-2">
-                            <Icon className={`h-4 w-4 shrink-0 ${current ? "" : "text-muted-foreground"}`} />
-                            <span className={`truncate text-sm ${current ? "font-semibold" : ""}`}>
+                            <Icon className={`h-4 w-4 shrink-0 ${active ? "" : "text-muted-foreground"}`} />
+                            <span className={`truncate text-sm ${active ? "font-semibold" : ""}`}>
                                 {roundTitle(round)}
                             </span>
                         </div>
                         <div className="mt-1 flex items-baseline justify-between gap-1 text-xs text-muted-foreground">
-                            <span>{ROUND_STATUS_LABELS[round.status]}</span>
+                            <span>{ROUND_STATUS_LABELS[round.status]} · {round.currency}</span>
                             <span>{round.orderCount}건</span>
                         </div>
-                    </Link>
+                    </button>
                 )
             })}
         </div>
