@@ -56,7 +56,7 @@ export default function HomePage() {
         if (s) next.set("search", s)
         if (t) next.set("tag", t)
         const qs = next.toString()
-        router.push(qs ? `/?${qs}` : "/", { scroll: false })
+        router.push(qs ? `/blog?${qs}` : "/blog", { scroll: false })
     }, [router, category, search, tag])
 
     useRegisterHeaderControls({

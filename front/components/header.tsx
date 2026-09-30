@@ -90,9 +90,11 @@ export default function Header() {
         {/* md 이상: 세 구역 격자(왼쪽 탭 · 가운데 검색 · 오른쪽 메뉴, 양옆 1fr 로 검색창이 정가운데).
             휴대폰: 검색이 없으니 격자 대신 양끝 정렬 — 오른콝 아이콘이 탭 옆에 붙지 않고 오른쪽 끝으로 간다 */}
         <div className="flex h-16 items-center justify-between gap-4 px-4 md:grid md:grid-cols-[1fr_auto_1fr]">
-          {/* 상단탭: 버튼·아이콘 없이 글씨만 — HOME · RESUME(모달) · 일정(로그인 시). 게임(/game)은 URL 로만. 마이페이지는 오른쪽 아바타. */}
+          {/* 상단탭: 버튼·아이콘 없이 글씨만 — HOME(공동구매) · BLOG · RESUME(모달) · 일정(로그인 시).
+              게임(/game)은 URL 로만. 마이페이지는 오른쪽 아바타. */}
           <nav aria-label="주 메뉴" className="flex items-center gap-5 text-sm font-semibold tracking-wide">
-            <Link href="/" className={navLinkClass(pathname === "/")}>HOME</Link>
+            <Link href="/" className={navLinkClass(pathname === "/" || (pathname?.startsWith("/pokemon") ?? false))}>HOME</Link>
+            <Link href="/blog" className={navLinkClass(pathname?.startsWith("/blog") ?? false)}>BLOG</Link>
             <button type="button" onClick={() => setResumeOpen(true)} aria-haspopup="dialog" className={navLinkClass(false)}>RESUME</button>
             {isAuthenticated ? (
                 <Link href="/schedule" className={navLinkClass(pathname?.startsWith("/schedule") ?? false)}>일정</Link>
