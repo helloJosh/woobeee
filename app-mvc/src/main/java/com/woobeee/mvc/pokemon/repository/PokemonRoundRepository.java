@@ -15,7 +15,4 @@ public interface PokemonRoundRepository extends JpaRepository<PokemonRounds, Lon
 
     /** 다음 차수 번호를 정할 때 쓴다. */
     Optional<PokemonRounds> findFirstByHostMemberIdOrderBySequenceDesc(Long hostMemberId);
-
-    /** 전체 화면이 보는 목록 — 최근에 연 것이 위로. */
-    List<PokemonRounds> findAllByOrderByCreatedAtDesc();
 }

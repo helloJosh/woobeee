@@ -100,7 +100,7 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 
 | 메서드 | 경로 | 설명 | 접근 |
 | --- | --- | --- | --- |
-| GET | `/api/back/pokemon/home` | 첫 화면 — 최근 차수들, 내 주소, 고를 수 있는 통화 | 공개 |
+| GET | `/api/back/pokemon/home` | 첫 화면 — 내 주소·기본 계좌, 고를 수 있는 통화. 차수 목록은 싣지 않는다(주최자 주소로 찾아 들어간다) | 공개 |
 | GET | `/api/back/pokemon/hosts/{handle}` | 한 주최자와 그가 연 차수들 (`/pokemon/{handle}`). 신청서는 싣지 않는다 — 화면이 한 번에 한 차수만 보므로 차수 조회가 준다 | 공개 |
 | POST | `/api/back/pokemon/hosts` | 내 주소 정하기. 회원당 한 번, 소문자·숫자·하이픈만 | 로그인 |
 | PUT | `/api/back/pokemon/hosts/me` | 주최자 설정 — 기본 입금 계좌. 차수를 열 때 자동으로 채워진다 | 주최자 |

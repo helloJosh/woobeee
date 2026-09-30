@@ -47,10 +47,8 @@ public class PokemonServiceImpl implements PokemonService {
         Long viewerId = memberResolver.optionalMemberId(loginId);
         Optional<PokemonHosts> mine = viewerId == null
                 ? Optional.empty() : hostRepository.findById(viewerId);
-        List<PokemonRounds> rounds = roundRepository.findAllByOrderByCreatedAtDesc();
 
         return new PokemonHomeResponse(
-                toRoundResponses(rounds, viewerId),
                 mine.map(PokemonHosts::getHandle).orElse(null),
                 mine.map(PokemonHosts::getBankAccount).orElse(null),
                 viewerId != null,

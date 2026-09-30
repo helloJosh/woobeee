@@ -1,114 +1,120 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { AlertTriangle, Coins, Plus, RefreshCw, Settings } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { AlertTriangle, ArrowRight, Coins, Plus, Settings } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
-import RoundList from "@/components/pokemon/round-list"
+import { Input } from "@/components/ui/input"
+import { Field } from "@/components/pokemon/pokemon-bits"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
-import type { PokemonHome } from "@/lib/pokemon"
+import { validateHandle, type PokemonHome } from "@/lib/pokemon"
 
-/** 첫 화면 — 최근에 열린 공동구매들. 차수를 열려면 먼저 내 주소를 정해야 한다. */
+/**
+ * {@code /pokemon} — 들어가는 문.
+ *
+ * <p>공동구매는 주최자 주소({@code /pokemon/{handle}})로 찾아 들어간다. 남이 연 것까지
+ * 늘어놓지 않는다 — 아는 사람의 주소를 치고 들어가는 방식이다.
+ */
 export default function PokemonHomePage() {
+    const router = useRouter()
     const [home, setHome] = useState<PokemonHome | null>(null)
-    const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading")
+    const [handle, setHandle] = useState("")
     const [error, setError] = useState<string | null>(null)
 
-    const load = useCallback(async () => {
-        try {
-            setHome(await pokemonAPI.getHome())
-            setLoadState("ready")
-            setError(null)
-        } catch (caught) {
-            setLoadState("failed")
-            setError(describeGameApiError(caught, "공동구매 목록을 불러오지 못했습니다."))
-        }
+    useEffect(() => {
+        // 못 불러와도 화면은 쓸 수 있어야 한다 — 주소를 치고 들어가는 것이 본체다.
+        pokemonAPI.getHome().then(setHome).catch(() => setHome(null))
     }, [])
 
-    useEffect(() => {
-        void load()
-    }, [load])
-
-    if (loadState === "loading") {
-        return (
-            <main className="mx-auto max-w-4xl space-y-4 px-4 py-8">
-                <Skeleton className="h-10 w-64" />
-                <Skeleton className="h-48 w-full" />
-            </main>
-        )
-    }
-
-    if (loadState === "failed" || home === null) {
-        return (
-            <main className="mx-auto max-w-4xl px-4 py-8">
-                <Alert variant="destructive">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription className="flex items-center justify-between gap-4">
-                        <span>{error}</span>
-                        <Button size="sm" variant="outline" onClick={() => void load()}>
-                            <RefreshCw className="mr-1 h-3 w-3" /> 다시 시도
-                        </Button>
-                    </AlertDescription>
-                </Alert>
-            </main>
-        )
+    const go = () => {
+        const problem = validateHandle(handle)
+        if (problem !== null) {
+            setError(problem)
+            return
+        }
+        setError(null)
+        router.push(`/pokemon/${handle.trim().toLowerCase()}`)
     }
 
     return (
-        <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-            <header className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                    <h1 className="flex items-center gap-2 text-2xl font-bold">
-                        <Coins className="h-6 w-6" /> 포켓코인 공동구매
-                    </h1>
-                    <p className="text-sm text-muted-foreground">
-                        주최자가 차수를 열면 누구나 신청할 수 있습니다. 로그인 없이도 신청됩니다.
-                    </p>
-                </div>
+        <main className="mx-auto max-w-xl space-y-6 px-4 py-12">
+            <header className="space-y-1 text-center">
+                <h1 className="flex items-center justify-center gap-2 text-2xl font-bold">
+                    <Coins className="h-6 w-6" /> 공동구매
+                </h1>
+                <p className="text-sm text-muted-foreground">
+                    주최자의 주소를 입력하면 그 사람이 여는 공동구매로 갑니다.
+                </p>
+            </header>
 
-                <div className="flex flex-wrap items-center gap-2">
-                    {home.myHandle !== null && (
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-base">주최자 주소로 들어가기</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <Field label="주소">
+                        <Input
+                            value={handle}
+                            onChange={(event) => {
+                                setHandle(event.target.value)
+                                setError(null)
+                            }}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") go()
+                            }}
+                            placeholder="예) hs"
+                            maxLength={30}
+                            autoFocus
+                        />
+                    </Field>
+                    <p className="text-xs text-muted-foreground">
+                        /pokemon/<b>{handle.trim().toLowerCase() || "주소"}</b>
+                    </p>
+
+                    {error !== null && (
+                        <Alert variant="destructive">
+                            <AlertTriangle className="h-4 w-4" />
+                            <AlertDescription>{error}</AlertDescription>
+                        </Alert>
+                    )}
+
+                    <Button onClick={go} className="w-full">
+                        들어가기 <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                </CardContent>
+            </Card>
+
+            {home !== null && home.loggedIn && (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                    {home.myHandle !== null ? (
                         <>
+                            <Button asChild variant="outline">
+                                <Link href={`/pokemon/${home.myHandle}`}>내 공동구매</Link>
+                            </Button>
                             <Button asChild variant="outline">
                                 <Link href="/pokemon/products">
                                     <Settings className="mr-1 h-4 w-4" /> 내 상품표
                                 </Link>
                             </Button>
-                            <Button asChild variant="outline">
-                                <Link href={`/pokemon/${home.myHandle}`}>내 공동구매</Link>
-                            </Button>
                         </>
-                    )}
-                    {home.loggedIn && (
-                        <Button asChild>
-                            <Link href="/pokemon/new">
-                                <Plus className="mr-1 h-4 w-4" /> 공동구매 열기
-                            </Link>
-                        </Button>
-                    )}
+                    ) : null}
+                    <Button asChild>
+                        <Link href="/pokemon/new">
+                            <Plus className="mr-1 h-4 w-4" /> 공동구매 열기
+                        </Link>
+                    </Button>
                 </div>
-            </header>
-
-            {!home.loggedIn && (
-                <Alert>
-                    <AlertDescription>
-                        공동구매를 <b>열려면</b> 로그인이 필요합니다. 신청은 로그인 없이도 됩니다.
-                    </AlertDescription>
-                </Alert>
             )}
 
-            <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-base">열린 공동구매 {home.rounds.length}개</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <RoundList rounds={home.rounds} showHost emptyMessage="아직 열린 공동구매가 없습니다." />
-                </CardContent>
-            </Card>
+            {home !== null && !home.loggedIn && (
+                <p className="text-center text-xs text-muted-foreground">
+                    공동구매를 열거나 신청하려면 로그인이 필요합니다.
+                </p>
+            )}
         </main>
     )
 }

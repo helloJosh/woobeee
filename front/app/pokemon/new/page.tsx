@@ -154,7 +154,7 @@ export default function PokemonNewRoundPage() {
                 {header}
                 <Alert>
                     <AlertDescription>
-                        공동구매를 열려면 로그인이 필요합니다. 신청은 로그인 없이도 됩니다.
+                        공동구매를 열려면 로그인이 필요합니다.
                     </AlertDescription>
                 </Alert>
             </main>

@@ -1,4 +1,4 @@
-// front/lib/pokemon.ts — 포켓코인 공동구매의 React-free 판단 로직.
+// front/lib/pokemon.ts — 공동구매의 React-free 판단 로직.
 // 컴포넌트에는 판단을 두지 않는다 (vitest 가 node 환경이라 컴포넌트는 검증 밖이다).
 //
 // 구조: 주최자가 차수(1차·2차·3차)를 열고 친구들이 거기에 신청한다.
@@ -118,7 +118,6 @@ export interface PokemonExchangeRate {
 }
 
 export interface PokemonHome {
-    rounds: PokemonRound[]
     /** 내 주소. 없으면 차수를 열기 전에 먼저 정해야 한다. */
     myHandle: string | null
     /** 내 기본 입금 계좌 — 차수를 열 때 자동으로 채운다. */
