@@ -7,7 +7,7 @@
 #   export GOOGLE_CLIENT_SECRET='...'
 #   export GOOGLE_REDIRECT_URI='https://www.woobeee.com/auth/google/callback'
 #   export S3_PUBLIC_ENDPOINT='https://image.woobeee.com'
-#   .docker-compose/up.sh
+#   .docker-compose/docker-up.sh
 #
 # 주의
 #  - app-mvc 컨테이너는 실제 `market` DB 에 붙고 부팅할 때 Flyway 가 미적용 마이그레이션을 돌린다.
