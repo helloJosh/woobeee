@@ -46,9 +46,6 @@ public class Member {
     @Column(length = 500)
     private String slackWebhookUrl;
 
-    @Column(nullable = false)
-    private long gameMoney;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private MemberRole role;
@@ -67,7 +64,6 @@ public class Member {
             boolean termsAgreed,
             boolean privacyPolicyAgreed,
             String profileImageKey,
-            long gameMoney,
             MemberRole role,
             boolean active,
             LocalDateTime createdAt
@@ -78,7 +74,6 @@ public class Member {
         this.termsAgreed = termsAgreed;
         this.privacyPolicyAgreed = privacyPolicyAgreed;
         this.profileImageKey = profileImageKey;
-        this.gameMoney = gameMoney;
         this.role = role;
         this.active = active;
         this.createdAt = createdAt;
@@ -98,7 +93,6 @@ public class Member {
                 .termsAgreed(termsAgreed)
                 .privacyPolicyAgreed(privacyPolicyAgreed)
                 .profileImageKey(null)
-                .gameMoney(0L)
                 .role(MemberRole.ROLE_MEMBER)
                 .active(true)
                 .createdAt(LocalDateTime.now())

@@ -18,7 +18,6 @@ public record MemberProfileResponse(
         Long memberId,
         String email,
         String nickname,
-        long gameMoney,
         String profileImageUrl
 ) {
 }

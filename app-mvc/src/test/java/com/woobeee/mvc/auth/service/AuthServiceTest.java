@@ -157,7 +157,6 @@ class AuthServiceTest {
         assertThat(savedMember.getEmail()).isEqualTo("member@example.com");
         assertThat(savedMember.getNickname()).isEqualTo("member-nick");
         assertThat(savedMember.isActive()).isTrue();
-        assertThat(savedMember.getGameMoney()).isZero();
         assertThat(savedMember.getProfileImageKey()).isNull();
         assertThat(response.accessToken()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");

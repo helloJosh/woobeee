@@ -68,7 +68,7 @@ class MemberProfileImageControllerTest {
     void getMyProfileReportsThatAProfileImageExists() throws Exception {
         authenticate();
         when(memberProfileImageService.getMyProfile(LOGIN_ID))
-                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
 
         mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
@@ -76,7 +76,6 @@ class MemberProfileImageControllerTest {
                 .andExpect(jsonPath("$.data.memberId").value(42))
                 .andExpect(jsonPath("$.data.email").value(LOGIN_ID))
                 .andExpect(jsonPath("$.data.nickname").value("nick"))
-                .andExpect(jsonPath("$.data.gameMoney").value(0))
                 // presigned URL 을 그대로 내린다. 서명이 host 와 키를 포함하므로 컨트롤러가
                 // 손대면 서명이 깨진다.
                 .andExpect(jsonPath("$.data.profileImageUrl").value(
@@ -88,7 +87,7 @@ class MemberProfileImageControllerTest {
     void getMyProfileReportsNoImageWhenUnset() throws Exception {
         authenticate();
         when(memberProfileImageService.getMyProfile(LOGIN_ID))
-                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, null));
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", null));
 
         mockMvc.perform(get("/api/auth/me").header("Authorization", "Bearer " + ACCESS_TOKEN))
                 .andExpect(status().isOk())
@@ -109,7 +108,7 @@ class MemberProfileImageControllerTest {
     void uploadAcceptsAMultipartFileAndReturnsTheUpdatedProfile() throws Exception {
         authenticate();
         when(memberProfileImageService.upload(eq(LOGIN_ID), any()))
-                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", 0L, "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
+                .thenReturn(new MemberProfileResponse(42L, LOGIN_ID, "nick", "https://image.woobeee.com/woobeee/profiles/42/uuid/a.png?X-Amz-Signature=abc"));
 
         mockMvc.perform(multipart("/api/auth/me/profile-image")
                         .file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1, 2, 3}))

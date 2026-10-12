@@ -4,8 +4,8 @@ import { configDefaults, defineConfig } from "vitest/config"
 /**
  * 프론트의 첫 테스트 러너. 여기 있는 설정은 두 가지뿐이다.
  *
- * 1. `@/*` 별칭 — tsconfig 의 paths 와 같은 규칙이다. 없으면 `lib/game-join.ts` 처럼
- *    `@/lib/api` 를 import 하는 모듈을 테스트에서 열 수 없다.
+ * 1. `@/*` 별칭 — tsconfig 의 paths 와 같은 규칙이다. 없으면 `@/lib/api` 를
+ *    import 하는 모듈을 테스트에서 열 수 없다.
  * 2. 훑지 않을 곳만 지정한다. include 를 `lib/**` 로 좁혀 두면 나중에 누군가
  *    `components/` 나 `hooks/` 에 스펙을 두었을 때 러너가 **말없이 건너뛴다** — 초록인데
  *    아무것도 돌지 않는 상태가 가장 나쁘다. 기본 include 를 그대로 쓰고 생성물만 뺀다.

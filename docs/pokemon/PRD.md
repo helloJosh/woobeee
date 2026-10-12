@@ -67,12 +67,18 @@
 | POKEMON-AC-33 | 차수 관리 화면 | 주최자는 `/pokemon/{handle}/{n}/manage` 에서 그 차수의 환율·계좌·마감일과 **그 차수의 상품표**를 고친다. 통화는 못 바꾸고, 환율을 바꾸면 앞으로의 신청서에만 적용된다. 틀에서 복사해 올 수 있고 이미 있는 이름은 건너뛴다 — 차수에서 고친 가격을 틀이 덮으면 안 된다 |
 | POKEMON-AC-34 | 주최자 방 | `/pokemon/{handle}` 은 차수를 **탭**으로 나눈다. 고르면 그 차수 화면이 **그 자리에** 뜨고, 아무것도 고르지 않으면 가장 최근 차수를 연다. 고른 탭은 `?round=N` 으로 주소에 남아 링크를 공유할 수 있고, `/pokemon/{handle}/{n}` 은 그리로 보낸다 — 차수 본문을 두 곳에서 그리면 언젠가 어긋난다 |
 | POKEMON-AC-35 | 들어가는 문 | `/pokemon` 은 남이 연 공동구매를 늘어놓지 않는다. 아는 주최자의 주소를 쳐서 `/pokemon/{handle}` 로 들어간다 — 친구끼리 링크로 나누는 방식이라 목록이 필요 없다 |
+| POKEMON-AC-36 | 내가 참가한 공동구매 | `GET /api/back/pokemon/orders/me` 는 **로그인 필수**(비로그인 401 `pokemon_loginRequired`)이고 호출자 본인의 신청서만 차수·주최자 핸들과 조인해 **최신순**으로 돌려준다(`orderId`·`roundId`·`hostHandle`·`roundSequence`·`roundTitle`·`currency`·`roundStatus`·`orderStatus`·`transferKrw`·`createdAt`). 마이페이지(`/mypage`)가 이를 「내가 참가한 공동구매」로 보인다 — 서버가 전부 내려주고 화면이 **한 페이지 10건**(`paginate`·`Pager`, 차수 화면과 같은 규칙)으로 자르며, 현황 집계는 페이지가 아니라 전체 기준이다 — 차수 제목은 `/pokemon/{handle}?round=N`, 상태 배지는 `/pokemon/orders/{id}` 로 잇고, 요약 줄은 진행 중·전달완료·취소 건수와 입금할 금액(`ORDERED` 신청서 `transferKrw` 합)이다. 취소는 진행 중·입금할 금액에서 뺀다 |
+| POKEMON-AC-37 | 목록에서 신청서 상태 바꾸기 | 차수 화면의 신청서 목록에서 **그 차수의 주최자 또는 전역 운영자**(서버가 내려준 `canManage`)에게만 행마다 상태 선택창(주문·입금확인·전달완료·취소)이 뜬다. 그 밖의 사람에게는 배지만 보인다. 고르면 기존 `PATCH /api/back/pokemon/orders/{id}/status` 를 부르고(403 `pokemon_notTheHost` 는 서버가 막는다), 성공하면 그 차수를 다시 받아 진행도·미입금 집계가 함께 움직인다. 선택창을 눌러도 신청서 상세로 이동하지 않는다. 전이 순서는 서버가 강제하지 않는다 |
 
 ## 테스트 매핑
 
 | 위치 | 커버 |
 | --- | --- |
 | `front/lib/pokemon.test.ts` | AC-02·03·04·07·08·11·12·13·15·16·17·18·19·24 (판단 로직 전부) |
+| `front/lib/pokemon.test.ts` (`summarizeMyOrders`·`myOrderRoundHref` 등) | AC-36 |
+| `front/lib/pokemon.test.ts` (`ORDER_STATUS_OPTIONS`) | AC-37 (선택지 목록만 — 선택창 동작은 컴포넌트라 검증 밖) |
+| `app-mvc` `PokemonOrderRepositoryTest` (실 Postgres) | AC-36 (내 신청서만, 최신순, 차수·주최자 조인) |
+| `app-mvc` `PokemonServiceMyOrdersTest` | AC-36 (로그인 필수, 매핑) |
 | `app-mvc` `PokemonErrorCodeTest` | AC-14 |
 | `app-mvc` `PokemonPropertiesTest` | AC-09 (운영자 명단 바인딩·판정) |
 

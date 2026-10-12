@@ -37,6 +37,9 @@ public interface PokemonService {
 
     /* ===== 신청서 ===== */
 
+    /** 마이페이지 — 내가 낸 신청서를 차수 정보와 함께 최신순으로. 로그인 필수. */
+    List<PokemonMyOrderResponse> getMyOrders(String loginId);
+
     PokemonOrderDetailResponse getOrder(String loginId, Long orderId);
 
     PokemonOrderResponse createOrder(String loginId, Long roundId, PostPokemonOrderRequest request);

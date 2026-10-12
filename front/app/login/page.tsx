@@ -24,9 +24,8 @@ export default function LoginPage() {
 function LoginScreen() {
     const { user, loading, isAuthenticated } = useAuth()
     const router = useRouter()
-    // 초대 링크를 열었다가 여기로 온 방문자는 `?next=/game/omok/<id>?invite=<code>` 를 달고
-    // 온다. 그 방으로 돌려보내는 것이 이 화면의 절반이다. 값은 사용자가 고칠 수 있으므로
-    // 읽는 즉시 sanitize 한다 — 그렇지 않으면 오픈 리다이렉트다.
+    // 보호된 화면에서 온 방문자는 `?next=/mypage` 같은 돌아갈 경로를 달고 온다.
+    // 값은 사용자가 고칠 수 있으므로 읽는 즉시 sanitize 한다 — 그렇지 않으면 오픈 리다이렉트다.
     const searchParams = useSearchParams()
     const next = sanitizeNextPath(searchParams.get(NEXT_PARAM))
 

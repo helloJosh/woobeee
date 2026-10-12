@@ -1,56 +1,46 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import ProfileImageEditor from "@/components/auth/profile-image-editor"
-import ReplayViewer from "@/components/game/replay-viewer"
-import { authAPI, gameAPI } from "@/lib/api"
+import Pager from "@/components/pokemon/pager"
+import Link from "next/link"
+import { authAPI, pokemonAPI } from "@/lib/api"
 import { buildAuthHref } from "@/lib/auth-redirect"
-import { describeGameApiError } from "@/lib/game-errors"
-import { memberParticipantId } from "@/lib/game-room"
-import {
-    describeGameTypeName,
-    describeResultSubtitle,
-    describeResultTitle,
-    hasMoreResults,
-    mergeResultPages,
-} from "@/lib/replay-view"
 import { useAuth } from "@/hooks/use-auth"
-import type { GameResultSummary, GameType, MemberProfile } from "@/lib/types"
+import {
+    ORDER_STATUS_LABELS,
+    ROUND_STATUS_LABELS,
+    formatKrw,
+    myOrderHref,
+    myOrderRoundHref,
+    myOrderRoundTitle,
+    paginate,
+    summarizeMyOrders,
+    type PokemonMyOrder,
+} from "@/lib/pokemon"
+import type { MemberProfile } from "@/lib/types"
 
-const PAGE_SIZE = 20
 const MY_PAGE_PATH = "/mypage"
 
-interface OpenReplay {
-    gameResultId: number
-    gameType: GameType
-    url: string
-}
-
 /**
- * 세 번째 상단 탭. 프로필 · 전적 · 기보 다시보기.
- *
- * <p>회원 전용이다 — `/api/game/me/results` 와 `/api/game/results/{id}/replay` 는 둘 다
- * `GamePrincipals.require` 를 거치므로 게스트로는 아무것도 볼 수 없다. 로그인하지 않았으면
- * 여기로 돌아오는 `next` 를 달아 로그인 화면으로 보낸다.
+ * 상단 탭의 마이페이지. 프로필(이미지·닉네임)을 보여 주고 바꾼다.
+ * 회원 전용이라 로그인하지 않았으면 여기로 돌아오는 `next` 를 달아 로그인 화면으로 보낸다.
  */
 export default function MyPage() {
     const router = useRouter()
     const { loading, isAuthenticated } = useAuth()
 
     const [profile, setProfile] = useState<MemberProfile | null>(null)
-    const [results, setResults] = useState<GameResultSummary[]>([])
-    const [moreAvailable, setMoreAvailable] = useState(false)
-    const [loadingMore, setLoadingMore] = useState(false)
     const [loadFailed, setLoadFailed] = useState(false)
-    // 전적은 프로필과 따로 도착한다. 세 상태를 구분해야 한다 — 도착 전에 "없습니다" 도,
-    // 실패했는데 "없습니다" 도 거짓말이다(빈 목록과 못 불러온 것은 다르다).
-    const [resultsState, setResultsState] = useState<"loading" | "ready" | "failed">("loading")
     const [error, setError] = useState<string | null>(null)
-    const [replay, setReplay] = useState<OpenReplay | null>(null)
+    // 프로필과 따로 도착한다. 세 상태를 구분해야 한다 — 도착 전에 "없습니다" 도, 실패했는데
+    // "없습니다" 도 거짓말이다(빈 목록과 못 불러온 것은 다르다).
+    const [orders, setOrders] = useState<PokemonMyOrder[]>([])
+    const [ordersState, setOrdersState] = useState<"loading" | "ready" | "failed">("loading")
+    const [ordersPage, setOrdersPage] = useState(1)
 
     useEffect(() => {
         if (!loading && !isAuthenticated) {
@@ -65,9 +55,6 @@ export default function MyPage() {
 
         let active = true
 
-        // 프로필과 전적을 따로 받는다. Promise.all 로 묶으면 전적 하나가 실패하거나 늦는 것
-        // 만으로 프로필 카드가 아예 안 그려진다 — app-webflux 가 죽으면 프로필 이미지를
-        // 보거나 바꾸는 길이 사라진다. 두 섹션은 서로 다른 앱에서 오므로 함께 죽을 이유가 없다.
         authAPI
             .me()
             .then((loadedProfile) => {
@@ -75,29 +62,27 @@ export default function MyPage() {
                     setProfile(loadedProfile)
                 }
             })
-            .catch((cause) => {
+            .catch(() => {
                 if (!active) {
                     return
                 }
                 // 스피너를 걷는다. 실패한 채로 계속 돌리면 "곧 됩니다" 라는 거짓말이 된다.
                 setLoadFailed(true)
-                setError(describeGameApiError(cause, "정보를 불러오지 못했습니다."))
+                setError("정보를 불러오지 못했습니다.")
             })
 
-        gameAPI
-            .myResults(PAGE_SIZE, 0)
-            .then((loadedResults) => {
-                if (!active) {
-                    return
-                }
-                setResults(loadedResults)
-                setMoreAvailable(hasMoreResults(loadedResults.length, PAGE_SIZE))
-                setResultsState("ready")
-            })
-            .catch((cause) => {
+        // 프로필과 따로 받는다. 한쪽이 실패해도 다른 쪽은 그려져야 한다.
+        pokemonAPI
+            .getMyOrders()
+            .then((loadedOrders) => {
                 if (active) {
-                    setResultsState("failed")
-                    setError(describeGameApiError(cause, "전적을 불러오지 못했습니다."))
+                    setOrders(loadedOrders)
+                    setOrdersState("ready")
+                }
+            })
+            .catch(() => {
+                if (active) {
+                    setOrdersState("failed")
                 }
             })
 
@@ -106,32 +91,8 @@ export default function MyPage() {
         }
     }, [loading, isAuthenticated])
 
-    const loadMore = useCallback(async () => {
-        setLoadingMore(true)
-        try {
-            const page = await gameAPI.myResults(PAGE_SIZE, results.length)
-            // 이어 붙이는 규칙은 mergeResultPages 가 안다 — offset 페이징은 목록 앞쪽에
-            // 행이 늘면 이미 본 전적을 다시 준다(그러면 key 까지 충돌한다).
-            setResults((current) => mergeResultPages(current, page))
-            setMoreAvailable(hasMoreResults(page.length, PAGE_SIZE))
-            setError(null)
-        } catch (cause) {
-            setError(describeGameApiError(cause, "전적을 더 불러오지 못했습니다."))
-        } finally {
-            setLoadingMore(false)
-        }
-    }, [results.length])
-
-    const openReplay = useCallback(async (result: GameResultSummary) => {
-        try {
-            const url = await gameAPI.replayUrl(result.gameResultId)
-            setReplay({ gameResultId: result.gameResultId, gameType: result.gameType, url })
-            setError(null)
-        } catch (cause) {
-            setReplay(null)
-            setError(describeGameApiError(cause, "기보를 불러오지 못했습니다."))
-        }
-    }, [])
+    // 서버가 전부 내려주고 여기서 자른다 — 현황 집계(진행 중·미입금)는 어차피 전부 필요하다.
+    const pagedOrders = paginate(orders, ordersPage)
 
     if (loading || (!profile && !loadFailed)) {
         return (
@@ -159,73 +120,64 @@ export default function MyPage() {
             </section>
 
             <section className="space-y-4">
-                <h2 className="text-lg font-medium">전적</h2>
+                <h2 className="text-lg font-medium">내가 참가한 공동구매</h2>
 
-                {results.length === 0 ? (
+                {orders.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                        {resultsState === "loading"
-                            ? "전적을 불러오는 중입니다…"
-                            : resultsState === "failed"
-                              ? "전적을 불러오지 못했습니다."
-                              : "아직 끝낸 게임이 없습니다."}
+                        {ordersState === "loading"
+                            ? "불러오는 중입니다…"
+                            : ordersState === "failed"
+                              ? "참가한 공동구매를 불러오지 못했습니다."
+                              : "아직 참가한 공동구매가 없습니다."}
                     </p>
                 ) : (
-                    <ul className="space-y-2">
-                        {results.map((result) => (
-                            <li
-                                key={result.gameResultId}
-                                className="flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm"
-                            >
-                                <div className="min-w-0">
-                                    <p className="font-medium">{describeResultTitle(result)}</p>
-                                    <p className="truncate text-xs text-muted-foreground">
-                                        {describeResultSubtitle(result)}
-                                    </p>
-                                </div>
-                                <Button
-                                    size="sm"
-                                    variant={
-                                        replay?.gameResultId === result.gameResultId ? "secondary" : "outline"
-                                    }
-                                    // 기보 업로드는 결과 저장과 분리돼 있어 실패할 수 있다
-                                    // (ReplayUploader 는 실패를 삼킨다). 그때 replayAvailable 이
-                                    // false 로 온다 — 눌러 봐야 없는 것을 부르게 두지 않는다.
-                                    disabled={!result.replayAvailable}
-                                    onClick={() => openReplay(result)}
+                    <>
+                        <MyOrdersSummary orders={orders} />
+                        <ul className="space-y-2">
+                            {pagedOrders.items.map((order) => (
+                                <li
+                                    key={order.orderId}
+                                    className="flex items-center justify-between gap-3 rounded-md border px-4 py-3 text-sm"
                                 >
-                                    다시보기
-                                </Button>
-                            </li>
-                        ))}
-                    </ul>
+                                    <div className="min-w-0">
+                                        <Link href={myOrderRoundHref(order)} className="font-medium hover:underline">
+                                            {myOrderRoundTitle(order)}
+                                        </Link>
+                                        <p className="truncate text-xs text-muted-foreground">
+                                            {order.hostHandle} · 차수 {ROUND_STATUS_LABELS[order.roundStatus]} · 이체{" "}
+                                            {formatKrw(order.transferKrw)}
+                                        </p>
+                                    </div>
+                                    <Link
+                                        href={myOrderHref(order)}
+                                        className="shrink-0 rounded-md border px-2.5 py-1 text-xs hover:bg-accent"
+                                    >
+                                        {ORDER_STATUS_LABELS[order.orderStatus]}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                        <Pager
+                            page={pagedOrders.page}
+                            totalPages={pagedOrders.totalPages}
+                            total={orders.length}
+                            onChange={setOrdersPage}
+                        />
+                    </>
                 )}
-
-                {moreAvailable ? (
-                    <div className="flex justify-center">
-                        <Button variant="outline" size="sm" disabled={loadingMore} onClick={loadMore}>
-                            {loadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            더 보기
-                        </Button>
-                    </div>
-                ) : null}
             </section>
-
-            {replay ? (
-                <section className="space-y-3">
-                    <h2 className="text-lg font-medium">
-                        기보 다시보기 — {describeGameTypeName(replay.gameType)}
-                    </h2>
-                    <ReplayViewer
-                        // 다른 전적을 열면 뷰어를 새로 만든다. 재생 위치·재생 중 여부가
-                        // 이전 기보의 것으로 남아 있으면 안 된다.
-                        key={replay.gameResultId}
-                        gameType={replay.gameType}
-                        replayUrl={replay.url}
-                        selfParticipantId={memberParticipantId(profile?.memberId ?? null)}
-                        onClose={() => setReplay(null)}
-                    />
-                </section>
-            ) : null}
         </main>
+    )
+}
+
+/** 현황 한 줄 — 판단은 lib/pokemon.ts 의 summarizeMyOrders 가 한다. */
+function MyOrdersSummary({ orders }: { orders: PokemonMyOrder[] }) {
+    const summary = summarizeMyOrders(orders)
+    return (
+        <p className="text-sm text-muted-foreground">
+            진행 중 {summary.inProgress} · 전달완료 {summary.delivered}
+            {summary.cancelled > 0 ? ` · 취소 ${summary.cancelled}` : ""}
+            {summary.unpaidKrw > 0 ? ` · 입금할 금액 ${formatKrw(summary.unpaidKrw)}` : ""}
+        </p>
     )
 }

@@ -222,6 +222,16 @@ public class PokemonServiceImpl implements PokemonService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PokemonMyOrderResponse> getMyOrders(String loginId) {
+        Member member = memberResolver.optionalMember(loginId)
+                .orElseThrow(PokemonErrorCode.LOGIN_REQUIRED::asException);
+        return orderRepository.findMyOrders(member.getId()).stream()
+                .map(PokemonMyOrderResponse::of)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PokemonOrderDetailResponse getOrder(String loginId, Long orderId) {
         PokemonOrders order = orderRepository.findById(orderId)
                 .orElseThrow(PokemonErrorCode.ORDER_NOT_FOUND::asException);

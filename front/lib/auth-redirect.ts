@@ -1,6 +1,6 @@
 /**
- * 로그인·회원가입을 마친 뒤 "원래 가려던 곳"으로 돌려보내기 위한 로직. game-join.ts / game-hub.ts
- * 와 같은 이유로 React 에 의존하지 않는다 — 여기 있는 판단(특히 sanitizeNextPath)이야말로
+ * 로그인·회원가입을 마친 뒤 "원래 가려던 곳"으로 돌려보내기 위한 로직. React 에 의존하지
+ * 않는다 — 여기 있는 판단(특히 sanitizeNextPath)이야말로
  * 조용히 틀린 채로 몇 년을 가는 종류라, 컴포넌트 밖에 두고 테스트로 고정해야 한다.
  *
  * 두 경로가 있다.
@@ -18,7 +18,7 @@
 export const NEXT_PARAM = "next"
 export const HOME_PATH = "/"
 
-// game-join.ts 의 ISO_CONTROL 과 같은 범위. 브라우저는 URL 안의 \t \n \r 을 조용히 빼고
+// ISO 제어문자 범위. 브라우저는 URL 안의 \t \n \r 을 조용히 빼고
 // 해석하므로("/\t/evil.example" -> "//evil.example"), 제어문자가 섞인 경로는 통째로 버린다.
 const ISO_CONTROL = /[\u0000-\u001F\u007F-\u009F]/
 

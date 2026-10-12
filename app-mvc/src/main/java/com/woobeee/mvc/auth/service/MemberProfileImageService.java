@@ -123,7 +123,6 @@ public class MemberProfileImageService {
                 member.getId(),
                 member.getEmail(),
                 member.getNickname(),
-                member.getGameMoney(),
                 profileImageUrlOf(member)
         );
     }

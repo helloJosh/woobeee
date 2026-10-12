@@ -17,16 +17,14 @@
 
 - 단일 `Member` 엔티티(`members` 테이블)와 공통 `Address`. 구매자/판매자 구분은 없다.
 - 필드: `id`, `googleSubject`, `email`, `nickname`, `termsAgreed`, `privacyPolicyAgreed`,
-  `profileImageKey`(nullable), `gameMoney`(long, 기본 0), `role`(`ROLE_MEMBER`/`ROLE_ADMIN`,
+  `profileImageKey`(nullable), `role`(`ROLE_MEMBER`/`ROLE_ADMIN`,
   기본 `ROLE_MEMBER`), `active`, `createdAt`.
 - 활성 상태 여부(`isActive`)로 가입 완료/이용 가능 회원을 구분한다.
 - 역할은 `MemberRole`(`ROLE_MEMBER`/`ROLE_ADMIN`)로 저장한다. 회원가입은 항상 `ROLE_MEMBER`로
   생성하고, `ROLE_ADMIN` 지정은 아직 DB 수동 UPDATE 경로뿐이다(`members_role_check` CHECK
   제약이 오타를 막는다). Redis 토큰의 `role` 값은 회원 role의 enum 이름 그대로다 — 아직 분기에
   쓰이지 않는다. 설계: [`../superpowers/specs/2026-08-05-member-role-design.md`](../superpowers/specs/2026-08-05-member-role-design.md).
-- `gameMoney`는 가입 시 0으로 생성하고 조회만 한다. 증감 경로는 게임 spec에서 정한다.
 - 저장소: `MemberRepository` (Spring Data JPA).
-- `members` 는 `app-webflux` 도 R2DBC 로 **읽는다**(게임 참가자 닉네임). 쓰기는 app-mvc 단독이다.
 
 ## 핵심 기능 (엔드포인트)
 
@@ -87,7 +85,7 @@
 | AUTH-AC-05 | 재발급에 성공하면 새 access/refresh를 발급하고 사용한 refresh token을 삭제(rotation)한다 | `TokenServiceTest` |
 | AUTH-AC-06 | `ip`가 달라도 device가 일치하면 재발급은 거절하지 않고 진행한다(현재 정책, IP 경고는 TODO) | `TokenServiceTest` |
 | AUTH-AC-07 | Google callback에서 state/code 검증에 실패하면 인증을 거절한다 | `AuthServiceTest` |
-| AUTH-AC-08 | 회원가입이 성공하면 `members`에 `active=true`, `gameMoney=0`으로 생성한다 | `AuthServiceTest` |
+| AUTH-AC-08 | 회원가입이 성공하면 `members`에 `active=true`로 생성한다 | `AuthServiceTest` |
 | AUTH-AC-09 | 로그인은 memberType 없이 google subject로 회원을 찾아 토큰을 발급한다. 비활성 회원은 `403`이고 새로 만들지 않는다 | `AuthServiceTest` |
 | AUTH-AC-10 | `POST /api/auth/me/profile-image` 는 multipart `file` 을 `profiles/{토큰의 memberId}/{uuid}/{파일명}` 키로 저장한다 — memberId 는 요청이 아니라 토큰에서 온다 | `MemberProfileImageServiceTest`, `MemberProfileImageControllerTest` |
 | AUTH-AC-11 | 허용 목록(png/jpeg/webp/gif) 밖 contentType 으로 업로드하면 `400` 이고 스토리지에 손대지 않는다 | `MemberProfileImageServiceTest` |

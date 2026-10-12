@@ -15,7 +15,7 @@ import {
     ORDER_STATUS_LABELS, RATE_MODE_LABELS, ROUND_STATUS_FLOW, ROUND_STATUS_LABELS,
     acceptsOrders, formatAmount, formatCoins, formatKrw, formatRate, isRoundSettled,
     paginate, rateFor, summarizeRound,
-    type PokemonRoundBoard, type PokemonRoundStatus,
+    type PokemonOrder, type PokemonOrderStatus, type PokemonRoundBoard, type PokemonRoundStatus,
 } from "@/lib/pokemon"
 
 const ALL_ROUND_STATUSES: PokemonRoundStatus[] = [...ROUND_STATUS_FLOW, "CANCELLED"]
@@ -27,9 +27,12 @@ const ALL_ROUND_STATUSES: PokemonRoundStatus[] = [...ROUND_STATUS_FLOW, "CANCELL
 export default function RoundBoard({
     board,
     onChangeStatus,
+    onChangeOrderStatus,
 }: {
     board: PokemonRoundBoard
     onChangeStatus: (next: PokemonRoundStatus) => void
+    /** 운영자가 목록에서 신청서 상태를 바꿀 때. */
+    onChangeOrderStatus: (order: PokemonOrder, next: PokemonOrderStatus) => void
 }) {
     const [page, setPage] = useState(1)
     const { round, currentRate, orders } = board
@@ -160,7 +163,8 @@ export default function RoundBoard({
                         </div>
                     ) : (
                         <>
-                            <OrderRows orders={paged.items} round={round} currentRate={currentRate.toKrw} />
+                            <OrderRows orders={paged.items} round={round} currentRate={currentRate.toKrw}
+                                       onChangeStatus={round.canManage ? onChangeOrderStatus : undefined} />
                             <Pager page={paged.page} totalPages={paged.totalPages}
                                    total={orders.length} onChange={setPage} />
                         </>

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+    type PokemonMyOrder,
+    ORDER_STATUS_OPTIONS,
+    myOrderHref,
+    myOrderRoundHref,
+    myOrderRoundTitle,
+    summarizeMyOrders,
     ORDER_STATUS_FLOW,
     ORDER_STATUS_LABELS,
     ROUND_STATUS_FLOW,
@@ -503,3 +509,56 @@ describe("페이징", () => {
     })
 })
 
+/* ===== POKEMON-AC-36: 마이페이지 — 내가 참가한 공동구매 ===== */
+
+function myOrder(overrides: Partial<PokemonMyOrder> = {}): PokemonMyOrder {
+    return {
+        orderId: 1,
+        roundId: 10,
+        hostHandle: "hs",
+        roundSequence: 2,
+        roundTitle: null,
+        currency: "INR",
+        roundStatus: "OPEN",
+        orderStatus: "ORDERED",
+        transferKrw: 10_000,
+        createdAt: "2026-10-01T12:00:00",
+        ...overrides,
+    }
+}
+
+describe("POKEMON-AC-37 order status options", () => {
+    it("offers every progress step plus cancel, each with a label", () => {
+        expect(ORDER_STATUS_OPTIONS).toEqual(["ORDERED", "DEPOSIT_CONFIRMED", "DELIVERED", "CANCELLED"])
+        for (const status of ORDER_STATUS_OPTIONS) {
+            expect(ORDER_STATUS_LABELS[status]).toBeTruthy()
+        }
+    })
+})
+
+describe("POKEMON-AC-36 my orders", () => {
+    it("names a round without a title by its number", () => {
+        expect(myOrderRoundTitle(myOrder())).toBe("2차 공동구매")
+        expect(myOrderRoundTitle(myOrder({ roundTitle: "10월 패스" }))).toBe("10월 패스")
+    })
+
+    it("links to the host room tab and to the order detail", () => {
+        expect(myOrderRoundHref(myOrder({ hostHandle: "my-host", roundSequence: 3 }))).toBe("/pokemon/my-host?round=3")
+        expect(myOrderHref(myOrder({ orderId: 77 }))).toBe("/pokemon/orders/77")
+    })
+
+    it("summarizes counts and only unpaid money, leaving cancelled out of both", () => {
+        const summary = summarizeMyOrders([
+            myOrder({ orderStatus: "ORDERED", transferKrw: 10_000 }),
+            myOrder({ orderStatus: "ORDERED", transferKrw: 5_000 }),
+            myOrder({ orderStatus: "DEPOSIT_CONFIRMED", transferKrw: 7_000 }),
+            myOrder({ orderStatus: "DELIVERED", transferKrw: 3_000 }),
+            myOrder({ orderStatus: "CANCELLED", transferKrw: 99_999 }),
+        ])
+        expect(summary).toEqual({ total: 5, inProgress: 3, delivered: 1, cancelled: 1, unpaidKrw: 15_000 })
+    })
+
+    it("is all zeros for no orders", () => {
+        expect(summarizeMyOrders([])).toEqual({ total: 0, inProgress: 0, delivered: 0, cancelled: 0, unpaidKrw: 0 })
+    })
+})

@@ -112,7 +112,6 @@ export default function ProfileImageEditor({
                 <div className="min-w-0 flex-1">
                     <p className="truncate text-lg font-medium">{profile.nickname}</p>
                     <p className="truncate text-sm text-muted-foreground">{profile.email}</p>
-                    <p className="mt-1 text-sm">게임 머니 {profile.gameMoney.toLocaleString()}</p>
                 </div>
 
                 {profile.profileImageUrl ? (

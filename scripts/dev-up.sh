@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-# 로컬 개발 서버 셋을 백그라운드로 띄운다.
+# 로컬 개발 서버 둘을 백그라운드로 띄운다.
 #
 #   app-mvc     :8000  → logs/app-mvc.log   (PID: app-mvc.pid)
-#   app-webflux :8001  → logs/app-webflux.log (PID: app-webflux.pid)
 #   front       :3000  → front/front.log
 #
-# 두 백엔드의 stdout 은 버린다. logback 이 이미 logs/ 에 같은 내용을 쓰고 날짜별로 돌리기
+# 백엔드의 stdout 은 버린다. logback 이 이미 logs/ 에 같은 내용을 쓰고 날짜별로 돌리기
 # 때문에(application.yaml 의 logging.file.name), 리다이렉트를 두면 루트에 중복 사본이 하나 더
 # 쌓인다. stderr 만 logs/*.stderr.log 로 받는다 — logback 은 stdout 을 쓰므로 여기엔 JVM 이
 # 죽는 수준의 사고(잘못된 jar, 클래스 버전 불일치)만 남고, 그건 logs/ 에 안 찍힌다.
@@ -40,7 +39,6 @@ for arg in "$@"; do
 done
 
 MVC_JAR="app-mvc/target/app-mvc.jar"
-WEBFLUX_JAR="app-webflux/target/app-webflux.jar"
 
 fail() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 info() { printf '\033[36m%s\033[0m\n' "$*"; }
@@ -49,9 +47,7 @@ info() { printf '\033[36m%s\033[0m\n' "$*"; }
 [ -f "$MVC_JAR" ] || fail "없음: $MVC_JAR
   먼저 빌드해야 한다:
     export JAVA_HOME=\$(/usr/libexec/java_home -v 25)
-    ./mvnw -pl app-mvc,app-webflux -am package"
-
-[ -f "$WEBFLUX_JAR" ] || fail "없음: $WEBFLUX_JAR (위와 같은 명령으로 빌드)"
+    ./mvnw -pl app-mvc -am package"
 
 [ -d front/node_modules ] || fail "없음: front/node_modules — cd front && npm install"
 
@@ -59,11 +55,11 @@ info() { printf '\033[36m%s\033[0m\n' "$*"; }
 # 재시작만 반복하면 옛 코드가 계속 뜬다 — 실제로 한 번 겪었다(고친 줄 알았던 이미지 경로가
 # 3주 전 jar 로 돌고 있었다). 자동으로 빌드하지는 않는다: 몇 분 걸리고 실패할 수도 있어서
 # 사용자가 정할 일이다.
-newest_src="$(find core/src app-mvc/src app-webflux/src -type f \( -name '*.java' -o -name '*.yaml' -o -name '*.sql' \) -newer "$MVC_JAR" -print -quit 2>/dev/null)"
+newest_src="$(find core/src app-mvc/src -type f \( -name '*.java' -o -name '*.yaml' -o -name '*.sql' \) -newer "$MVC_JAR" -print -quit 2>/dev/null)"
 if [ -n "$newest_src" ]; then
     printf '\033[33m⚠ jar 이 소스보다 오래됐다\033[0m — 예: %s\n' "$newest_src" >&2
     printf '  이대로 띄우면 옛 코드가 뜬다. 반영하려면:\n' >&2
-    printf '    ./mvnw -pl app-mvc,app-webflux -am package -DskipTests\n\n' >&2
+    printf '    ./mvnw -pl app-mvc -am package -DskipTests\n\n' >&2
 fi
 
 # 인프라는 포트로 확인한다. 컨테이너 이름은 compose 프로젝트마다 다를 수 있다.
@@ -87,16 +83,16 @@ fi
 # ── 기존 프로세스 정리 ───────────────────────────────────────────────────────
 # 포트를 쥔 프로세스를 먼저 치운다. 이게 없으면 두 번째 실행부터 백엔드가
 # "Port 8000 was already in use" 로 죽는데, 로그를 안 보면 알 수 없다.
-existing="$(lsof -ti:3000,8000,8001 2>/dev/null)"
+existing="$(lsof -ti:3000,8000 2>/dev/null)"
 if [ -n "$existing" ]; then
     info "이미 떠 있는 프로세스를 내린다: $(echo "$existing" | tr '\n' ' ')"
     echo "$existing" | xargs kill 2>/dev/null
     for _ in $(seq 1 20); do
-        [ -z "$(lsof -ti:3000,8000,8001 2>/dev/null)" ] && break
+        [ -z "$(lsof -ti:3000,8000 2>/dev/null)" ] && break
         sleep 0.5
     done
     # 안 죽는 것은 강제로. graceful shutdown 이 걸려 있어 대개 여기까진 안 온다.
-    leftover="$(lsof -ti:3000,8000,8001 2>/dev/null)"
+    leftover="$(lsof -ti:3000,8000 2>/dev/null)"
     [ -n "$leftover" ] && echo "$leftover" | xargs kill -9 2>/dev/null
 fi
 
@@ -107,10 +103,6 @@ info "app-mvc     → :8000  (logs/app-mvc.log)"
 nohup java -jar "$MVC_JAR" > /dev/null 2> logs/app-mvc.stderr.log &
 echo $! > app-mvc.pid
 
-info "app-webflux → :8001  (logs/app-webflux.log)"
-nohup java -jar "$WEBFLUX_JAR" > /dev/null 2> logs/app-webflux.stderr.log &
-echo $! > app-webflux.pid
-
 if [ "$FRONT_MODE" = prod ]; then
     info "front       → :3000  (front/front.log)"
     ( cd front && nohup npm start >> front.log 2>&1 & )
@@ -120,21 +112,21 @@ else
 fi
 
 # ── 확인 ─────────────────────────────────────────────────────────────────────
-# 고정 sleep 대신 포트가 열릴 때까지 기다린다. 셋 다 뜨면 즉시 통과한다.
+# 고정 sleep 대신 포트가 열릴 때까지 기다린다. 둘 다 뜨면 즉시 통과한다.
 info "기동 대기…"
 deadline=$((SECONDS + 60))
 while [ $SECONDS -lt $deadline ]; do
     up=0
-    for p in 8000 8001 3000; do
+    for p in 8000 3000; do
         lsof -ti:$p >/dev/null 2>&1 && up=$((up + 1))
     done
-    [ $up -eq 3 ] && break
+    [ $up -eq 2 ] && break
     sleep 1
 done
 
 echo
 failed=0
-for entry in "app-mvc:8000:logs/app-mvc.log" "app-webflux:8001:logs/app-webflux.log" "front:3000:front/front.log"; do
+for entry in "app-mvc:8000:logs/app-mvc.log" "front:3000:front/front.log"; do
     name="${entry%%:*}"; rest="${entry#*:}"; port="${rest%%:*}"; log="${rest##*:}"
     if lsof -ti:"$port" >/dev/null 2>&1; then
         printf '  \033[32m✓\033[0m %-12s :%s\n' "$name" "$port"
@@ -158,7 +150,7 @@ done
 echo
 if [ $failed -eq 0 ]; then
     echo "  http://localhost:3000"
-    echo "  로그: tail -f logs/app-mvc.log logs/app-webflux.log front/front.log"
+    echo "  로그: tail -f logs/app-mvc.log front/front.log"
     [ "$FRONT_MODE" = prod ] && echo "  프론트: 프로덕션 빌드 (핫리로드가 필요하면 --dev)"
     echo "  종료: scripts/dev-down.sh"
 else

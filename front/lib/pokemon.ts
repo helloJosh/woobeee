@@ -170,6 +170,9 @@ export const ORDER_STATUS_LABELS: Record<PokemonOrderStatus, string> = {
     CANCELLED: "취소",
 }
 
+/** 목록에서 운영자가 고를 수 있는 신청서 상태 — 진행 경로 전부와 취소. 서버가 전이 순서를 강제하지 않는다. */
+export const ORDER_STATUS_OPTIONS: PokemonOrderStatus[] = [...ORDER_STATUS_FLOW, "CANCELLED"]
+
 export const RATE_MODE_LABELS: Record<PokemonRateMode, string> = {
     FIXED: "차수 환율로 고정",
     PER_ORDER: "신청 시점 환율",
@@ -614,4 +617,67 @@ export function roundTitle(round: PokemonRound): string {
 /** 소수 둘째 자리까지. 부동소수 누적 오차가 표시에 새지 않게 잘라 둔다. */
 function round2(value: number): number {
     return Math.round(value * 100) / 100
+}
+
+/* ===== 마이페이지: 내가 참가한 공동구매 (POKEMON-AC-36) ===== */
+
+/** `GET /api/back/pokemon/orders/me` 의 한 줄. 항목·댓글은 신청서 상세가 준다. */
+export interface PokemonMyOrder {
+    orderId: number
+    roundId: number
+    hostHandle: string
+    roundSequence: number
+    roundTitle: string | null
+    currency: string
+    roundStatus: PokemonRoundStatus
+    orderStatus: PokemonOrderStatus
+    /** 신청자가 실제로 이체해야 하는 금액(상품값 + 기부금). */
+    transferKrw: number
+    createdAt: string
+}
+
+/** 차수 이름. 제목이 없으면 번호로 부른다 — 차수 화면의 `roundTitle` 과 같은 규칙이다. */
+export function myOrderRoundTitle(order: PokemonMyOrder): string {
+    return order.roundTitle ?? `${order.roundSequence}차 공동구매`
+}
+
+/** 그 차수로 가는 주소. 주최자 방의 `?round=N` 탭을 연다(POKEMON-AC-34). */
+export function myOrderRoundHref(order: PokemonMyOrder): string {
+    return `/pokemon/${encodeURIComponent(order.hostHandle)}?round=${order.roundSequence}`
+}
+
+/** 신청서 세부 화면 주소. */
+export function myOrderHref(order: PokemonMyOrder): string {
+    return `/pokemon/orders/${order.orderId}`
+}
+
+export interface PokemonMyOrderSummary {
+    total: number
+    /** 취소를 뺀, 아직 끝나지 않은(전달완료 전) 신청서 수. */
+    inProgress: number
+    delivered: number
+    cancelled: number
+    /** 입금확인 전(`ORDERED`) 신청서의 이체 금액 합 — 내가 아직 보내야 할 돈. */
+    unpaidKrw: number
+}
+
+/**
+ * 내 신청서의 현황. 취소는 진행 경로 밖이라 진행 중에도 미입금에도 세지 않는다
+ * (POKEMON-AC-17 과 같은 이유). 통화가 달라도 이체액은 원화라 그대로 더한다.
+ */
+export function summarizeMyOrders(orders: PokemonMyOrder[]): PokemonMyOrderSummary {
+    const summary: PokemonMyOrderSummary = { total: orders.length, inProgress: 0, delivered: 0, cancelled: 0, unpaidKrw: 0 }
+    for (const order of orders) {
+        if (order.orderStatus === "CANCELLED") {
+            summary.cancelled += 1
+        } else if (order.orderStatus === "DELIVERED") {
+            summary.delivered += 1
+        } else {
+            summary.inProgress += 1
+        }
+        if (order.orderStatus === "ORDERED") {
+            summary.unpaidKrw += order.transferKrw
+        }
+    }
+    return summary
 }

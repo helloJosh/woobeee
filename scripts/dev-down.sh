@@ -7,7 +7,7 @@
 
 set -uo pipefail
 
-PORTS="3000,8000,8001"
+PORTS="3000,8000"
 
 pids="$(lsof -ti:$PORTS 2>/dev/null)"
 if [ -z "$pids" ]; then
@@ -18,7 +18,7 @@ fi
 echo "내린다: $(echo "$pids" | tr '\n' ' ')"
 echo "$pids" | xargs kill 2>/dev/null
 
-# 두 백엔드는 graceful shutdown 이라 잠깐 걸린다.
+# 백엔드는 graceful shutdown 이라 잠깐 걸린다.
 for _ in $(seq 1 20); do
     [ -z "$(lsof -ti:$PORTS 2>/dev/null)" ] && break
     sleep 0.5
@@ -33,9 +33,9 @@ fi
 
 # PID 파일은 여기서 치운다. 남겨 두면 다음에 볼 때 이미 죽은 프로세스를 가리켜, 없는 것보다
 # 나쁘다(살아 있다고 착각하게 된다).
-rm -f app-mvc.pid app-webflux.pid
+rm -f app-mvc.pid
 
-for p in 3000 8000 8001; do
+for p in 3000 8000; do
     if lsof -ti:$p >/dev/null 2>&1; then
         printf '  \033[31m✗\033[0m :%s 아직 사용중\n' "$p"
     else

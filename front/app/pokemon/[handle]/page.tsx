@@ -146,6 +146,18 @@ export default function PokemonHostPage() {
                 ) : (
                     <RoundBoard
                         board={board}
+                        onChangeOrderStatus={(order, next) =>
+                            void pokemonAPI.changeStatus(order.id, next)
+                                .then(async () => {
+                                    // 바뀐 신청서가 든 차수만 다시 받는다 — 진행도·미입금 집계가 함께 움직인다.
+                                    setBoards((c) => {
+                                        const { [sequence]: _dropped, ...rest } = c
+                                        return rest
+                                    })
+                                    await load()
+                                })
+                                .catch((c) => setError(describeGameApiError(c, "신청서 상태를 바꾸지 못했습니다.")))
+                        }
                         onChangeStatus={(next: PokemonRoundStatus) =>
                             void pokemonAPI.changeRoundStatus(board.round.id, next)
                                 .then(async () => {

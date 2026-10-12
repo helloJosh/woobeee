@@ -201,63 +201,10 @@ export interface ProductCreateResponse {
   detailImageKeys: string[]
 }
 
-export type GameType = "OMOK" | "DODGE"
-
-export type RoomStatus = "WAITING" | "IN_PROGRESS" | "FINISHED"
-
-export interface RoomSummary {
-  gameType: GameType
-  status: RoomStatus
-  capacity: number
-  participantCount: number
-}
-
-export interface CreateRoomResult {
-  roomId: string
-  inviteCode: string
-  gameType: GameType
-}
-
-export interface GuestTokenResult {
-  token: string
-  participantId: string
-  displayName: string
-}
-
-export interface GameResultSummary {
-  gameResultId: number
-  gameType: GameType
-  endedAt: string
-  finishRank: number
-  winnerDisplayName: string
-  replayAvailable: boolean
-}
-
-export interface ParticipantView {
-  participantId: string
-  displayName: string
-  kind: "MEMBER" | "GUEST"
-  ready: boolean
-  connection: "CONNECTED" | "DISCONNECTED"
-}
-
-/**
- * `GET /api/game/me` 의 응답(app-webflux 의 `GamePrincipal`).
- *
- * memberId 는 게임 서버가 액세스 토큰에서 뽑은 값이다 — 소켓 JOIN 을 통과시키는 검증기와
- * 같은 것이라, localStorage 에 적어 둔 authMemberId 와 달리 어긋날 수 없다.
- */
-export interface GamePrincipalView {
-  memberId: number | null
-  role: string | null
-  device: string | null
-}
-
 export interface MemberProfile {
   memberId: number
   email: string
   nickname: string
-  gameMoney: number
   /**
    * 이미지 자체는 인증이 필요한 `GET /api/auth/me/profile-image` 로 따로 받는다 — `<img>` 는
    * Authorization 헤더를 못 보내므로 프론트가 fetch 로 받아 blob URL 을 만든다. 전에 여기

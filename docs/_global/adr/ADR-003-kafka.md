@@ -3,7 +3,7 @@
 > **상태 갱신 (2026-07-31):** 이관 시점에는 Kafka를 로컬 compose에서 제외했다(product 도메인
 > 이벤트 전용이었고 product/cart 폐기로 사용처가 사라졌기 때문). 이후 사용자 요청으로 **로컬
 > compose에 다시 포함**했다. 단 이 ADR의 원래 입장은 그대로다 — **코드는 어떤 것도 Kafka에
-> 연동하지 않는다**(provisioned, not integrated). 게임 도메인에서 실제로 이벤트 스트리밍을 쓰기로
+> 연동하지 않는다**(provisioned, not integrated). 이벤트 스트리밍을 실제로 쓰기로
 > 결정하면 그때 이 ADR을 다시 열어 토픽 설계와 함께 재평가한다.
 >
 > 로컬 구성: `woobeee-kafka` (KRaft 단일 노드, broker+controller)

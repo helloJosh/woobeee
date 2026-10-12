@@ -255,7 +255,6 @@ class MemberProfileImageServiceTest {
         assertThat(response.memberId()).isEqualTo(42L);
         assertThat(response.email()).isEqualTo(LOGIN_ID);
         assertThat(response.nickname()).isEqualTo("nick");
-        assertThat(response.gameMoney()).isZero();
         assertThat(response.profileImageUrl())
                 .startsWith("https://image.woobeee.com/woobeee/profiles/42/")
                 .contains("X-Amz-Signature=")

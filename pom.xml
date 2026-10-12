@@ -15,16 +15,12 @@
     <artifactId>woobeee</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>woobeee</name>
-    <description>Multimodule app: game(WebFlux) + blog(MVC)</description>
+    <description>Multimodule app: blog + auth + schedule (MVC)</description>
     <packaging>pom</packaging>
 
-    <!-- 모듈은 생기는 순서대로 추가한다. 존재하지 않는 디렉토리를 선언하면
-         Maven이 "Child module ... does not exist" 로 리액터 전체를 거부하므로,
-         app-mvc는 Task 2, app-webflux는 Task 4에서 각각 추가한다. -->
     <modules>
         <module>core</module>
         <module>app-mvc</module>
-        <module>app-webflux</module>
     </modules>
 
     <properties>

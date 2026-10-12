@@ -157,6 +157,13 @@ public class PokemonController {
                 pokemonService.createOrder(loginId, roundId, request), "Order created");
     }
 
+    @GetMapping("/orders/me")
+    @Operation(summary = "내가 참가한 공동구매", description = "마이페이지 목록. 내가 낸 신청서를 차수·주최자 주소와 함께 최신순으로. 로그인 필수.")
+    public ApiResponse<List<PokemonMyOrderResponse>> getMyOrders(
+            @RequestHeader(name = "loginId", required = false) String loginId) {
+        return ApiResponse.success(pokemonService.getMyOrders(loginId), "My orders retrieved");
+    }
+
     @GetMapping("/orders/{orderId}")
     @Operation(summary = "신청서 세부 조회", description = "신청서 한 건 + 그 차수 + 현재 환율.")
     public ApiResponse<PokemonOrderDetailResponse> getOrder(
