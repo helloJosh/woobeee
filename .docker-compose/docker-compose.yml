@@ -149,7 +149,7 @@ services:
       SPRING_PROFILES_ACTIVE: prod-docker
       # 비밀값이라 파일에 적지 않는다. 실행하는 셸의 환경변수에서 가져온다(없으면 application.yaml 기본값).
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-change-me}
-      # 운영에서는 셸 환경변수로 덮는다(.docker-compose/up.sh). 없으면 로컬 기본값.
+      # 운영에서는 셸 환경변수로 덮는다(.docker-compose/docker-up.sh). 없으면 로컬 기본값.
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/auth/google/callback}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
     depends_on:
