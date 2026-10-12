@@ -12,6 +12,12 @@ services:
       TZ: Asia/Seoul
     volumes:
       - .docker-volumes/postgres/market:/var/lib/postgresql
+    # app-mvc 가 DB 가 준비된 뒤에 뜨도록 depends_on(service_healthy)이 이 결과를 본다.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d market"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:latest
@@ -100,15 +106,10 @@ services:
       start_period: 20s
 
   # 버킷은 비공개다. 예전에는 여기서 `mc anonymous set public` 을 걸었는데, 그것은 이 버킷
-  # 전체에 익명 읽기 **와 쓰기** 를 여는 것이었다. 기보는 `games/{gameType}/{gameResultId}.ndjson`
-  # 이라는 완전히 추측 가능한 키에 순번 id 로 쌓이므로(ReplayUploader.objectKey), 공개 정책
-  # 아래에서는 GameResultQueryRepository 의 "참가자 본인만" 규칙(GAME-AC-22)이 그냥 우회되고
-  # 남의 기보를 덮어쓸 수도 있었다.
+  # 전체에 익명 읽기 **와 쓰기** 를 여는 것이었다.
   #
-  # 두 표면 모두 presigned URL 로만 버킷에 닿는다 — 프로필 이미지는
-  # MemberProfileImageService(presignPutObject / presignGetObject), 기보는
-  # ReplayUploader(S3AsyncClient.putObject + presignGetObject). 익명 정책에 기대는 경로는
-  # 코드에 없다(프론트도 presigned URL 을 그대로 fetch 한다: components/game/replay-viewer.tsx).
+  # 버킷은 presigned URL 로만 닿는다 — 프로필 이미지는 MemberProfileImageService
+  # (presignPutObject / presignGetObject). 익명 정책에 기대는 경로는 코드에 없다.
   #
   # `set none` 을 명시적으로 부르는 이유: 예전 compose 로 이미 버킷을 만든 개발자의 MinIO
   # 볼륨에는 공개 정책이 그대로 남아 있다. 줄을 지우기만 하면 그 환경은 계속 공개다.
@@ -126,3 +127,49 @@ services:
       mc mb myminio/woobeee || true;
       mc anonymous set none myminio/woobeee || true
       "
+
+  # ---------------------------------------------------------------------
+  # 애플리케이션 이미지. 위는 인프라, 아래는 우리가 빌드하는 앱이다.
+  #   docker compose -f .docker-compose/docker-compose.yml up -d --build app-mvc front
+  # 인프라만 쓰고 앱은 IDE 에서 돌리는 기존 방식도 그대로 된다(앱 서비스를 지정하지 않으면 된다).
+  # ---------------------------------------------------------------------
+
+  # auth + blog (Spring MVC). 빌드 컨텍스트는 레포 루트(core 모듈이 필요하다) — Dockerfile 주석 참고.
+  app-mvc:
+    build:
+      context: ..
+      dockerfile: app-mvc/Dockerfile
+    image: woobeee/app-mvc:latest
+    container_name: woobeee-app-mvc
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # DB/Redis/MinIO 접속 설정은 application-prod-docker.yml 에 있다(컨테이너 내부 주소 기준).
+      SPRING_PROFILES_ACTIVE: prod-docker
+      # 비밀값이라 파일에 적지 않는다. 실행하는 셸의 환경변수에서 가져온다(없으면 application.yaml 기본값).
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-change-me}
+    depends_on:
+      postgres-management:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  # Next.js. 아래 args 는 "빌드 시점"에 이미지에 굳는다(front/Dockerfile 주석 참고).
+  # 값을 바꾸면 --build 로 다시 빌드해야 반영된다.
+  front:
+    build:
+      context: ../front
+      args:
+        # Next 서버(컨테이너)가 백엔드를 프록시하는 주소 — 컨테이너 간 통신이라 서비스 이름을 쓴다.
+        MVC_ORIGIN: http://app-mvc:8000
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-985212099499-uel8drlne8o4et7e3u1gbnjjvdi0k11l.apps.googleusercontent.com}
+    image: woobeee/front:latest
+    container_name: woobeee-front
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - app-mvc

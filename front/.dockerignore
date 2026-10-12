@@ -1,0 +1,12 @@
+# 빌드 컨텍스트에서 제외한다: 컨텍스트가 작을수록 전송이 빠르고, 이 파일들이 COPY . . 로 섞여
+# 이미지에 들어가는 것도 막는다.
+node_modules
+.next
+.git
+# 로컬 환경변수에는 비밀이 있을 수 있다. 값은 --build-arg 로만 넣는다.
+.env*
+!.env.local.example
+*.log
+tsconfig.tsbuildinfo
+Dockerfile
+.dockerignore

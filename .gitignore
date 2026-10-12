@@ -82,3 +82,6 @@ front/pnpm-lock.yaml
 
 # 개발 스크립트가 남기는 실행 PID
 *.pid
+
+# 멀티플랫폼 이미지 OCI 출력 (scripts/docker-build.sh OCI_OUT=dist)
+dist/
