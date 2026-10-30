@@ -24,7 +24,14 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository categoryRepository;
     private final PostRepository postRepository;
 
+    /**
+     * 클래스의 {@code @Transactional(readOnly = true)} 를 반드시 덮어야 한다. 덮지 않으면
+     * Spring 이 커넥션에 {@code SET TRANSACTION READ ONLY} 를 걸고 PostgreSQL 이
+     * {@code cannot execute INSERT in a read-only transaction} 으로 거부한다 — 화면에서는
+     * "카테고리가 안 만들어진다" 로만 보인다. BLOG-AC-25.
+     */
     @Override
+    @Transactional
     public void saveCategory(PostCategoryRequest request, Long parentId) {
         categoryRepository.save(
                 new Categories (
@@ -34,7 +41,9 @@ public class CategoryServiceImpl implements CategoryService {
         );
     }
 
+    /** 삭제도 쓰기다 — {@link #saveCategory} 와 같은 이유로 읽기 전용을 덮는다. BLOG-AC-25. */
     @Override
+    @Transactional
     public void deleteCategory(Long categoryId) {
         List<Long> ids = new ArrayList<>();
         Deque<Long> stack = new ArrayDeque<>();
