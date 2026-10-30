@@ -54,6 +54,8 @@ public interface PokemonService {
 
     PokemonCommentResponse createComment(String loginId, Long orderId, PostPokemonCommentRequest request);
 
+    PokemonCommentResponse updateComment(String loginId, Long commentId, PutPokemonCommentRequest request);
+
     void deleteComment(String loginId, Long commentId);
 
     /* ===== 상품 관리 (주최자 각자의 상품표) ===== */

@@ -20,7 +20,7 @@
 - 신청서를 저장하면 그 신청서의 세부 페이지로 이동한다 — 저장한 것을 바로 확인할 수 있어야 한다
 - **조회는 공개, 쓰는 것은 회원만**이다. 신청·댓글·차수 개설 모두 로그인이 필요하고,
   신청자·작성자 이름은 언제나 회원 닉네임이다 — 누가 냈는지 모르는 신청서는 정산할 수 없다
-- 진행 상태를 바꾸는 것만 **운영자**(`pokemon.manager-member-ids`, 기본 `1,3`) 전용이다 —
+- 진행 상태를 바꾸는 것만 **운영자**(`pokemon.manager-member-ids`, 기본 `1`) 전용이다 —
   블로그의 `ROLE_ADMIN` 과 별개다. 이 공동구매를 실제로 굴리는 사람만 손대야 한다
 - 환율은 `open.er-api.com`(키 불필요, **하루 1회 갱신**)을 Redis 로 감싼다. 초 단위 실시간이
   아니고, 그럴 필요도 없다 — 실제 청구액은 카드사 환율 + 해외결제 수수료가 붙어 어차피 달라진다
@@ -69,6 +69,7 @@
 | POKEMON-AC-35 | 들어가는 문 | `/pokemon` 은 남이 연 공동구매를 늘어놓지 않는다. 아는 주최자의 주소를 쳐서 `/pokemon/{handle}` 로 들어간다 — 친구끼리 링크로 나누는 방식이라 목록이 필요 없다 |
 | POKEMON-AC-36 | 내가 참가한 공동구매 | `GET /api/back/pokemon/orders/me` 는 **로그인 필수**(비로그인 401 `pokemon_loginRequired`)이고 호출자 본인의 신청서만 차수·주최자 핸들과 조인해 **최신순**으로 돌려준다(`orderId`·`roundId`·`hostHandle`·`roundSequence`·`roundTitle`·`currency`·`roundStatus`·`orderStatus`·`transferKrw`·`createdAt`). 마이페이지(`/mypage`)가 이를 「내가 참가한 공동구매」로 보인다 — 서버가 전부 내려주고 화면이 **한 페이지 10건**(`paginate`·`Pager`, 차수 화면과 같은 규칙)으로 자르며, 현황 집계는 페이지가 아니라 전체 기준이다 — 차수 제목은 `/pokemon/{handle}?round=N`, 상태 배지는 `/pokemon/orders/{id}` 로 잇고, 요약 줄은 진행 중·전달완료·취소 건수와 입금할 금액(`ORDERED` 신청서 `transferKrw` 합)이다. 취소는 진행 중·입금할 금액에서 뺀다 |
 | POKEMON-AC-37 | 목록에서 신청서 상태 바꾸기 | 차수 화면의 신청서 목록에서 **그 차수의 주최자 또는 전역 운영자**(서버가 내려준 `canManage`)에게만 행마다 상태 선택창(주문·입금확인·전달완료·취소)이 뜬다. 그 밖의 사람에게는 배지만 보인다. 고르면 기존 `PATCH /api/back/pokemon/orders/{id}/status` 를 부르고(403 `pokemon_notTheHost` 는 서버가 막는다), 성공하면 그 차수를 다시 받아 진행도·미입금 집계가 함께 움직인다. 선택창을 눌러도 신청서 상세로 이동하지 않는다. 전이 순서는 서버가 강제하지 않는다 |
+| POKEMON-AC-38 | 댓글 수정 | `PUT /api/back/pokemon/comments/{id}` 는 **본인만** 고칠 수 있다(403 + `pokemon_notYours`). **주최자와 전역 운영자도 남의 댓글은 고치지 못한다** — 지우는 것은 중재지만 고치는 것은 남의 이름으로 다른 말을 남기는 일이다. 주인이 없는 비회원 댓글은 아무도 고칠 수 없다. 빈 내용으로는 고칠 수 없다(400 + `pokemon_emptyComment`) — 지우는 우회로를 막는다. 고치면 `updatedAt` 이 박히고 화면이 「(수정됨)」을 붙인다 |
 
 ## 테스트 매핑
 
@@ -79,6 +80,7 @@
 | `front/lib/pokemon.test.ts` (`ORDER_STATUS_OPTIONS`) | AC-37 (선택지 목록만 — 선택창 동작은 컴포넌트라 검증 밖) |
 | `app-mvc` `PokemonOrderRepositoryTest` (실 Postgres) | AC-36 (내 신청서만, 최신순, 차수·주최자 조인) |
 | `app-mvc` `PokemonServiceMyOrdersTest` | AC-36 (로그인 필수, 매핑) |
+| `app-mvc` `PokemonServiceImplTest` (댓글 수정) · `front/lib/pokemon.test.ts` (`canEditComment`) | AC-38 |
 | `app-mvc` `PokemonErrorCodeTest` | AC-14 |
 | `app-mvc` `PokemonPropertiesTest` | AC-09 (운영자 명단 바인딩·판정) |
 

@@ -35,6 +35,9 @@ public class PokemonOrderComments {
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    /** 고친 적이 있으면 그 시각, 없으면 null. 화면이 "수정됨" 을 붙일지 이 값으로 정한다. */
+    private LocalDateTime updatedAt;
+
     @Builder
     private PokemonOrderComments(Long orderId, Long memberId, String authorName, String content) {
         this.orderId = orderId;
@@ -50,6 +53,15 @@ public class PokemonOrderComments {
                 .authorName(authorName)
                 .content(content)
                 .build();
+    }
+
+    /**
+     * 내용만 바꾼다. {@code @UpdateTimestamp} 를 쓰지 않는 이유는 그러면 다른 이유로 행이
+     * 더러워져도 시각이 찍혀 "수정됨" 이 거짓말을 하기 때문이다 — 실제로 고칠 때만 찍는다.
+     */
+    public void edit(String content, LocalDateTime now) {
+        this.content = content;
+        this.updatedAt = now;
     }
 
     /** 비회원 댓글은 주인이 없으므로 본인 확인이 성립하지 않는다 — 운영자만 지울 수 있다. */

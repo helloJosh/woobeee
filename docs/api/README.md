@@ -115,8 +115,14 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 | PATCH | `/api/back/pokemon/orders/{orderId}/status` | 신청서 상태 | 주최자 |
 | DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 | 주최자, 또는 아직 `ORDERED` 인 본인 |
 | POST | `/api/back/pokemon/orders/{orderId}/comments` | 댓글. 작성자는 회원 닉네임이다 | 로그인 |
+| PUT | `/api/back/pokemon/comments/{commentId}` | 댓글 수정 — 내용만. 고치면 `updatedAt` 이 박혀 화면이 "(수정됨)" 을 붙인다 | **본인만** |
 | DELETE | `/api/back/pokemon/comments/{commentId}` | 댓글 삭제 | 주최자 또는 본인 |
 | GET · POST · PUT · DELETE | `/api/back/pokemon/products[/{id}]` | 내 상품표(틀) 관리. 차수를 열 때 그 통화의 것이 복사돼 차수 상품표가 된다 | 주최자 |
+
+표의 "주최자" 는 **그 차수를 연 사람 또는 전역 운영자**(`pokemon.manager-member-ids`)다.
+운영자는 **한 명**이고, 자기 차수는 주최자 자격으로 이미 주무를 수 있으므로 명단을 늘리지
+않는다. 댓글 수정만 예외로 운영자에게도 열지 않는다 — 지우는 것은 중재지만 고치는 것은 남의
+이름으로 다른 말을 남기는 일이다. 이 경계는 `PokemonServiceImplTest` 가 고정한다.
 
 상태는 두 층이다. **차수** `OPEN → CLOSED → PURCHASED → DELIVERED`, **신청서**
 `ORDERED → DEPOSIT_CONFIRMED → DELIVERED`. 주최자가 전체에 대해 하는 일은 차수가,
@@ -125,7 +131,7 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 가격은 요청이 아니라 상품표에서 읽는다 — 클라이언트가 보낸 금액은 쓰지 않는다. 상품 가격을
 고쳐도 과거 신청서는 움직이지 않는다(항목이 당시 이름·단가를 스냅샷으로 든다).
 
-집계와 환차손익은 서버가 계산하지 않고 `front/lib/pokemon.ts` 가 한다 — 인수 기준은
+집계는 서버가 계산하지 않고 `front/lib/pokemon.ts` 가 한다(환차손익은 화면에서 걷어냈다) — 인수 기준은
 `docs/pokemon/PRD.md`.
 
 ## 참고

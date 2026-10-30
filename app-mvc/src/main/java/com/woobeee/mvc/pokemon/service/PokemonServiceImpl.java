@@ -380,6 +380,27 @@ public class PokemonServiceImpl implements PokemonService {
 
     @Override
     @Transactional
+    public PokemonCommentResponse updateComment(String loginId, Long commentId,
+                                                PutPokemonCommentRequest request) {
+        PokemonOrderComments comment = commentRepository.findById(commentId)
+                .orElseThrow(PokemonErrorCode.COMMENT_NOT_FOUND::asException);
+
+        // 삭제와 달리 주최자·운영자도 남의 댓글은 고치지 못한다 — 본인만.
+        Long viewerId = memberResolver.optionalMemberId(loginId);
+        if (!comment.isWrittenBy(viewerId)) {
+            throw PokemonErrorCode.NOT_YOURS.asException();
+        }
+        String content = trimmedOrNull(request.content());
+        if (content == null) {
+            throw PokemonErrorCode.EMPTY_COMMENT.asException();
+        }
+
+        comment.edit(content, LocalDateTime.now());
+        return PokemonCommentResponse.of(comment, viewerId);
+    }
+
+    @Override
+    @Transactional
     public void deleteComment(String loginId, Long commentId) {
         PokemonOrderComments comment = commentRepository.findById(commentId)
                 .orElseThrow(PokemonErrorCode.COMMENT_NOT_FOUND::asException);

@@ -213,6 +213,16 @@ public class PokemonController {
                 pokemonService.createComment(loginId, orderId, request), "Comment created");
     }
 
+    @PutMapping("/comments/{commentId}")
+    @Operation(summary = "댓글 수정", description = "본인이 쓴 댓글만. 주최자도 남의 댓글은 고치지 못한다.")
+    public ApiResponse<PokemonCommentResponse> updateComment(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable Long commentId,
+            @Valid @RequestBody PutPokemonCommentRequest request) {
+        return ApiResponse.success(
+                pokemonService.updateComment(loginId, commentId, request), "Comment updated");
+    }
+
     @DeleteMapping("/comments/{commentId}")
     @Operation(summary = "댓글 삭제", description = "주최자이거나 본인이 쓴 댓글.")
     public ApiResponse<Void> deleteComment(
