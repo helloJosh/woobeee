@@ -5,7 +5,7 @@
 ## 프로젝트 개요
 
 - **구조**: Maven 멀티모듈 (`core` / `app-mvc` / `front`), Java 25, Spring Boot 4.0.5
-- **백엔드**: `auth`·`blog`·`schedule`·`pokemon` = Spring MVC + JPA (`app-mvc` :8000) 단일 앱. 전에 있던 `game`(WebFlux/R2DBC/WebSocket, `app-webflux`)은 제거했다(`V25__drop_game.sql`)
+- **백엔드**: `auth`·`blog`·`schedule`·`pokemon` = Spring MVC + JPA (`app-mvc` :8000) 단일 앱. 전에 있던 `game`(WebFlux/R2DBC/WebSocket, `app-webflux`)은 제거했다(`V26__drop_game.sql`)
 - **프론트엔드**: `front/` Next.js 14 + React 18 + TypeScript + Tailwind (shadcn/ui, Radix) + vitest. rewrites로 백엔드(app-mvc)를 단일 오리진화
 - **데이터/인프라**: PostgreSQL :9432(공유), Redis :9379(공유 토큰), MinIO :9000, Kafka :8010/8011 + UI :8090(코드 미연동), Google OAuth
 - **전신**: `art-market-place` 단일 모듈 모놀리스. product/cart 도메인은 폐기했다.
@@ -72,8 +72,8 @@ DB 를 쓰는 테스트는 `@ActiveProfiles("test")` 로 **`market_test`** 만 �
 DB 에서는 남의 데이터 때문에 실패했다).
 
 ```bash
-./mvnw -pl core,app-mvc -am test   # (198개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
-cd front && npm test && npm run build          # (300개) npm test = tsc --noEmit → vitest run
+./mvnw -pl core,app-mvc -am test   # (225개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
+cd front && npm test && npm run build          # (312개) npm test = tsc --noEmit → vitest run
 ```
 
 `front/package.json` 의 `test` 는 **타입 검사를 먼저** 돌리고 통과해야 vitest 로 넘어간다.
@@ -135,7 +135,7 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 (`app-mvc/src/main/resources/application-prod-docker.yml`)다.
 
 **경고: compose 의 `app-mvc` 서비스는 실제 `market` DB 에 붙고 부팅 때 Flyway 가 돈다.** 띄우는 것만으로
-밀린 마이그레이션이 그 DB 에 적용된다 — 특히 되돌릴 수 없는 `V25__drop_game.sql`
+밀린 마이그레이션이 그 DB 에 적용된다 — 특히 되돌릴 수 없는 `V26__drop_game.sql`
 (`game_results`·`game_result_participants` 테이블과 `members.game_money` 컬럼 삭제)이 그렇다. 아래
 "DB 를 바꾸는 것은 먼저 확인받는다" 규칙의 대상이다.
 
@@ -147,7 +147,7 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 미설정 시 `application.yaml` 기본값을 쓴다.
 
 - app-mvc: `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
-- app-mvc (pokemon, 선택): `POKEMON_MANAGER_MEMBER_IDS`(기본 `1,3`), `POKEMON_RATE_URL_TEMPLATE`, `POKEMON_RATE_CACHE_TTL`, `POKEMON_CURRENCIES`(기본 `INR,USD,JPY`)
+- app-mvc (pokemon, 선택): `POKEMON_MANAGER_MEMBER_IDS`(기본 `1`), `POKEMON_RATE_URL_TEMPLATE`, `POKEMON_RATE_CACHE_TTL`, `POKEMON_CURRENCIES`(기본 `INR,USD,JPY`)
 - front: `MVC_ORIGIN`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`front/.env.local.example` 참조)
 
 ## API 엔드포인트

@@ -33,7 +33,7 @@ app-mvc → MinIO :9000 (S3Client, 블로킹) — 프로필/게시글 이미지
 
 - `core` 는 공유 계약 모듈로 남아 있지만 지금은 `app-mvc` 만 소비한다.
 - 스키마: Flyway가 단일 소스(`app-mvc/src/main/resources/db/migration/`). JPA는 `validate`
-  전용이다. `V25__drop_game.sql` 이 게임 테이블(`game_results`, `game_result_participants`)과
+  전용이다. `V26__drop_game.sql` 이 게임 테이블(`game_results`, `game_result_participants`)과
   `members.game_money` 컬럼을 삭제했다 — 되돌릴 수 없다. `gameMoney` 필드도 함께 제거했다.
 - 오브젝트 스토리지: app-mvc 가 블로킹 `S3Client` 로 MinIO/S3 에 직접 붙는다(프로필 이미지,
   게시글 이미지).
