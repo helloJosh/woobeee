@@ -21,6 +21,7 @@ import {
 import { normalizeTree, type ScheduleIssue, type ScheduleStatus, type ScheduleTree } from "@/lib/schedule"
 import {getFriendlyErrorMessage} from "@/lib/errors/error-utils";
 import type {
+    PokemonComment,
     PokemonHome,
     PokemonHost,
     PokemonManagedProduct,
@@ -823,6 +824,9 @@ export const pokemonAPI = {
     /* 댓글 */
     createComment: (orderId: number, body: { content: string }) =>
         pokemonRequest(`/api/back/pokemon/orders/${orderId}/comments`, "POST", body),
+
+    updateComment: (commentId: number, body: { content: string }): Promise<PokemonComment> =>
+        pokemonRequest<PokemonComment>(`/api/back/pokemon/comments/${commentId}`, "PUT", body),
 
     deleteComment: (commentId: number): Promise<void> =>
         pokemonRequest<void>(`/api/back/pokemon/comments/${commentId}`, "DELETE"),

@@ -229,7 +229,7 @@ export default function OrderForm({
                         <span>{formatKrw(preview.donationKrw)}</span>
                     </div>
                     <div className="flex justify-between border-t pt-3 text-base font-semibold">
-                        <span>이체할 금액</span>
+                        <span>이체예상금액</span>
                         <span>{formatKrw(preview.transferKrw)}</span>
                     </div>
                     <BankAccountLine account={round.bankAccount} />

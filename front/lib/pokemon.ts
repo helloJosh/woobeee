@@ -79,6 +79,8 @@ export interface PokemonComment {
     mine: boolean
     content: string
     createdAt: string
+    /** 고친 적이 없으면 null. 화면이 "수정됨" 을 붙일지 이 값으로 정한다. */
+    updatedAt: string | null
 }
 
 export interface PokemonOrder {
@@ -413,6 +415,11 @@ export function canModifyOrder(order: PokemonOrder, canManage: boolean): boolean
 
 export function canDeleteComment(comment: PokemonComment, canManage: boolean): boolean {
     return canManage || comment.mine
+}
+
+/** 고치는 것은 본인만이다 — 주최자도 남의 댓글은 지우기만 하고 고치지는 못한다 (POKEMON-AC-38). */
+export function canEditComment(comment: PokemonComment): boolean {
+    return comment.mine
 }
 
 /* ===== 입력 검증 ===== */

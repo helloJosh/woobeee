@@ -3,7 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { MessageSquare, Trash2 } from "lucide-react"
+import { MessageSquare, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { buildAuthHref } from "@/lib/auth-redirect"
@@ -11,6 +11,7 @@ import { describeGameApiError } from "@/lib/game-errors"
 import {
     MAX_COMMENT_LENGTH,
     canDeleteComment,
+    canEditComment,
     validateComment,
     type PokemonComment,
 } from "@/lib/pokemon"
@@ -18,24 +19,63 @@ import {
 /**
  * 신청서 세부 페이지의 댓글. 로그인해야 쓸 수 있고 작성자는 회원 닉네임이다.
  * 삭제 버튼을 그릴지는 서버가 준 comment.mine 과 canManage 만 본다 (POKEMON-AC-13).
+ * 수정은 본인(comment.mine)만 — 주최자도 남의 댓글은 고치지 못한다 (POKEMON-AC-38).
  */
 export default function CommentThread({
     comments,
     canManage,
     loggedIn,
     onCreate,
+    onEdit,
     onDelete,
 }: {
     comments: PokemonComment[]
     canManage: boolean
     loggedIn: boolean
     onCreate: (content: string) => Promise<void>
+    onEdit: (commentId: number, content: string) => Promise<void>
     onDelete: (commentId: number) => Promise<void>
 }) {
     const pathname = usePathname()
     const [content, setContent] = useState("")
     const [error, setError] = useState<string | null>(null)
     const [sending, setSending] = useState(false)
+
+    // 한 번에 하나만 고친다. 실패하면 칸을 닫지 않고 그 아래에 이유를 보여 준다.
+    const [editingId, setEditingId] = useState<number | null>(null)
+    const [draft, setDraft] = useState("")
+    const [editError, setEditError] = useState<string | null>(null)
+    const [saving, setSaving] = useState(false)
+
+    const startEdit = (comment: PokemonComment) => {
+        setEditingId(comment.id)
+        setDraft(comment.content)
+        setEditError(null)
+    }
+
+    const cancelEdit = () => {
+        setEditingId(null)
+        setEditError(null)
+    }
+
+    const saveEdit = async (commentId: number) => {
+        const problem = validateComment({ content: draft })
+        if (problem !== null) {
+            setEditError(problem)
+            return
+        }
+
+        setEditError(null)
+        setSaving(true)
+        try {
+            await onEdit(commentId, draft)
+            setEditingId(null)
+        } catch (caught) {
+            setEditError(describeGameApiError(caught, "댓글을 고치지 못했습니다."))
+        } finally {
+            setSaving(false)
+        }
+    }
 
     const send = async () => {
         const problem = validateComment({ content })
@@ -76,18 +116,56 @@ export default function CommentThread({
                         <span className="ml-2 text-xs text-muted-foreground">
                             {new Date(comment.createdAt).toLocaleString("ko-KR")}
                         </span>
-                        <p className="whitespace-pre-wrap">{comment.content}</p>
+                        {comment.updatedAt !== null && (
+                            <span className="ml-1 text-xs text-muted-foreground">(수정됨)</span>
+                        )}
+                        {editingId === comment.id ? (
+                            <div className="mt-1 space-y-1">
+                                <div className="flex flex-wrap items-start gap-2">
+                                    <Input
+                                        className="h-9 flex-1"
+                                        value={draft}
+                                        onChange={(event) => setDraft(event.target.value)}
+                                        maxLength={MAX_COMMENT_LENGTH}
+                                        autoFocus
+                                    />
+                                    <Button size="sm" onClick={() => void saveEdit(comment.id)} disabled={saving}>
+                                        {saving ? "…" : "저장"}
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={cancelEdit} disabled={saving}>
+                                        취소
+                                    </Button>
+                                </div>
+                                {editError !== null && (
+                                    <p className="text-xs text-red-600 dark:text-red-400">{editError}</p>
+                                )}
+                            </div>
+                        ) : (
+                            <p className="whitespace-pre-wrap">{comment.content}</p>
+                        )}
                     </div>
-                    {canDeleteComment(comment, canManage) && (
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            aria-label="댓글 삭제"
-                            onClick={() => void onDelete(comment.id)}
-                        >
-                            <Trash2 className="h-3 w-3" />
-                        </Button>
-                    )}
+                    <div className="flex shrink-0">
+                        {canEditComment(comment) && editingId !== comment.id && (
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label="댓글 수정"
+                                onClick={() => startEdit(comment)}
+                            >
+                                <Pencil className="h-3 w-3" />
+                            </Button>
+                        )}
+                        {canDeleteComment(comment, canManage) && (
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label="댓글 삭제"
+                                onClick={() => void onDelete(comment.id)}
+                            >
+                                <Trash2 className="h-3 w-3" />
+                            </Button>
+                        )}
+                    </div>
                 </div>
             ))}
 

@@ -10,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import OrderRows from "@/components/pokemon/order-rows"
 import Pager from "@/components/pokemon/pager"
 import { RoundProgressSteps } from "@/components/pokemon/progress-steps"
-import { BankAccountLine, FxDelta, RateLine, Stat } from "@/components/pokemon/pokemon-bits"
+import { BankAccountLine, RateLine, Stat } from "@/components/pokemon/pokemon-bits"
 import {
     ORDER_STATUS_LABELS, RATE_MODE_LABELS, ROUND_STATUS_FLOW, ROUND_STATUS_LABELS,
-    acceptsOrders, formatAmount, formatCoins, formatKrw, formatRate, isRoundSettled,
+    acceptsOrders, formatAmount, formatCoins, formatKrw, formatRate,
     paginate, rateFor, summarizeRound,
     type PokemonOrder, type PokemonOrderStatus, type PokemonRoundBoard, type PokemonRoundStatus,
 } from "@/lib/pokemon"
@@ -119,12 +119,6 @@ export default function RoundBoard({
                                   value={formatKrw(summary.outstandingKrw)} />
                             <Stat label="총 포켓코인" value={formatCoins(summary.totalCoins)} />
                         </dl>
-                        <div className="border-t pt-3">
-                            <dt className="text-xs text-muted-foreground">차수 전체 환차손익</dt>
-                            <dd className="mt-0.5">
-                                <FxDelta delta={summary.fxKrw} settled={isRoundSettled(round)} />
-                            </dd>
-                        </div>
                         {summary.awaitingDeposit.length > 0 && (
                             <div className="border-t pt-3 text-sm">
                                 <span className="font-medium">미입금 </span>

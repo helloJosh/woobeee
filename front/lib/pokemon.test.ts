@@ -12,6 +12,7 @@ import {
     ROUND_STATUS_LABELS,
     acceptsOrders,
     canDeleteComment,
+    canEditComment,
     canModifyOrder,
     effectiveRate,
     formatAmount,
@@ -319,13 +320,19 @@ describe("신청서 수정·삭제 권한", () => {
 describe("댓글", () => {
     const comment = (o: Partial<PokemonComment> = {}): PokemonComment => ({
         id: 1, orderId: 1, authorName: "친구", guest: false, mine: false,
-        content: "저도 낄게요", createdAt: "2026-09-29T10:00:00", ...o,
+        content: "저도 낄게요", createdAt: "2026-09-29T10:00:00", updatedAt: null, ...o,
     })
 
     it("주최자는 모든 댓글을, 그 밖에는 본인 것만 지운다", () => {
         expect(canDeleteComment(comment({ mine: false }), true)).toBe(true)
         expect(canDeleteComment(comment({ mine: true }), false)).toBe(true)
         expect(canDeleteComment(comment({ mine: false }), false)).toBe(false)
+    })
+
+    /** POKEMON-AC-38 — 주최자도 남의 댓글은 지우기만 하고 고치지는 못한다. */
+    it("고치는 것은 본인뿐이다 — 주최자도 남의 댓글은 못 고친다", () => {
+        expect(canEditComment(comment({ mine: true }))).toBe(true)
+        expect(canEditComment(comment({ mine: false }))).toBe(false)
     })
 
     it("빈 댓글은 거절한다 — 이름은 회원 닉네임이라 받지 않는다", () => {

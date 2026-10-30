@@ -12,14 +12,14 @@ import { Skeleton } from "@/components/ui/skeleton"
 import CommentThread from "@/components/pokemon/comment-thread"
 import { OrderProgressSteps } from "@/components/pokemon/progress-steps"
 import {
-    BankAccountLine, FxDelta, OrderStatusBadge, RateLine,
+    BankAccountLine, OrderStatusBadge, RateLine,
 } from "@/components/pokemon/pokemon-bits"
 import { useAuth } from "@/hooks/use-auth"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
     ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, canModifyOrder, formatAmount, formatCoins,
-    formatKrw, formatRate, fxDelta, isRoundSettled, orderCoins, roundTitle,
+    formatKrw, formatRate, orderCoins, roundTitle,
     type PokemonOrderDetail, type PokemonOrderStatus,
 } from "@/lib/pokemon"
 
@@ -85,7 +85,6 @@ export default function PokemonOrderDetailPage() {
     }
 
     const { order, round, rate, canManage } = detail
-    const delta = fxDelta(order, round, rate.toKrw)
     const backToRound = `/pokemon/${round.hostHandle}/${round.sequence}`
 
     return (
@@ -210,31 +209,12 @@ export default function PokemonOrderDetailPage() {
                             <span>{formatKrw(order.donationKrw)}</span>
                         </div>
                         <div className="flex justify-between border-t pt-2 text-base font-semibold">
-                            <span>이체할 금액</span>
+                            <span>이체예상금액</span>
                             <span>{formatKrw(order.transferKrw)}</span>
                         </div>
                     </div>
 
                     {order.status === "ORDERED" && <BankAccountLine account={round.bankAccount} />}
-
-                    <div className="rounded-md border p-3">
-                        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div>
-                                <dt className="text-xs text-muted-foreground">환차손익</dt>
-                                <dd className="mt-0.5">
-                                    <FxDelta delta={delta} settled={isRoundSettled(round)} />
-                                </dd>
-                            </div>
-                            <div>
-                                <dt className="text-xs text-muted-foreground">기준</dt>
-                                <dd className="mt-0.5 text-sm">
-                                    {isRoundSettled(round)
-                                        ? `차수 결제 시점 ${formatRate(round.settledRate as number, round.currency)}`
-                                        : `현재 ${formatRate(rate.toKrw, round.currency)}`}
-                                </dd>
-                            </div>
-                        </dl>
-                    </div>
 
                     <RateLine
                         rate={formatRate(rate.toKrw, round.currency)}
@@ -259,6 +239,12 @@ export default function PokemonOrderDetailPage() {
                         loggedIn={isAuthenticated}
                         onCreate={async (content) => {
                             await pokemonAPI.createComment(orderId, { content: content.trim() })
+                            await load()
+                        }}
+                        onEdit={async (commentId, content) => {
+                            // 실패는 CommentThread 가 수정칸 아래에 보여 준다 — 여기서 삼키면
+                            // 고친 내용이 저장된 것처럼 칸이 닫힌다.
+                            await pokemonAPI.updateComment(commentId, { content: content.trim() })
                             await load()
                         }}
                         onDelete={async (commentId) => {
