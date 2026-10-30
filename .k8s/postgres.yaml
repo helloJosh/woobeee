@@ -1,0 +1,55 @@
+# compose 의 postgres-management. 서비스 이름이 같아야 application-prod-docker.yml 의 DB_URL 이 그대로 맞는다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-management
+  namespace: woobeee
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: woobeee
+spec:
+  serviceName: postgres-management
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:18
+          ports:
+            - containerPort: 5432
+          env:
+            - { name: POSTGRES_USER, value: root }
+            - { name: POSTGRES_DB, value: market }
+            - { name: TZ, value: Asia/Seoul }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: woobeee-secrets, key: POSTGRES_PASSWORD } }
+          volumeMounts:
+            # postgres:18 이미지는 /var/lib/postgresql 를 마운트 지점으로 쓴다(compose 와 동일).
+            - { name: data, mountPath: /var/lib/postgresql }
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "root", "-d", "market"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

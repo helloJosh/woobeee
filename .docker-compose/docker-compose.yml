@@ -174,5 +174,10 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      # 위 args 의 MVC_ORIGIN 은 rewrites 용으로 "빌드 때" 굳는다. 서버 컴포넌트(lib/server-blog.ts)는
+      # 런타임에 process.env 를 읽으므로 따로 준다. 없으면 컨테이너 자신(localhost:8000)을 불러
+      # 글 목록·본문 선조회(SEO)가 조용히 실패한다.
+      MVC_ORIGIN: http://app-mvc:8000
     depends_on:
       - app-mvc

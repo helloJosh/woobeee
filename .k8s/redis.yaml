@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: woobeee
+spec:
+  selector: { app: redis }
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: woobeee
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      # 서비스 이름이 redis 라 k8s 가 REDIS_PORT=tcp://… 를 주입한다. Spring 이 REDIS_PORT 를
+      # 숫자로 읽으므로 끈다(app-mvc 파드도 같다).
+      enableServiceLinks: false
+      containers:
+        - name: redis
+          image: redis:latest
+          # 비밀번호는 환경변수로 받아 셸이 풀어 준다(compose 는 평문이었다).
+          command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$REDIS_PASSWORD"']
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: woobeee-secrets, key: REDIS_PASSWORD } }
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            tcpSocket: { port: 6379 }
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

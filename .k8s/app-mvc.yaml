@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-mvc
+  namespace: woobeee
+spec:
+  selector: { app: app-mvc }
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-mvc
+  namespace: woobeee
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: app-mvc }
+  template:
+    metadata:
+      labels: { app: app-mvc }
+    spec:
+      enableServiceLinks: false
+      # DB·Redis·MinIO 가 준비되기 전에 뜨면 Flyway 가 죽고 재시작을 반복한다(compose 의 depends_on 대응).
+      initContainers:
+        - name: wait-postgres
+          image: postgres:18
+          command: ["sh", "-c", "until pg_isready -h postgres-management -U root -d market; do sleep 2; done"]
+        - name: wait-minio
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z minio 9000; do sleep 2; done"]
+        - name: wait-redis
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z redis 6379; do sleep 2; done"]
+      containers:
+        - name: app-mvc
+          image: woobeee/app-mvc:latest
+          # 로컬 이미지를 쓴다(레지스트리에 올리지 않는다). 원격 클러스터면 태그를 바꾸고 Always 로.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - { name: SPRING_PROFILES_ACTIVE, value: prod-docker }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: POSTGRES_PASSWORD } } }
+            - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: REDIS_PASSWORD } } }
+            - { name: S3_ACCESS_KEY, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: MINIO_ROOT_USER } } }
+            - { name: S3_SECRET_KEY, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: MINIO_ROOT_PASSWORD } } }
+            - { name: GOOGLE_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: GOOGLE_CLIENT_SECRET } } }
+            - name: GOOGLE_REDIRECT_URI
+              valueFrom: { configMapKeyRef: { name: woobeee-config, key: GOOGLE_REDIRECT_URI } }
+            - name: S3_PUBLIC_ENDPOINT
+              valueFrom: { configMapKeyRef: { name: woobeee-config, key: S3_PUBLIC_ENDPOINT } }
+          # 이 앱에는 actuator 가 없다 — 포트가 열렸는지만 본다.
+          readinessProbe:
+            tcpSocket: { port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }

@@ -1,0 +1,9 @@
+# compose 의 GOOGLE_REDIRECT_URI / S3_PUBLIC_ENDPOINT 기본값. 운영 도메인이면 k8s-up.sh 가 셸 값으로 덮는다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: woobeee-config
+  namespace: woobeee
+data:
+  GOOGLE_REDIRECT_URI: "http://localhost:3000/auth/google/callback"
+  S3_PUBLIC_ENDPOINT: "http://localhost:9000"

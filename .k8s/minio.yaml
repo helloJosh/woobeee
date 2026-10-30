@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: woobeee
+spec:
+  selector: { app: minio }
+  ports:
+    - { name: api, port: 9000, targetPort: 9000 }
+    - { name: console, port: 9001, targetPort: 9001 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: woobeee
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels: { app: minio }
+  template:
+    metadata:
+      labels: { app: minio }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          envFrom:
+            - secretRef: { name: woobeee-secrets }
+          ports:
+            - { containerPort: 9000 }
+            - { containerPort: 9001 }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          readinessProbe:
+            httpGet: { path: /minio/health/ready, port: 9000 }
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+---
+# compose 의 createbuckets. 버킷은 비공개로 둔다 — presigned URL 로만 닿는다.
+# 예전 정책이 남은 볼륨을 위해 `anonymous set none` 을 명시적으로 부른다(compose 주석 참고).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: createbuckets
+  namespace: woobeee
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          envFrom:
+            - secretRef: { name: woobeee-secrets }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until mc alias set myminio http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; do
+                echo 'waiting for minio...'; sleep 3;
+              done
+              mc mb myminio/woobeee || true
+              mc anonymous set none myminio/woobeee || true
