@@ -16,7 +16,7 @@ public record PokemonProperties(Set<Long> managerMemberIds) {
 
     public PokemonProperties {
         if (managerMemberIds == null || managerMemberIds.isEmpty()) {
-            managerMemberIds = Set.copyOf(List.of(1L, 3L));
+            managerMemberIds = Set.copyOf(List.of(1L));
         }
     }
 

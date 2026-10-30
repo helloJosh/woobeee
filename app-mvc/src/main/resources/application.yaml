@@ -37,7 +37,7 @@ pokemon:
   # 어느 차수든 주무를 수 있는 전역 운영자. 계좌는 주최자와 차수가 들고 있으므로 여기 없다.
   # 진행 상태를 바꿀 수 있는 회원 id. 블로그의 ROLE_ADMIN 과 별개다 — 이 공동구매를 실제로
   # 굴리는 사람만 손대야 하므로 역할이 아니라 명단으로 좁혔다.
-  manager-member-ids: ${POKEMON_MANAGER_MEMBER_IDS:1,3}
+  manager-member-ids: ${POKEMON_MANAGER_MEMBER_IDS:1}
   exchange-rate:
     # {currency} 자리에 ISO 4217 코드가 들어간다. 키 없이 쓰는 대신 하루 한 번만 갱신되는데,
     # 어차피 실제 청구액은 카드사 환율 + 해외결제 수수료가 붙어 달라지므로 그걸로 충분하다.
