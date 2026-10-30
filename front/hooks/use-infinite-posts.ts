@@ -12,6 +12,8 @@ interface UseInfinitePostsProps {
     tag?: string
     pageSize?: number
     enabled?: boolean
+    /** 서버가 같은 필터로 미리 받아 온 첫 쪽 — 있으면 첫 마운트에서 다시 받지 않는다(SEO). */
+    initialPage?: GetPostsResponse | null
 }
 
 export function useInfinitePosts ({
@@ -19,22 +21,30 @@ export function useInfinitePosts ({
                                       search,
                                       tag,
                                       pageSize = 5,
-                                      enabled = true
+                                      enabled = true,
+                                      initialPage = null,
 }: UseInfinitePostsProps = {})
 {
-    const [posts, setPosts] = useState<Post[]>([])
+    const [posts, setPosts] = useState<Post[]>(initialPage?.contents ?? [])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [hasMore, setHasMore] = useState(true)
+    const [hasMore, setHasMore] = useState(initialPage?.hasNext ?? true)
     const [currentPage, setCurrentPage] = useState(0)
 
     const observerRef = useRef<IntersectionObserver | null>(null)
     const loadMoreRef = useRef<HTMLDivElement | null>(null)
     const isInitialLoad = useRef(true)
+    const skipFirstLoad = useRef(initialPage !== null)
 
     // 초기 데이터 로드 및 검색/카테고리 변경 시 리셋
     useEffect(() => {
         if (!enabled) return
+
+        if (skipFirstLoad.current) {
+            skipFirstLoad.current = false
+            isInitialLoad.current = false
+            return
+        }
 
         const resetAndLoad = async () => {
             setPosts([])

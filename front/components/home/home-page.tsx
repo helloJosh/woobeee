@@ -15,6 +15,7 @@ import { useCategories } from "@/hooks/use-categories"
 import { useInfinitePosts } from "@/hooks/use-infinite-posts"
 import { useRegisterHeaderControls } from "@/hooks/use-header-controls"
 import { tagsAPI, type PopularTag } from "@/lib/api"
+import type { GetPostsResponse } from "@/lib/types"
 
 const PAGE_SIZE = 10
 
@@ -22,7 +23,7 @@ const PAGE_SIZE = 10
  * 홈 = 기술블로그. 우아한 기술블로그의 두 열: 왼쪽은 글을 세로로(날짜·카테고리, 큰 제목, 요약, 태그 — 이미지 없음),
  * 오른콝은 「카테고리」(접고 펼침)와 「태그」 목록. 필터(category·search·tag)는 전부 URL 쿼리에 산다.
  */
-export default function HomePage() {
+export default function HomePage({ initialPage = null }: { initialPage?: GetPostsResponse | null }) {
     const router = useRouter()
     const searchParams = useSearchParams()
     const { categories } = useCategories()
@@ -45,6 +46,7 @@ export default function HomePage() {
         search: search ?? undefined,
         tag: tag ?? undefined,
         pageSize: PAGE_SIZE,
+        initialPage,
     })
 
     const update = useCallback((patch: { category?: number | null; search?: string | null; tag?: string | null }) => {

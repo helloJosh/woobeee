@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { formatDistanceToNow } from "date-fns"
 import { ko } from "date-fns/locale"
 import {MessageCircle, Reply, Loader2, Trash2, Edit3, Edit2, Edit} from "lucide-react"
@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import type { Comment } from "@/lib/types"
 import { useComments } from "@/hooks/use-comments"
+import { tokenManager } from "@/lib/api"
 
 interface CommentSectionProps {
   postId: number
@@ -18,6 +19,13 @@ interface CommentSectionProps {
 
 export default function CommentSection({ postId, userId }: CommentSectionProps) {
   const { comments, loading, error, addComment, addReply, deleteComment } = useComments(postId, userId)
+
+  // 서버 렌더링에는 localStorage 가 없다 — 렌더 중에 읽으면 글 상세 전체가 서버에서 터져
+  // 크롤러가 스피너만 받는다. 마운트 뒤에 읽고, 렌더마다 다시 확인해 로그인 변화를 따라간다.
+  const [loggedIn, setLoggedIn] = useState(false)
+  useEffect(() => {
+    setLoggedIn(!!tokenManager.getToken())
+  })
 
   const [newComment, setNewComment] = useState("")
   //const [newAuthor, setNewAuthor] = useState("")
@@ -114,12 +122,12 @@ export default function CommentSection({ postId, userId }: CommentSectionProps) 
                         size="sm"
                         onClick={() => handleAddReply(comment.id)}
                         disabled={
-                            !localStorage.getItem("accessToken") // ← 여기!
+                            !loggedIn // ← 여기!
                         }
                     >
                       답글 작성
                     </Button>
-                    {!localStorage.getItem("accessToken") && (
+                    {!loggedIn && (
                         <p className="text-xs text-muted-foreground">로그인 후 답글을 작성할 수 있습니다.</p>
                     )}
                     <Button variant="outline" size="sm" onClick={() => setReplyingTo(null)}>
@@ -163,12 +171,12 @@ export default function CommentSection({ postId, userId }: CommentSectionProps) 
               <Button
                   onClick={handleAddComment}
                   disabled={
-                      !localStorage.getItem("accessToken") // ← 추가
+                      !loggedIn // ← 추가
                   }
               >
                 댓글 작성
               </Button>
-              {!localStorage.getItem("accessToken") && (
+              {!loggedIn && (
                   <p className="text-xs text-muted-foreground mt-2">로그인 후 댓글을 작성할 수 있습니다.</p>
               )}
 

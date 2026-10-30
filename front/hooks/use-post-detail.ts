@@ -15,12 +15,19 @@ import type { GetPostResponse } from "@/lib/types"
  * 그 사이 정리가 첫 요청을 취소하므로 응답을 쓰는 것은 하나뿐이다. Strict Mode 가 드러내려는
  * 결함이 바로 이 정리 부재였다.
  */
-export function usePostDetail(postId: number) {
-    const [post, setPost] = useState<GetPostResponse | null>(null)
-    const [loading, setLoading] = useState(true)
+export function usePostDetail(postId: number, initialPost: GetPostResponse | null = null) {
+    // 서버가 이미 받아 온 글이면(크롤러용 HTML) 첫 렌더부터 보여 주고 다시 받지 않는다.
+    const [post, setPost] = useState<GetPostResponse | null>(initialPost)
+    const [loading, setLoading] = useState(initialPost === null)
     const [error, setError] = useState<string | null>(null)
 
     useEffect(() => {
+        if (initialPost !== null && initialPost.id === postId) {
+            // 서버 값을 쓰는 중 — postId 가 바뀌면(클라이언트 이동) 아래 조회로 간다.
+            setPost(initialPost)
+            setLoading(false)
+            return
+        }
         const controller = new AbortController()
 
         const fetchPost = async () => {
@@ -49,7 +56,7 @@ export function usePostDetail(postId: number) {
         void fetchPost()
 
         return () => controller.abort()
-    }, [postId])
+    }, [postId, initialPost])
 
     return {
         post,

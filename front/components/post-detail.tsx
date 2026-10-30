@@ -184,6 +184,7 @@ import MarkdownView from "@/components/markdown-view"
 import { useRouter } from "next/navigation"
 
 import { usePostDetail } from "@/hooks/use-post-detail"
+import type { GetPostResponse } from "@/lib/types"
 import { useLike } from "@/hooks/use-like"
 import CommentSection from "@/components/comment-section";
 import {LikeBar} from "@/components/likebar"
@@ -191,14 +192,16 @@ import {Toaster} from "@/components/ui/toaster";
 
 interface PostDetailProps {
   postId: number
+  /** 서버 컴포넌트가 미리 받아 온 글 — 있으면 HTML 에 본문이 담긴다(SEO). */
+  initialPost?: GetPostResponse | null
 }
 
-export default function PostDetail({ postId }: PostDetailProps) {
+export default function PostDetail({ postId, initialPost = null }: PostDetailProps) {
   const router = useRouter()
 
   // 수정·삭제 버튼은 두지 않는다 — 수정은 /blog/edit/{id} URL 로, 삭제는 DB 에서 직접 (사용자 결정, 진짜 방어는 서버 403)
 
-  const { post, loading, error } = usePostDetail(postId)
+  const { post, loading, error } = usePostDetail(postId, initialPost)
 
   const createdAtDate = useMemo(() => {
     if (!post?.createdAt) return null
