@@ -16,4 +16,13 @@ public interface AiRequestService {
 
     /** {@code DEAD} 요청을 다시 돌린다. 본인 또는 전역 운영자만. */
     AiRequestResponse retry(String loginId, UUID id);
+
+    /**
+     * 제안 하나를 승인해 실제로 등록한다. {@code PENDING → APPLIED} CAS 에 성공한 호출만 등록하므로 두 번 눌러도 한 번만
+     * 반영된다. 기존 서비스가 거절하면 예외가 나가고 트랜잭션이 CAS 까지 되돌려 제안은 {@code PENDING} 으로 남는다.
+     */
+    AiRequestResponse apply(String loginId, UUID id, Long actionId);
+
+    /** 제안 하나를 거절한다. 아무것도 등록하지 않는다. */
+    AiRequestResponse reject(String loginId, UUID id, Long actionId);
 }

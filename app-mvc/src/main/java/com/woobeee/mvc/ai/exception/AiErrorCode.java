@@ -20,6 +20,8 @@ public enum AiErrorCode {
     ACTION_NOT_FOUND(HttpStatus.NOT_FOUND, "ai_actionNotFound", "Proposal not found"),
     ACTION_ALREADY_DONE(HttpStatus.CONFLICT, "ai_actionAlreadyDone", "That proposal was already decided"),
     APPLY_FORBIDDEN(HttpStatus.FORBIDDEN, "ai_applyForbidden", "You are not allowed to register that"),
+    APPLY_REJECTED(HttpStatus.BAD_REQUEST, "ai_applyRejected", "That proposal could not be registered"),
+    NOT_READY(HttpStatus.CONFLICT, "ai_notReady", "The request is still being processed"),
     WORKER_UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "ai_workerUnauthorized", "Worker secret is missing or wrong"),
     STALE_ATTEMPT(HttpStatus.CONFLICT, "ai_staleAttempt", "This attempt is no longer current"),
     NOT_CLAIMABLE(HttpStatus.CONFLICT, "ai_notClaimable", "This request cannot be claimed now"),

@@ -4,6 +4,7 @@ import com.woobeee.mvc.ai.api.response.AiActionResponse;
 import com.woobeee.mvc.ai.api.response.AiRequestResponse;
 import com.woobeee.mvc.ai.config.AiProperties;
 import com.woobeee.mvc.ai.entity.AiOutbox;
+import com.woobeee.mvc.ai.entity.AiRequestActions;
 import com.woobeee.mvc.ai.entity.AiRequestStatus;
 import com.woobeee.mvc.ai.entity.AiRequests;
 import com.woobeee.mvc.ai.exception.AiErrorCode;
@@ -39,6 +40,7 @@ public class AiRequestServiceImpl implements AiRequestService {
     private final AiActionRepository actionRepository;
     private final AiImageStore imageStore;
     private final AiProperties properties;
+    private final AiActionApplier actionApplier;
 
     @Override
     @Transactional
@@ -112,6 +114,61 @@ public class AiRequestServiceImpl implements AiRequestService {
 
         AiRequests fresh = requestRepository.findById(id).orElse(request);
         return toResponse(fresh, actionRepository.findByRequestIdOrderById(id).stream()
+                .map(AiActionResponse::of).toList());
+    }
+
+    @Override
+    @Transactional
+    public AiRequestResponse apply(String loginId, UUID id, Long actionId) {
+        Member member = requireMember(loginId);
+        AiRequests request = requireOwnedDraft(member, id);
+        AiRequestActions action = requireAction(request, actionId);
+
+        // CAS 가 먼저다 — 두 번째 호출은 여기서 걸려 등록 없이 끝난다. 아래 등록이 예외를 던지면 이 갱신도 함께 되돌아간다.
+        if (actionRepository.markApplied(actionId) == 0) {
+            throw AiErrorCode.ACTION_ALREADY_DONE.asException();
+        }
+        actionApplier.apply(member.getId(), action);
+        return settle(request);
+    }
+
+    @Override
+    @Transactional
+    public AiRequestResponse reject(String loginId, UUID id, Long actionId) {
+        Member member = requireMember(loginId);
+        AiRequests request = requireOwnedDraft(member, id);
+        requireAction(request, actionId);
+
+        if (actionRepository.markRejected(actionId) == 0) {
+            throw AiErrorCode.ACTION_ALREADY_DONE.asException();
+        }
+        return settle(request);
+    }
+
+    /** 본인 요청만(남의 것은 404), 그리고 처리가 끝나 제안이 확정된 {@code DRAFTED} 일 때만. */
+    private AiRequests requireOwnedDraft(Member member, UUID id) {
+        AiRequests request = requestRepository.findById(id)
+                .filter(found -> found.getMemberId().equals(member.getId()))
+                .orElseThrow(AiErrorCode.NOT_FOUND::asException);
+        if (request.getStatus() != AiRequestStatus.DRAFTED) {
+            throw AiErrorCode.NOT_READY.asException();
+        }
+        return request;
+    }
+
+    private AiRequestActions requireAction(AiRequests request, Long actionId) {
+        return actionRepository.findById(actionId)
+                .filter(found -> found.getRequestId().equals(request.getId()))
+                .orElseThrow(AiErrorCode.ACTION_NOT_FOUND::asException);
+    }
+
+    /** 모든 제안이 결정됐으면 요청을 끝내고(APPLIED), 최신 상태를 돌려준다. */
+    private AiRequestResponse settle(AiRequests request) {
+        if (actionRepository.countPending(request.getId()) == 0) {
+            requestRepository.markApplied(request.getId(), LocalDateTime.now());
+        }
+        AiRequests fresh = requestRepository.findById(request.getId()).orElse(request);
+        return toResponse(fresh, actionRepository.findByRequestIdOrderById(request.getId()).stream()
                 .map(AiActionResponse::of).toList());
     }
 

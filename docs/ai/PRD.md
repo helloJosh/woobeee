@@ -28,8 +28,8 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품**과 **�
 | AI-AC-08 | 실패·재처리 | 워커가 fail 을 보고하면 처리 횟수 3회 미만은 `FAILED`(재시도 가능 시각 = `lease_until`)로 두고 같은 토픽으로 재발행한다. 3회째는 `DEAD` 로 두고 `ai.request.dlq` 에 기록 이벤트를 남긴다(DLQ 발행 실패는 삼킨다) |
 | AI-AC-09 | 리스 스위퍼 | 리스가 만료된 `PROCESSING` 은 스위퍼가 `lease_expired` 로 실패 처리하고 AI-AC-08 경로로 재발행한다. 리스가 살아 있는 것은 건드리지 않는다 |
 | AI-AC-10 | 수동 재시도 | `DEAD` 만 `POST /retry` 로 다시 돌린다(그 외 409 `ai_notRetryable`). 요청자 본인 또는 전역 운영자만이고, 남에게는 404 다. `attempts` 가 0 으로 리셋되고 새 outbox 가 쌓인다 |
-| AI-AC-11 | 승인 멱등 | apply 는 `PENDING → APPLIED` CAS 가 성공한 요청만 실제로 등록한다. 두 번 눌러도 한 번만 반영되고 두 번째는 409 `ai_actionAlreadyDone`. 모든 제안이 `APPLIED`·`REJECTED` 가 되면 요청은 `APPLIED` 가 된다 |
-| AI-AC-12 | 승인 권한 위반 | 기존 서비스가 권한 예외를 던지면 apply 는 403 `ai_applyForbidden` 이고 **제안은 `PENDING` 으로 남는다**(CAS 가 함께 롤백). 요청 상태도 그대로다 |
+| AI-AC-11 | 승인 멱등 | apply 는 `PENDING → APPLIED` CAS 가 성공한 요청만 실제로 등록한다. 요청이 `DRAFTED` 가 아니면(아직 처리 중이거나 실패) 409 `ai_notReady`. 두 번 눌러도 한 번만 반영되고 두 번째는 409 `ai_actionAlreadyDone`. 모든 제안이 `APPLIED`·`REJECTED` 가 되면 요청은 `APPLIED` 가 된다 |
+| AI-AC-12 | 승인 권한 위반 | 기존 서비스가 권한·존재 예외(401/403/404)를 던지면 apply 는 403 `ai_applyForbidden`, 그 밖의 규칙 위반(이미 있는 상품 이름 등)은 400 `ai_applyRejected` 이고 **제안은 `PENDING` 으로 남는다**(CAS 가 함께 롤백). 요청 상태도 그대로다 |
 | AI-AC-13 | 내부 API 인증 | `/internal/ai/**` 는 헤더 `X-Ai-Worker-Secret` 이 서버 시크릿과 일치할 때만 통과한다. 틀리거나 없으면 401 `ai_workerUnauthorized`. 서버 시크릿이 비어 있으면 모두 401 이다 |
 | AI-AC-14 | 요청자 범위 | 제안·읽기 도구는 요청의 요청자 범위로만 동작한다. 남의 차수에는 제안이 기록되지 않고(`NOT_THE_HOST`), 도구 입력에는 회원 식별자가 없다 |
 | AI-AC-15 | 조회·승인은 본인만 | 다른 회원의 요청 조회·승인·거절은 404(존재를 드러내지 않는다) |

@@ -44,4 +44,20 @@ public class AiController {
             @RequestHeader(name = "loginId", required = false) String loginId, @PathVariable UUID id) {
         return ApiResponse.success(aiRequestService.retry(loginId, id), "AI request queued again");
     }
+
+    @PostMapping("/requests/{id}/actions/{actionId}/apply")
+    @Operation(summary = "제안 승인", description = "제안 하나를 요청자 권한으로 실제 등록한다. 두 번 눌러도 한 번만 반영된다.")
+    public ApiResponse<AiRequestResponse> apply(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable UUID id, @PathVariable Long actionId) {
+        return ApiResponse.success(aiRequestService.apply(loginId, id, actionId), "AI proposal applied");
+    }
+
+    @PostMapping("/requests/{id}/actions/{actionId}/reject")
+    @Operation(summary = "제안 거절", description = "제안 하나를 거절한다. 아무것도 등록하지 않는다.")
+    public ApiResponse<AiRequestResponse> reject(
+            @RequestHeader(name = "loginId", required = false) String loginId,
+            @PathVariable UUID id, @PathVariable Long actionId) {
+        return ApiResponse.success(aiRequestService.reject(loginId, id, actionId), "AI proposal rejected");
+    }
 }

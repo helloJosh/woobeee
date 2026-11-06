@@ -63,6 +63,12 @@ public interface AiRequestRepository extends JpaRepository<AiRequests, UUID> {
     int markDead(@Param("id") UUID id, @Param("attempt") int attempt,
                  @Param("error") String error, @Param("now") LocalDateTime now);
 
+    /** 제안이 모두 승인·거절되면 요청을 끝낸다. DRAFTED 만 APPLIED 가 된다. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE ai_requests SET status = 'APPLIED', updated_at = :now WHERE id = :id AND status = 'DRAFTED'",
+            nativeQuery = true)
+    int markApplied(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
     /** 수동 재시도: 처리 횟수를 0 으로 되돌려 처음부터 다시 돈다. DEAD 만 된다. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

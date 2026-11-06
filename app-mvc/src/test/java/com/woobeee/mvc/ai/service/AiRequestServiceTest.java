@@ -56,7 +56,7 @@ class AiRequestServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiRequestServiceImpl(members, requests, outbox, actions, store, properties);
+        service = new AiRequestServiceImpl(members, requests, outbox, actions, store, properties, mock(AiActionApplier.class));
         member("me@woobeee.com", ME);
         member("other@woobeee.com", OTHER);
         member("boss@woobeee.com", MANAGER);
