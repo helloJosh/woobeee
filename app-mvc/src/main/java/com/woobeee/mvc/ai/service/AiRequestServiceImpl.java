@@ -155,12 +155,13 @@ public class AiRequestServiceImpl implements AiRequestService {
         return settle(request);
     }
 
-    /** 본인 요청만(남의 것은 404), 그리고 처리가 끝나 제안이 확정된 {@code DRAFTED} 일 때만. */
+    /** 본인 요청만(남의 것은 404), 그리고 처리가 끝나 제안이 확정된({@code DRAFTED}·{@code APPLIED}) 뒤에만. */
     private AiRequests requireOwnedDraft(Member member, UUID id) {
         AiRequests request = requestRepository.findById(id)
                 .filter(found -> found.getMemberId().equals(member.getId()))
                 .orElseThrow(AiErrorCode.NOT_FOUND::asException);
-        if (request.getStatus() != AiRequestStatus.DRAFTED) {
+        // 이미 끝난(APPLIED) 요청에 같은 승인을 또 누르면 "처리 중" 이 아니라 "이미 처리했다" 가 맞다 — CAS 가 가려낸다.
+        if (request.getStatus() != AiRequestStatus.DRAFTED && request.getStatus() != AiRequestStatus.APPLIED) {
             throw AiErrorCode.NOT_READY.asException();
         }
         return request;

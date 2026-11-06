@@ -184,6 +184,20 @@ class AiRequestApplyTest {
     }
 
     @Test
+    void AI_AC_11_apply_andReject_onAnAlreadySettledRequestAreAlreadyDoneNotNotReady() {
+        AiRequests r = request(ME, AiRequestStatus.APPLIED);
+        action(r, 3L);
+        when(actions.markApplied(3L)).thenReturn(0);
+        when(actions.markRejected(3L)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.apply("me@woobeee.com", r.getId(), 3L))
+                .satisfies(t -> assertCode(t, AiErrorCode.ACTION_ALREADY_DONE));
+        assertThatThrownBy(() -> service.reject("me@woobeee.com", r.getId(), 3L))
+                .satisfies(t -> assertCode(t, AiErrorCode.ACTION_ALREADY_DONE));
+        verify(applier, never()).apply(anyLong(), any());
+    }
+
+    @Test
     void AI_AC_11_apply_onlyOnceTheRequestHasBeenDrafted() {
         for (AiRequestStatus status : List.of(AiRequestStatus.RECEIVED, AiRequestStatus.PROCESSING,
                 AiRequestStatus.FAILED, AiRequestStatus.DEAD)) {

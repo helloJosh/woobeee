@@ -72,8 +72,9 @@ DB 를 쓰는 테스트는 `@ActiveProfiles("test")` 로 **`market_test`** 만 �
 DB 에서는 남의 데이터 때문에 실패했다).
 
 ```bash
-./mvnw -pl core,app-mvc -am test   # (240개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
-cd front && npm test && npm run build          # (306개) npm test = tsc --noEmit → vitest run
+./mvnw -pl core,app-mvc -am test   # (337개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다. Redis 도 필요(통합 테스트가 앱 컨텍스트를 올린다)
+cd front && npm test && npm run build          # (318개) npm test = tsc --noEmit → vitest run
+cd ai-worker && npm test && npm run build      # (53개) npm test = tsc --noEmit → vitest run. cmux 같은 환경에서는 `env -u NODE_OPTIONS` 를 앞에 붙인다
 ```
 
 `front/package.json` 의 `test` 는 **타입 검사를 먼저** 돌리고 통과해야 vitest 로 넘어간다.
@@ -127,6 +128,7 @@ docker exec woobeee-db psql -U root -d postgres -c "CREATE DATABASE market_test 
 ```bash
 docker build -f app-mvc/Dockerfile -t woobeee/app-mvc:latest .   # 빌드 컨텍스트 = 레포 루트
 docker build -t woobeee/front:latest front/                      # 컨텍스트 = front/
+docker build -t woobeee/ai-worker:latest ai-worker/              # 컨텍스트 = ai-worker/ (AI 요청하기 워커, ADR-005)
 ```
 
 `front/Dockerfile` 의 `MVC_ORIGIN`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` 는
@@ -137,7 +139,7 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 **경고: compose 의 `app-mvc` 서비스는 실제 `market` DB 에 붙고 부팅 때 Flyway 가 돈다.** 띄우는 것만으로
 밀린 마이그레이션이 그 DB 에 적용된다 — 특히 되돌릴 수 없는 컬럼·테이블 삭제 마이그레이션이 그렇다 — `V26__drop_game.sql`
 (`game_results` 등 삭제), `V27__pokemon_drop_fx.sql`(`pokemon_rounds`·`pokemon_orders` 의 환율·확정 원화 컬럼 삭제). 아래
-"DB 를 바꾸는 것은 먼저 확인받는다" 규칙의 대상이다.
+"DB 를 바꾸는 것은 먼저 확인받는다" 규칙의 대상이다. 새 테이블만 더하는 `V28__ai_requests.sql`(`ai_requests`·`ai_outbox`·`ai_request_actions`)도 같다 — 되돌릴 수는 있지만 적용 전에 SQL 을 보여주고 승인받는다.
 
 `-pl <module>` 단독 실행은 `com.woobeee:core` 가 로컬 리포에 설치돼 있어야 한다. 클린 클론에서는
 먼저 `./mvnw -pl core -am install -DskipTests` 를 한 번 실행한다.
@@ -161,6 +163,7 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/tags`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/태그/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용, 태그는 글쓰기 안에서만 생성 |
 | app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
+| app-mvc | ai | `/api/back/ai`, `/internal/ai` | AI 요청하기 — 글·이미지를 올리면 별도 컨테이너 `ai-worker`(Claude Code + MCP)가 Kafka 로 받아 상품·일정을 **제안**하고, 승인하면 요청자 권한으로 등록한다(ADR-005, `docs/ai/PRD.md`). 사용자 API 는 로그인 필수·본인만, `/internal/ai` 는 워커 시크릿 전용 |
 | app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 주최자가 **차수**(1차·2차·3차)를 열고 회원들이 신청한다. `/pokemon/{handle}/{sequence}` 로 주최자별 URL. 통화·계좌·**상품표**를 차수가 든다. 원화는 저장하지 않고 하루 한 번(09:10 KST) 갱신되는 환율로 매번 계산한 **예상 금액**이다(환차손익 없음). 조회는 공개, 신청·댓글·개설은 **로그인 필수** |
 
 ## 안전 수칙

@@ -40,4 +40,21 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품**과 **�
 
 ## 테스트 매핑
 
-구현하며 채운다 (Task 9).
+| AC | 테스트 |
+| --- | --- |
+| AI-AC-01·02 | `AiRequestServiceTest`, `AiRequestRepositoryTest`(`AI_AC_19_*`, `AI_AC_02_*`), `AiPipelineIntegrationTest`(`AI_AC_19_*`) |
+| AI-AC-03 | `AiOutboxPublisherTest`, `AiRequestRepositoryTest`(`AI_AC_03_markPublishFailed_*`), `AiPipelineIntegrationTest`(`AI_AC_03_intake*`), `AiKafkaRoundTripTest`(실 브로커가 있을 때만) |
+| AI-AC-04 | `AiOutboxRepositoryTest`(`AI_AC_04_*`), `AiOutboxPublisherTest`(`AI_AC_04_*`) |
+| AI-AC-05·06 | `AiRequestRepositoryTest`, `AiWorkerServiceTest`, `AiToolServiceTest` |
+| AI-AC-07 | `AiToolServiceTest`, `AiRequestRepositoryTest`(`AI_AC_07_*`) |
+| AI-AC-08·09 | `AiFailureHandlerTest`, `AiLeaseSweeperTest`, `AiRequestRepositoryTest` |
+| AI-AC-10 | `AiRequestServiceTest`(`AI_AC_10_*`), `AiRequestRepositoryTest`(`AI_AC_10_*`) |
+| AI-AC-11·12 | `AiRequestApplyTest`, `AiActionApplierTest`, `AiPipelineIntegrationTest`(롤백·멱등을 실 DB 에서) |
+| AI-AC-13 | `AiWorkerSecretFilterTest` |
+| AI-AC-14·15 | `AiRequesterScopeTest`, `AiToolServiceTest`, `AiRequestServiceTest`(`AI_AC_15_*`) |
+| AI-AC-16·19 | `ai-worker/test/handler.test.ts`, `consumer.test.ts`, `claudeRunner.test.ts`, `internalApi.test.ts` |
+| AI-AC-17 | `ai-worker/test/mcpTools.test.ts`, `mcpConfig.test.ts`, `prompt.test.ts`, `scripts/smoke-mcp.mjs` |
+| AI-AC-18 | `front/lib/ai.test.ts` |
+
+`AiPipelineIntegrationTest` 는 테스트 트랜잭션으로 감싸지 않고 `market_test` 에 실제로 쓰고 지운다 — 서비스가 던진 예외가
+서비스의 트랜잭션을 되돌리는지가 핵심이라 감싸면 증명이 되지 않는다. 시작 전에 DB 이름이 `market_test` 인지 확인한다.

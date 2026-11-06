@@ -134,6 +134,37 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 집계는 서버가 계산하지 않고 `front/lib/pokemon.ts` 가 한다(환차손익은 없다 — 원화는 오늘 환율의 예상 금액이다) — 인수 기준은
 `docs/pokemon/PRD.md`.
 
+### ai — `/api/back/ai` · `/internal/ai`
+
+글·이미지를 올리면 Claude Code 가 공동구매 상품·일정을 **제안**하고, 사용자가 승인하면 등록한다
+(`docs/ai/PRD.md`, ADR-005). 실패 응답은 `header.message` 에 코드 키(`ai_*`)를 싣는다.
+
+**사용자 API** — 전부 로그인 필수, 남의 요청은 `404`(존재를 드러내지 않는다).
+
+| 메서드 | 경로 | 설명 | 권한 |
+| --- | --- | --- | --- |
+| POST | `/api/back/ai/requests` | 요청 접수 — multipart `text`, `images`(≤5장, 장당 ≤5MB, png/jpeg/webp). 요청과 outbox 를 한 트랜잭션으로 저장한다. 진행 중인 요청이 있으면 `409 ai_requestInProgress` | 로그인 |
+| GET | `/api/back/ai/requests/latest` | 내 가장 최근 요청(없으면 `data` null). 새로고침한 화면이 진행 중인 요청을 다시 찾는다 | 로그인 |
+| GET | `/api/back/ai/requests/{id}` | 상태·요약·제안 목록(`actions`) | 본인 |
+| POST | `/api/back/ai/requests/{id}/retry` | `DEAD` 요청을 다시 돌린다(`409 ai_notRetryable` 그 외) | 본인 또는 전역 운영자 |
+| POST | `/api/back/ai/requests/{id}/actions/{actionId}/apply` | 제안 승인 — 요청자 권한으로 기존 서비스를 호출해 등록한다. 두 번 눌러도 한 번만 반영(`409 ai_actionAlreadyDone`). 거절되면 `403 ai_applyForbidden`/`400 ai_applyRejected` 이고 제안은 `PENDING` 으로 남는다 | 본인 |
+| POST | `/api/back/ai/requests/{id}/actions/{actionId}/reject` | 제안 거절 | 본인 |
+
+**내부 API** — 워커 전용. 헤더 `X-Ai-Worker-Secret` 이 서버 시크릿과 같을 때만 열린다(`401 ai_workerUnauthorized`,
+서버 시크릿이 비어 있으면 전부 401). 프런트 rewrites 에 없는 경로라 브라우저에서는 닿지 않는다. 쓰기·읽기 모두
+claim 이 준 `attempt` 가 현재와 같을 때만 받는다(`409 ai_staleAttempt`).
+
+| 메서드 | 경로 | 설명 |
+| --- | --- | --- |
+| POST | `/internal/ai/requests/{id}/claim` | 처리 시작. 이미 처리됐거나 리스가 살아 있으면 `409 ai_notClaimable`. 응답에 `attempt`, `text`, `imageKeys` |
+| POST | `/internal/ai/requests/{id}/complete` | 처리 완료(`{attempt, summary}`) → `DRAFTED` |
+| POST | `/internal/ai/requests/{id}/fail` | 실패 보고(`{attempt, error}`) → 3회 미만 재발행, 3회째 `DEAD` + DLQ |
+| POST | `/internal/ai/requests/{id}/proposals/round-products` | 상품 제안 기록(`{attempt, roundId, items[]}`) — 등록하지 않는다 |
+| POST | `/internal/ai/requests/{id}/proposals/tasks` | 할 일 제안 기록(`{attempt, task}`) — 등록하지 않는다 |
+| GET | `/internal/ai/requests/{id}/pokemon/rounds?attempt=` | 요청자가 연 차수 |
+| GET | `/internal/ai/requests/{id}/pokemon/rounds/{roundId}/products?attempt=` | 요청자 차수의 상품표(남의 차수는 `403`) |
+| GET | `/internal/ai/requests/{id}/schedule/tree?attempt=` | 요청자의 일정 트리 |
+
 ## 참고
 
 - 실패 응답은 `ApiResponse` 봉투를 지향하나 app-mvc 는 아직 auth 도메인
