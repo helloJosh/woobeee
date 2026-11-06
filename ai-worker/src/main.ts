@@ -34,7 +34,14 @@ const deps: HandlerDeps = {
       serverPath: cfg.mcpServerPath,
     });
     return runClaude(
-      { prompt: buildPrompt(input), mcpConfigPath, cwd: input.dir, timeoutMs: cfg.claudeTimeoutMs, maxTurns: cfg.maxTurns },
+      {
+        prompt: buildPrompt({ text: input.text, imageCount: input.imagePaths.length }),
+        imagePaths: input.imagePaths,
+        mcpConfigPath,
+        cwd: input.dir,
+        timeoutMs: cfg.claudeTimeoutMs,
+        maxTurns: cfg.maxTurns,
+      },
       { bin: cfg.claudeBin },
     );
   },

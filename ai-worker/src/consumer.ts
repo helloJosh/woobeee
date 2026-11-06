@@ -84,7 +84,9 @@ export async function runConsumer(
   }
 
   await consumer.connect();
-  await consumer.subscribe({ topic, fromBeginning: false });
+  // 오프셋이 없는 새 그룹은 처음부터 읽는다. latest 에서 시작하면 워커가 늦게 떴을 때 그 전에 쌓인 요청이 영영
+  // 읽히지 않고 RECEIVED 로 남아 사용자가 잠긴다. 옛 이벤트를 다시 받아도 claim 의 409 가 걸러낸다.
+  await consumer.subscribe({ topic, fromBeginning: true });
   await consumer.run({
     autoCommit: false,
     partitionsConsumedConcurrently: 1,

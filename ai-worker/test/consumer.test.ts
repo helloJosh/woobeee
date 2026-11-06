@@ -38,7 +38,8 @@ describe("runConsumer", () => {
     const f = fakeConsumer();
     await runConsumer(f.consumer, "ai.request.v1", async () => "done");
 
-    expect(f.consumer.subscribe).toHaveBeenCalledWith({ topic: "ai.request.v1", fromBeginning: false });
+    // 오프셋이 없는 새 그룹은 처음부터 읽는다 — 워커가 늦게 떠도 그 전에 쌓인 요청을 건너뛰지 않는다(옛 이벤트는 claim 의 409 가 걸러낸다)
+    expect(f.consumer.subscribe).toHaveBeenCalledWith({ topic: "ai.request.v1", fromBeginning: true });
     expect(f.consumer.runOptions).toMatchObject({ autoCommit: false, partitionsConsumedConcurrently: 1 });
   });
 

@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { GetObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 
 /**
- * 오브젝트 키(`ai/{id}/{n}`)에는 확장자가 없다. Claude 의 Read 도구는 확장자로 이미지를 알아보므로
- * 저장해 둔 콘텐츠 타입에서 확장자를 정한다.
+ * 오브젝트 키(`ai/{id}/{n}`)에는 확장자가 없다. 저장해 둔 콘텐츠 타입에서 확장자를 정해 두면 claudeRunner 가
+ * 그 확장자로 base64 블록의 media_type 을 정한다.
  */
 export function extensionFor(contentType: string | undefined): string {
   switch (contentType?.toLowerCase()) {

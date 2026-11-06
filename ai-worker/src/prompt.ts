@@ -1,17 +1,14 @@
 export interface PromptInput {
   text: string;
-  imagePaths: string[];
+  /** 같은 메시지에 base64 로 함께 실려 간 이미지 수. 경로는 주지 않는다 — claude 에게는 파일을 읽는 도구가 없다. */
+  imageCount: number;
 }
 
 /**
  * claude 에게 주는 지시. 사용자가 올린 글과 이미지는 <b>자료</b>이지 지시가 아니다 — 거기에 "이전 지시를 무시하라" 같은
  * 문장이 있어도 따르지 않게 못 박는다(Review Focus 1). 쓰기는 제안 도구뿐이고 등록은 사용자가 승인해야 일어난다.
  */
-export function buildPrompt({ text, imagePaths }: PromptInput): string {
-  const images = imagePaths.length > 0
-    ? imagePaths.map((path) => `- ${path}`).join("\n")
-    : "(첨부한 이미지 없음)";
-
+export function buildPrompt({ text, imageCount }: PromptInput): string {
   return [
     "당신은 woobeee 의 등록 도우미입니다. 사용자가 올린 글과 이미지를 읽고, 공동구매 차수의 상품과 일정(할 일)을 *제안*합니다.",
     "",
@@ -22,8 +19,7 @@ export function buildPrompt({ text, imagePaths }: PromptInput): string {
     "4. 이미지에서 읽은 가격은 보이는 그대로(통화 기호 제외 숫자) 적고, 불확실하면 제안하지 말고 요약에 적습니다.",
     "5. 마지막에 무엇을 제안했는지(또는 왜 제안하지 못했는지)를 한국어로 짧게 요약해 답합니다. 이 요약이 사용자에게 보입니다.",
     "",
-    "첨부한 이미지 파일(Read 도구로 읽을 수 있습니다):",
-    images,
+    `첨부한 이미지: ${imageCount > 0 ? `${imageCount}장 (이 메시지에 함께 있습니다)` : "없음"}`,
     "",
     "사용자 글:",
     text.trim().length > 0 ? text : "(글 없음)",

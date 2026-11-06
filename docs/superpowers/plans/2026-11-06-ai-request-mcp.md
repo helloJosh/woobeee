@@ -19,7 +19,7 @@
 - **직렬 처리:** 토픽 파티션 1, 소비자 1, `partitionsConsumedConcurrently: 1` — 워커는 이벤트를 하나씩 끝까지 처리한다. 한 사용자는 진행 중(`RECEIVED`·`PROCESSING`·`FAILED`) 요청이 있으면 새 요청을 못 낸다(409 `ai_requestInProgress`). 레이트 리밋(분당)은 두지 않는다.
 - 기본값: 발행기 간격 3초, 리스 5분, 발행 한도 8회, 처리 한도 3회, `claude` 타임아웃 120초, `--max-turns` 12.
 - 인증은 구독 토큰 `CLAUDE_CODE_OAUTH_TOKEN`(`! claude setup-token` 으로 사용자가 만들어 `.docker-compose/.env` 에 직접 넣는다. 채팅에 붙이지 않는다). 설정돼 있으면 `ANTHROPIC_API_KEY` 대신 이것을 쓰고, 둘 다 있으면 토큰 우선. 사용자는 본인 1명.
-- `claude -p` 허용 도구는 `mcp__woobeee` 와 `Read` 뿐. 시크릿(`AI_WORKER_SECRET`)은 claude 프로세스 환경이 아니라 MCP 자식 프로세스 설정으로만 전달한다.
+- `claude -p` 허용 도구는 `mcp__woobeee` 하나뿐 — `Read` 도 주지 않는다(리뷰 I2: 파일 도구가 있으면 `/proc/self/environ` 으로 토큰이 샌다). 이미지는 stdin 의 base64 블록(stream-json)으로 넘기고 `--strict-mcp-config` 를 쓴다. 시크릿(`AI_WORKER_SECRET`)은 claude 프로세스 환경이 아니라 MCP 자식 프로세스 설정으로만 전달한다.
 - 내부 API 는 `/internal/ai/**`, 헤더 `X-Ai-Worker-Secret` 으로 인증한다. 시크릿이 설정되지 않으면 내부 API 는 전부 401 이다(빈 시크릿으로 열리지 않는다).
 - 실패 응답은 `header.message` 에 코드 키(`ai_*`)를 싣는 봉투 계약을 `PokemonErrorCode` 와 같은 방식으로 지킨다.
 - 테스트 이름에 AC ID(`AI-AC-nn`)를 단다. 운영 DB 마이그레이션 적용·compose 재기동은 CLAUDE.md 안전 수칙대로 **승인 전에는 하지 않는다**.

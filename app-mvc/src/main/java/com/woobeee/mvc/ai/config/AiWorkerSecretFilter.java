@@ -6,7 +6,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -30,9 +32,15 @@ public class AiWorkerSecretFilter extends OncePerRequestFilter {
 
     private final AiProperties properties;
 
+    /**
+     * 컨테이너와 Spring MVC 는 퍼센트 디코딩·{@code ;param} 제거·{@code //}·{@code /./} 정규화를 거친 경로로 매칭한다.
+     * 날 {@code getRequestURI()} 로 판정하면 {@code /internal/%61i/...} 같은 요청은 이 필터가 "내 일이 아니다" 하고
+     * 건너뛰는데 컨트롤러는 그대로 실행돼 시크릿 검사가 통째로 우회된다. 같은 방식으로 정규화한 경로로 본다.
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(PATH_PREFIX);
+        String path = StringUtils.cleanPath(UrlPathHelper.defaultInstance.getPathWithinApplication(request));
+        return !path.startsWith(PATH_PREFIX);
     }
 
     @Override

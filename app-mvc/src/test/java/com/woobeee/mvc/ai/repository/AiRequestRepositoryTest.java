@@ -160,6 +160,24 @@ class AiRequestRepositoryTest {
     }
 
     @Test
+    void AI_AC_03_markPublishFailed_alsoRescuesAFailedRequestWhoseRetryEventCouldNotBePublished() {
+        AiRequests r = received(ME);
+        // 처리 실패 뒤 재시도 이벤트를 기다리는 요청(FAILED). 그 이벤트의 발행이 한도를 넘으면 아무도 이 요청을 건드리지 않는다
+        force(r.getId(), "FAILED", 1, now.plusSeconds(30));
+        assertThat(requests.existsByMemberIdAndStatusIn(ME, List.of(AiRequestStatus.FAILED))).isTrue();
+
+        assertThat(requests.markPublishFailed(r.getId(), "publish_failed", now)).isEqualTo(1);
+
+        AiRequests dead = reload(r.getId());
+        assertThat(dead.getStatus()).isEqualTo(AiRequestStatus.DEAD);
+        assertThat(dead.getLeaseUntil()).isNull();
+        // 사용자는 더 이상 막히지 않고 수동 재시도로 되살릴 수 있다
+        assertThat(requests.existsByMemberIdAndStatusIn(ME, List.of(AiRequestStatus.RECEIVED,
+                AiRequestStatus.PROCESSING, AiRequestStatus.FAILED))).isFalse();
+        assertThat(requests.requeueDead(r.getId(), now)).isEqualTo(1);
+    }
+
+    @Test
     void AI_AC_09_findExpiredProcessing_returnsOnlyExpiredProcessing() {
         AiRequests expired = received(ME);
         force(expired.getId(), "PROCESSING", 1, now.minusSeconds(1));

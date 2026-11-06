@@ -66,6 +66,28 @@ class AiWorkerSecretFilterTest {
     }
 
     @Test
+    void AI_AC_13_anEncodedOrParameterisedPathCannotSlipPastTheCheck() throws Exception {
+        // 컨테이너와 Spring 은 디코딩·정규화한 경로로 매칭한다 — 날 문자열로 판정하면 이런 요청이 시크릿 검사를 건너뛴다
+        for (String uri : new String[]{
+                "/internal/%61i/requests/1/claim",
+                "/internal/./ai/requests/1/claim",
+                "/internal/x/../ai/requests/1/claim",
+                "/internal;x=1/ai/requests/1/claim",
+                "/internal/ai;jsessionid=1/requests/1/claim",
+                "/internal//ai/requests/1/claim",
+                "/%69nternal/ai/requests/1/claim",
+        }) {
+            FilterChain chain = mock(FilterChain.class);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            filter("s3cret").doFilter(request(uri, null), response, chain);
+
+            assertThat(response.getStatus()).as(uri).isEqualTo(401);
+            verify(chain, never()).doFilter(any(), any());
+        }
+    }
+
+    @Test
     void AI_AC_13_otherPathsAreLeftAlone() throws Exception {
         FilterChain chain = mock(FilterChain.class);
         MockHttpServletResponse response = new MockHttpServletResponse();

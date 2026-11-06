@@ -83,13 +83,15 @@ public interface AiRequestRepository extends JpaRepository<AiRequests, UUID> {
 
     /**
      * 발행 한도를 넘겨 이벤트가 영영 나가지 못한 요청. FAILED 로 두면 진행 중으로 남아 사용자가 막히고 재시도도
-     * 안 되므로 DEAD 로 둔다 — 그래야 수동 재시도(requeueDead)로 다시 돌릴 수 있다. 아직 claim 되기 전(RECEIVED)만.
+     * 안 되므로 DEAD 로 둔다 — 그래야 수동 재시도(requeueDead)로 다시 돌릴 수 있다. 아직 claim 되기 전(RECEIVED)과, 처리 실패 뒤
+     * 재시도 이벤트를 기다리던(FAILED) 요청 둘 다 — 그 이벤트가 영영 나가지 못하면 FAILED 를 건드리는 경로가 없어
+     * 사용자가 영구히 잠긴다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             UPDATE ai_requests
                SET status = 'DEAD', last_error = :error, lease_until = NULL, updated_at = :now
-             WHERE id = :id AND status = 'RECEIVED'
+             WHERE id = :id AND status IN ('RECEIVED', 'FAILED')
             """, nativeQuery = true)
     int markPublishFailed(@Param("id") UUID id, @Param("error") String error, @Param("now") LocalDateTime now);
 
