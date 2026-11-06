@@ -61,6 +61,22 @@ public class ExchangeRateService {
                 .orElseThrow(PokemonErrorCode.RATE_UNAVAILABLE::asException);
     }
 
+    /**
+     * 하루 한 번 도는 갱신({@link ExchangeRateRefresher}). 신선값이 살아 있어도 무시하고 다시 받는다.
+     * 제공자가 죽어도 예외를 던지지 않는다 — 다음 조회({@link #current})가 지연 조회로 보충한다.
+     */
+    public void refreshAll() {
+        for (String currency : properties.currencies()) {
+            try {
+                client.fetchToKrw(currency).ifPresentOrElse(
+                        this::cache,
+                        () -> log.warn("exchange rate refresh returned nothing for {}", currency));
+            } catch (Exception ex) {
+                log.warn("exchange rate refresh failed for {}: {}", currency, ex.toString());
+            }
+        }
+    }
+
     private static String freshKey(String currency) {
         return KEY_PREFIX + currency;
     }
