@@ -72,8 +72,8 @@ DB 를 쓰는 테스트는 `@ActiveProfiles("test")` 로 **`market_test`** 만 �
 DB 에서는 남의 데이터 때문에 실패했다).
 
 ```bash
-./mvnw -pl core,app-mvc -am test   # (225개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
-cd front && npm test && npm run build          # (312개) npm test = tsc --noEmit → vitest run
+./mvnw -pl core,app-mvc -am test   # (237개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
+cd front && npm test && npm run build          # (305개) npm test = tsc --noEmit → vitest run
 ```
 
 `front/package.json` 의 `test` 는 **타입 검사를 먼저** 돌리고 통과해야 vitest 로 넘어간다.
@@ -135,8 +135,8 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 (`app-mvc/src/main/resources/application-prod-docker.yml`)다.
 
 **경고: compose 의 `app-mvc` 서비스는 실제 `market` DB 에 붙고 부팅 때 Flyway 가 돈다.** 띄우는 것만으로
-밀린 마이그레이션이 그 DB 에 적용된다 — 특히 되돌릴 수 없는 `V26__drop_game.sql`
-(`game_results`·`game_result_participants` 테이블과 `members.game_money` 컬럼 삭제)이 그렇다. 아래
+밀린 마이그레이션이 그 DB 에 적용된다 — 특히 되돌릴 수 없는 컬럼·테이블 삭제 마이그레이션이 그렇다 — `V26__drop_game.sql`
+(`game_results` 등 삭제), `V27__pokemon_drop_fx.sql`(`pokemon_rounds`·`pokemon_orders` 의 환율·확정 원화 컬럼 삭제). 아래
 "DB 를 바꾸는 것은 먼저 확인받는다" 규칙의 대상이다.
 
 `-pl <module>` 단독 실행은 `com.woobeee:core` 가 로컬 리포에 설치돼 있어야 한다. 클린 클론에서는
@@ -160,7 +160,7 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 | app-mvc | auth | `/api/auth` | `signup`, `login`, `callback-google`, `access-tokens`, `refresh-tokens`, `me`, `me/profile-image*` |
 | app-mvc | blog | `/api/back/posts`, `/api/back/tags`, `/api/back/comments`, `/api/back/likes`, `/api/back/categories` | 게시글/태그/댓글/좋아요/카테고리 — 게시글·카테고리 쓰기는 `ROLE_ADMIN` 전용, 태그는 글쓰기 안에서만 생성 |
 | app-mvc | schedule | `/api/back/schedule` | 일정 트리/프로젝트/마일스톤/할 일/할 일 이슈 — 전부 로그인 필수, 본인 것만 |
-| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 주최자가 **차수**(1차·2차·3차)를 열고 회원들이 신청한다. `/pokemon/{handle}/{sequence}` 로 주최자별 URL. 통화·환율·계좌·**상품표**를 차수가 든다. 조회는 공개, 신청·댓글·개설은 **로그인 필수** |
+| app-mvc | pokemon | `/api/back/pokemon` | 포켓코인 공동구매 — 주최자가 **차수**(1차·2차·3차)를 열고 회원들이 신청한다. `/pokemon/{handle}/{sequence}` 로 주최자별 URL. 통화·계좌·**상품표**를 차수가 든다. 원화는 저장하지 않고 하루 한 번(09:10 KST) 갱신되는 환율로 매번 계산한 **예상 금액**이다(환차손익 없음). 조회는 공개, 신청·댓글·개설은 **로그인 필수** |
 
 ## 안전 수칙
 
@@ -213,7 +213,7 @@ docker exec woobeee-db psql -U root -d market -c \
 | front 잔존 페이지·API | `app/products`, `app/cart`, `app/chat` 은 폐기된 백엔드를 호출한다. 페이지뿐 아니라 `lib/api.ts` 의 `/api/products*`·`/api/buyers/{id}/carts/*` 클라이언트 여덟 개도 살아 있고 `next.config.mjs` 는 그 경로를 rewrite 하지 않는다. `app/products/[productId]/page.tsx` 에는 `/cart` 링크도 남아 있다 |
 | front AC 미작성 | `docs/front/PRD.md` 에 `## 인수 기준` 표가 없다. 300개로 이 레포에서 가장 큰 테스트 스위트인데 AC ID 를 참조하는 테스트가 하나도 없어, 위 "테스트는 PRD의 인수 기준에서 도출한다" 규칙이 가장 필요한 도메인에서 지켜지지 않는다 |
 | 프론트 컴포넌트 무검증 | vitest 가 node 환경이고 jsdom 이 없다. 판단은 전부 `lib/` 로 옮겨 뒀지만 fetch 이펙트·타이머·이펙트 정리(cleanup)가 **돌긴 하는지**는 아무도 확인하지 않는다 — `return () => …` 을 통째로 지워도 300개가 그대로 통과한다 |
-| pokemon 서버 테스트 얇음 | `front/lib/pokemon.test.ts`(52개) · `PokemonErrorCodeTest` · `PokemonPropertiesTest` 뿐이다. POKEMON-AC-05·06·10·20·21 — 환율 스냅샷이 조회 때 다시 계산되지 않는 것, Redis 캐시 실패 시 `stale` 폴백, `PREPARING` 최초 진입에만 `settled_rate` 가 박히는 것 — 은 **코드로만** 지켜진다. 마지막 것은 상태를 되돌렸다 다시 넘기면 손익이 움직이는 회귀가 조용히 들어올 수 있다. AC-09 는 명단 판정만 테스트가 있고, 그 판정이 실제로 `PATCH /status` 를 막는지는 확인하지 않는다 |
+| pokemon 서버 테스트 얇음 | `front/lib/pokemon.test.ts` · `ExchangeRateServiceTest` · `PokemonServiceImplTest` · `PokemonErrorCodeTest` · `PokemonPropertiesTest` 가 있다. 예상 금액(AC-04·05)·환율 갱신/폴백(AC-06)은 고정됐지만 POKEMON-AC-20·21 — 상품 관리 권한, 내리기 vs 지우기 — 은 **코드로만** 지켜진다. AC-09 는 명단 판정만 테스트가 있고, 그 판정이 실제로 `PATCH /status` 를 막는지는 확인하지 않는다 |
 | 접근 로그 필터 순서가 계약 | `RequestAccessLogFilter` 는 `@Order(HIGHEST_PRECEDENCE)` 로 가장 바깥에 있어야 401/403 으로 잘린 요청까지 남는다. 대신 바깥이라 토큰 필터가 **아래로** 넘기는 래퍼의 `loginId` 헤더가 안 보이므로, 신원은 `AccessTokenLoginIdHeaderFilter.LOGIN_ID_ATTRIBUTE`(원본 요청 attribute)로 받는다. 둘 중 하나만 바꾸면 로그인한 요청이 전부 `비회원` 으로 찍히거나 거절된 요청이 사라진다 |
 | CI 없음 | 레포에 워크플로가 없다. 백엔드·프론트 테스트를 PR 마다 강제하는 것이 없다. `front/lib/game-errors.ts`(pokemon 화면이 `describeGameApiError` 로 쓴다)와 `front/lib/errors/error-messages.ts` 의 코드 키 지도도 서버 에러 코드와 짝을 맞추는 테스트가 없다 |
 | app-mvc 에 catch-all advice 없음 | `AuthRestControllerAdvice` 가 `basePackages="com.woobeee.mvc.auth"` 로 좁혀져 있어 네 부류가 `ApiResponse` 봉투 밖으로 나간다: auth 서비스의 `ResponseStatusException` 12곳, `CustomInternalServerException`, blog 컨트롤러 전체의 빈 검증, `DELETE /api/auth/me/profile-image` 의 204. 프론트는 전부 "예기치 못한 오류" 한 문장으로 받는다. 게다가 app-mvc 는 `header.message` 에 영어 문장을 넣는데 프론트는 그 자리를 **코드 키**로 읽는다 — 반드시 어긋난다.pokemon 은 자체 에러 코드(`PokemonErrorCode`)로 봉투를 지키니 그 모양을 옮기면 된다 |

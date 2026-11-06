@@ -101,16 +101,16 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 | GET | `/api/back/pokemon/hosts/{handle}` | 한 주최자와 그가 연 차수들 (`/pokemon/{handle}`). 신청서는 싣지 않는다 — 화면이 한 번에 한 차수만 보므로 차수 조회가 준다 | 공개 |
 | POST | `/api/back/pokemon/hosts` | 내 주소 정하기. 회원당 한 번, 소문자·숫자·하이픈만 | 로그인 |
 | PUT | `/api/back/pokemon/hosts/me` | 주최자 설정 — 기본 입금 계좌. 차수를 열 때 자동으로 채워진다 | 주최자 |
-| POST | `/api/back/pokemon/rounds` | 차수 개설. 통화·환율 방식(`FIXED`/`PER_ORDER`)을 정한다. 번호는 주최자 안에서 자동. 계좌를 비우면 주최자 기본 계좌를 쓴다 | 로그인 + 주소 있음 |
-| GET | `/api/back/pokemon/hosts/{handle}/rounds/{sequence}` | 차수 하나 — 차수·그 차수 상품표·신청서 전체·현재 환율. 주최자 방의 차수 탭이 쓴다 | 공개 |
-| PUT | `/api/back/pokemon/rounds/{roundId}` | 차수 수정. 통화는 불변, 환율 변경은 **앞으로의 신청서에만** 적용 | 주최자 |
-| PATCH | `/api/back/pokemon/rounds/{roundId}/status` | 차수 상태. `PURCHASED` 최초 진입에 환율이 박혀 환차손익 확정 | 주최자 |
+| POST | `/api/back/pokemon/rounds` | 차수 개설. 통화를 정한다(환율 방식은 없다). 번호는 주최자 안에서 자동. 계좌를 비우면 주최자 기본 계좌를 쓴다 | 로그인 + 주소 있음 |
+| GET | `/api/back/pokemon/hosts/{handle}/rounds/{sequence}` | 차수 하나 — 차수·그 차수 상품표·신청서 전체(`estimatedItemsKrw`·`estimatedKrw`)·오늘 환율(`currentRate`: `toKrw`·`fetchedAt`·`stale`). 주최자 방의 차수 탭이 쓴다 | 공개 |
+| PUT | `/api/back/pokemon/rounds/{roundId}` | 차수 수정(제목·계좌·마감일·메모). 통화는 불변 | 주최자 |
+| PATCH | `/api/back/pokemon/rounds/{roundId}/status` | 차수 상태. 환율을 읽지 않는다(환율 확정·환차손익 없음) | 주최자 |
 | DELETE | `/api/back/pokemon/rounds/{roundId}` | 차수 삭제 — 신청서가 없을 때만 | 주최자 |
 | GET · POST | `/api/back/pokemon/rounds/{roundId}/products` | **그 차수의** 상품표 조회·추가. 통화는 차수를 따라간다 | 주최자 |
 | POST | `/api/back/pokemon/rounds/{roundId}/products/from-template` | 내 상품표(틀)에서 그 차수로 복사. 이미 있는 이름은 건너뛴다 | 주최자 |
-| GET | `/api/back/pokemon/orders/me` | 내 신청서 목록 — 차수·주최자 핸들을 조인해 최신순. `orderId`·`roundId`·`hostHandle`·`roundSequence`·`roundTitle`·`currency`·`roundStatus`·`orderStatus`·`transferKrw`·`createdAt`. 비로그인은 401 `pokemon_loginRequired`. 마이페이지가 쓴다 | 로그인 |
+| GET | `/api/back/pokemon/orders/me` | 내 신청서 목록 — 차수·주최자 핸들을 조인해 최신순. `orderId`·`roundId`·`hostHandle`·`roundSequence`·`roundTitle`·`currency`·`roundStatus`·`orderStatus`·`estimatedKrw`·`createdAt`. 비로그인은 401 `pokemon_loginRequired`. 마이페이지가 쓴다 | 로그인 |
 | POST | `/api/back/pokemon/rounds/{roundId}/orders` | 신청서 제출. **모집중**인 차수에만. 신청자는 회원 닉네임이다 | 로그인 |
-| GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 — 신청서 + 그 차수 + 현재 환율 | 공개 |
+| GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 — 신청서(예상 금액) + 그 차수 + 오늘 환율 | 공개 |
 | PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 (전체 교체) | 주최자, 또는 아직 `ORDERED` 인 본인 |
 | PATCH | `/api/back/pokemon/orders/{orderId}/status` | 신청서 상태 | 주최자 |
 | DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 | 주최자, 또는 아직 `ORDERED` 인 본인 |
@@ -131,7 +131,7 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 가격은 요청이 아니라 상품표에서 읽는다 — 클라이언트가 보낸 금액은 쓰지 않는다. 상품 가격을
 고쳐도 과거 신청서는 움직이지 않는다(항목이 당시 이름·단가를 스냅샷으로 든다).
 
-집계는 서버가 계산하지 않고 `front/lib/pokemon.ts` 가 한다(환차손익은 화면에서 걷어냈다) — 인수 기준은
+집계는 서버가 계산하지 않고 `front/lib/pokemon.ts` 가 한다(환차손익은 없다 — 원화는 오늘 환율의 예상 금액이다) — 인수 기준은
 `docs/pokemon/PRD.md`.
 
 ## 참고
