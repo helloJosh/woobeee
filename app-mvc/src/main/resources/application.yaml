@@ -47,9 +47,33 @@ pokemon:
     # 차수를 열 때 고를 수 있는 통화. 늘리려면 여기에 추가한다.
     currencies: ${POKEMON_CURRENCIES:INR,USD,JPY}
 
+ai:
+  # 워커가 내부 API(/internal/ai/**)에 내미는 시크릿. 비어 있으면 내부 API 는 전부 401 이다.
+  worker-secret: ${AI_WORKER_SECRET:}
+  # 남의 DEAD 요청도 다시 돌릴 수 있는 전역 운영자(pokemon 명단과 같은 기본값).
+  manager-member-ids: ${POKEMON_MANAGER_MEMBER_IDS:1}
+
 spring:
   application:
     name: woobeee-app-mvc
+  kafka:
+    # 로컬 호스트에서 띄울 때는 SASL 리스너(8011)다 — 인증 정보는 dev 프로파일에 있다.
+    # 컨테이너는 prod-docker 프로파일이 woobeee-kafka:29092 로 덮는다.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:8011}
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+        # 브로커가 죽어 있어도 발행기 스레드가 오래 매달리지 않게 한다 — 안 되면 백오프로 다시 한다.
+        max.block.ms: 5000
+        request.timeout.ms: 8000
+        delivery.timeout.ms: 12000
+    admin:
+      # 브로커가 없어도 부팅한다(접수는 브로커 없이 성공해야 한다).
+      fail-fast: false
+      operation-timeout: 5s
   servlet:
     multipart:
       # 게시글 첨부 업로드 — 기본값(파일당 1MB)은 사진 한 장도 못 받는다.

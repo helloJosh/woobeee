@@ -1,6 +1,9 @@
 package com.woobeee.mvc;
 
 import com.woobeee.core.token.TokenStore;
+import com.woobeee.mvc.ai.repository.AiActionRepository;
+import com.woobeee.mvc.ai.repository.AiOutboxRepository;
+import com.woobeee.mvc.ai.repository.AiRequestRepository;
 import com.woobeee.mvc.auth.repository.MemberRepository;
 import com.woobeee.mvc.auth.service.AuthService;
 import com.woobeee.mvc.auth.service.TokenService;
@@ -45,6 +48,15 @@ class WoobeeeMvcApplicationTests {
 
     @MockitoBean
     private MemberRepository memberRepository;
+
+    @MockitoBean
+    private AiRequestRepository aiRequestRepository;
+
+    @MockitoBean
+    private AiOutboxRepository aiOutboxRepository;
+
+    @MockitoBean
+    private AiActionRepository aiActionRepository;
 
     @MockitoBean
     private CategoryRepository categoryRepository;

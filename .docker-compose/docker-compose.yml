@@ -152,10 +152,45 @@ services:
       # 운영에서는 셸 환경변수로 덮는다(.docker-compose/docker-up.sh). 없으면 로컬 기본값.
       GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/auth/google/callback}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      # ai-worker 가 /internal/ai/** 에 내미는 시크릿. 비어 있으면 내부 API 는 전부 401 로 닫힌다(AI 요청하기 꺼짐).
+      AI_WORKER_SECRET: ${AI_WORKER_SECRET:-}
     depends_on:
       postgres-management:
         condition: service_healthy
       redis:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  # AI 요청하기 워커(ADR-005, docs/ai/PRD.md). Kafka ai.request.v1 을 한 번에 하나씩 소비해 `claude -p` 를 돌린다.
+  # `up -d app-mvc front` 에는 포함되지 않는다 — 쓰려면 이름을 줘서 올린다(.env 에 토큰이 있어야 뜬다):
+  #   docker compose -f .docker-compose/docker-compose.yml up -d --build ai-worker
+  # 읽기 전용 루트 + /tmp(tmpfs) 하나만 쓴다. 닿는 곳은 app-mvc·MinIO·Kafka 뿐이고 포트는 열지 않는다.
+  # 끄려면 `docker compose stop ai-worker` — 웹은 요청을 받아 쌓아 둔다.
+  ai-worker:
+    build:
+      context: ../ai-worker
+    image: woobeee/ai-worker:latest
+    container_name: woobeee-ai-worker
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-woobeee-kafka:29092}
+      AI_INTERNAL_URL: http://app-mvc:8000
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-woobeee}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-admin!23}
+      # 비밀값이라 파일에 적지 않는다(.docker-compose/.env). 인증은 구독 토큰이 우선이고 API 키는 대안이다.
+      AI_WORKER_SECRET: ${AI_WORKER_SECRET:-}
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      kafka:
+        condition: service_started
+      app-mvc:
         condition: service_started
       minio:
         condition: service_healthy

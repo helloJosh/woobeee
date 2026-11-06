@@ -104,6 +104,14 @@ art-market-place
   양쪽의 지도 불일치를 잡는다.
 - 인수 기준: `docs/schedule/PRD.md` 의 SCHEDULE-AC-01~20.
 
+### `ai`
+
+글·이미지를 받아 Claude Code 가 공동구매 상품·일정을 **제안**하고 사용자가 승인하면 등록한다
+(`docs/ai/PRD.md`, ADR-005). 요청과 `ai_outbox` 를 한 트랜잭션에 저장하고, 발행기가 Kafka `ai.request.v1` 로
+보낸다. 별도 컨테이너 `ai-worker`(Node/TS)가 한 번에 하나씩 소비해 app-mvc 내부 API(`/internal/ai/**`)로
+claim → `claude -p`(MCP 서버 `woobeee`) → 제안 기록 → complete 한다. 반영은 승인 시 `AiActionApplier` 가
+요청자 권한으로 `PokemonService`·`ScheduleService` 를 호출해서만 일어난다.
+
 ### `_common`
 
 공통 요청 처리와 필터를 둔다.
