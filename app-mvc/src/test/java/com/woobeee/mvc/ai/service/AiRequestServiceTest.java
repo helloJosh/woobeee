@@ -210,6 +210,17 @@ class AiRequestServiceTest {
                 .satisfies(t -> assertCode(t, AiErrorCode.LOGIN_REQUIRED));
     }
 
+    @Test
+    void AI_AC_15_latest_returnsMyMostRecentRequestOrNull() {
+        AiRequests mine = AiRequests.receive(ME, "x", List.of("ai/k/0"));
+        when(requests.findFirstByMemberIdOrderByCreatedAtDesc(ME)).thenReturn(Optional.of(mine));
+        when(actions.findByRequestIdOrderById(mine.getId())).thenReturn(List.of());
+
+        assertThat(service.latest("me@woobeee.com").id()).isEqualTo(mine.getId());
+        assertThat(service.latest("other@woobeee.com")).isNull();
+        assertThatThrownBy(() -> service.latest(null)).satisfies(t -> assertCode(t, AiErrorCode.LOGIN_REQUIRED));
+    }
+
     private AiRequests request(long memberId, AiRequestStatus status) {
         AiRequests r = mock(AiRequests.class);
         UUID id = UUID.randomUUID();

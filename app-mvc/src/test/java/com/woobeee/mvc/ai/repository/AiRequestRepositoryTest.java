@@ -216,6 +216,23 @@ class AiRequestRepositoryTest {
     }
 
     @Test
+    void AI_AC_15_findFirstByMemberIdOrderByCreatedAtDesc_returnsTheNewestOfMine() {
+        AiRequests older = received(ME);
+        force(older.getId(), "APPLIED", 1, null);
+        em.createNativeQuery("UPDATE ai_requests SET created_at = :t WHERE id = :id")
+                .setParameter("t", now.minusDays(1)).setParameter("id", older.getId()).executeUpdate();
+        AiRequests newer = received(ME);
+        em.createNativeQuery("UPDATE ai_requests SET created_at = :t WHERE id = :id")
+                .setParameter("t", now).setParameter("id", newer.getId()).executeUpdate();
+        received(SOMEONE_ELSE);
+        em.clear();
+
+        assertThat(requests.findFirstByMemberIdOrderByCreatedAtDesc(ME)).get()
+                .extracting(AiRequests::getId).isEqualTo(newer.getId());
+        assertThat(requests.findFirstByMemberIdOrderByCreatedAtDesc(9_299_999L)).isEmpty();
+    }
+
+    @Test
     void AI_AC_02_existsByMemberIdAndStatusIn_seesOnlyInFlight() {
         AiRequests r = received(ME);
         List<AiRequestStatus> inFlight = List.of(AiRequestStatus.RECEIVED, AiRequestStatus.PROCESSING, AiRequestStatus.FAILED);

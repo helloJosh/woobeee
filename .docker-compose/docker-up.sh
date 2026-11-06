@@ -9,6 +9,9 @@
 #   export S3_PUBLIC_ENDPOINT='https://image.woobeee.com'
 #   .docker-compose/docker-up.sh
 #
+# AI 요청하기(ai-worker)는 여기서 올리지 않는다 — .env 에 AI_WORKER_SECRET·CLAUDE_CODE_OAUTH_TOKEN 을 넣은 뒤
+#   docker compose -f .docker-compose/docker-compose.yml up -d --build ai-worker
+#
 # 주의
 #  - app-mvc 컨테이너는 실제 `market` DB 에 붙고 부팅할 때 Flyway 가 미적용 마이그레이션을 돌린다.
 #  - :3000 · :8000 을 로컬 프로세스(scripts/dev-up.sh)가 쥐고 있으면 포트 충돌이 난다. 먼저 내린다.

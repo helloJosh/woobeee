@@ -31,6 +31,12 @@ public class AiController {
         return ApiResponse.createSuccess(aiRequestService.create(loginId, text, images), "AI request received");
     }
 
+    @GetMapping("/requests/latest")
+    @Operation(summary = "내 최근 AI 요청", description = "없으면 data 가 null. 새로고침한 화면이 진행 중인 요청을 다시 찾는다.")
+    public ApiResponse<AiRequestResponse> latest(@RequestHeader(name = "loginId", required = false) String loginId) {
+        return ApiResponse.success(aiRequestService.latest(loginId), "Latest AI request retrieved");
+    }
+
     @GetMapping("/requests/{id}")
     @Operation(summary = "AI 요청 조회", description = "상태와 제안 목록. 요청자 본인만.")
     public ApiResponse<AiRequestResponse> get(

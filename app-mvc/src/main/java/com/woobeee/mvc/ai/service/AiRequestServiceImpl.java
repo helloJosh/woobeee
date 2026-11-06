@@ -78,6 +78,16 @@ public class AiRequestServiceImpl implements AiRequestService {
 
     @Override
     @Transactional(readOnly = true)
+    public AiRequestResponse latest(String loginId) {
+        Member member = requireMember(loginId);
+        return requestRepository.findFirstByMemberIdOrderByCreatedAtDesc(member.getId())
+                .map(request -> toResponse(request, actionRepository.findByRequestIdOrderById(request.getId()).stream()
+                        .map(AiActionResponse::of).toList()))
+                .orElse(null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public AiRequestResponse get(String loginId, UUID id) {
         Member member = requireMember(loginId);
         AiRequests request = requestRepository.findById(id)

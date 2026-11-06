@@ -1,0 +1,43 @@
+# AI 요청하기 워커(ADR-005). **kustomization.yaml 에 넣지 않았다** — 이 클러스터에는 Kafka 가 없다.
+# 쓰려면 먼저 클러스터에 Kafka 를 올리고 woobeee-config 에 KAFKA_BOOTSTRAP_SERVERS 를, woobeee-secrets 에
+# AI_WORKER_SECRET·CLAUDE_CODE_OAUTH_TOKEN 을 만든 뒤 이 파일을 kustomization 의 resources 에 더한다.
+# app-mvc 에도 같은 AI_WORKER_SECRET 을 줘야 내부 API 가 열린다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-worker
+  namespace: woobeee
+spec:
+  # 한 번에 하나만 처리한다(파티션 1·소비자 1) — 늘려도 일은 병렬이 되지 않는다.
+  replicas: 1
+  selector:
+    matchLabels: { app: ai-worker }
+  template:
+    metadata:
+      labels: { app: ai-worker }
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: ai-worker
+          image: woobeee/ai-worker:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          env:
+            - { name: AI_INTERNAL_URL, value: "http://app-mvc:8000" }
+            - { name: S3_ENDPOINT, value: "http://minio:9000" }
+            - { name: S3_BUCKET, value: "woobeee" }
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom: { configMapKeyRef: { name: woobeee-config, key: KAFKA_BOOTSTRAP_SERVERS } }
+            - { name: S3_ACCESS_KEY, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: MINIO_ROOT_USER } } }
+            - { name: S3_SECRET_KEY, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: MINIO_ROOT_PASSWORD } } }
+            - { name: AI_WORKER_SECRET, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: AI_WORKER_SECRET } } }
+            - { name: CLAUDE_CODE_OAUTH_TOKEN, valueFrom: { secretKeyRef: { name: woobeee-secrets, key: CLAUDE_CODE_OAUTH_TOKEN } } }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+      volumes:
+        - name: tmp
+          emptyDir: {}

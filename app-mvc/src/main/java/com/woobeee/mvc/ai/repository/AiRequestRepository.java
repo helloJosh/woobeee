@@ -20,6 +20,9 @@ public interface AiRequestRepository extends JpaRepository<AiRequests, UUID> {
 
     boolean existsByMemberIdAndStatusIn(Long memberId, Collection<AiRequestStatus> statuses);
 
+    /** 내 최근 요청 — 새로고침한 화면이 진행 중인 요청을 다시 찾는 데 쓴다. */
+    java.util.Optional<AiRequests> findFirstByMemberIdOrderByCreatedAtDesc(Long memberId);
+
     /**
      * {@code RECEIVED}, 또는 리스가 끝난 {@code PROCESSING}·{@code FAILED} 만 잡는다. FAILED 의
      * {@code lease_until} 은 "다음 재시도 가능 시각" 이라 백오프 전의 낡은 중복 이벤트는 못 잡는다.

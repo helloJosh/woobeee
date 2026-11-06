@@ -34,6 +34,7 @@ import type {
     PokemonRoundStatus,
 } from "@/lib/pokemon";
 import {describeHttpFailure} from "@/lib/errors/http-failure";
+import type {AiRequest} from "@/lib/ai";
 
 // API 기본 설정
 // 빈 문자열 = 동일 오리진. Next rewrites(next.config.mjs)가 /api/auth, /api/back -> app-mvc 로
@@ -719,7 +720,43 @@ export const scheduleAPI = {
         scheduleRequest("/api/back/schedule/notification", "DELETE"),
 }
 
-/* ===== 포켓코인 공동구매 =====
+/* ===== AI 요청하기 =====
+ * 로그인 사용자만 쓴다. 글과 이미지는 multipart(FormData)로 보내므로 본문을 JSON 으로 감싸지 않는다.
+ * 화면이 인라인으로 안내하고, 폴링은 화면 뒤에서 도는 호출이라 401 에도 세션을 끝내지 않는다. */
+
+async function aiRequest<T>(endpoint: string, method: string, body?: FormData): Promise<T> {
+    const response = await apiRequest(
+        endpoint,
+        { method, ...(body ? { body } : {}) },
+        true,
+        { suppressAlert: true, suppressUnauthorizedHandler: true },
+    )
+
+    const json: ApiResponse<T> = await response.json()
+    if (!isApiSuccessful(json)) {
+        throw new Error(getFriendlyErrorMessage(json.header?.message))
+    }
+    return json.data
+}
+
+export const aiAPI = {
+    /** 내 가장 최근 요청. 없으면 null — 새로고침해도 진행 중인 요청을 다시 찾는다. */
+    latest: (): Promise<AiRequest | null> => aiRequest<AiRequest | null>("/api/back/ai/requests/latest", "GET"),
+
+    get: (id: string): Promise<AiRequest> => aiRequest<AiRequest>(`/api/back/ai/requests/${id}`, "GET"),
+
+    create: (form: FormData): Promise<AiRequest> => aiRequest<AiRequest>("/api/back/ai/requests", "POST", form),
+
+    retry: (id: string): Promise<AiRequest> => aiRequest<AiRequest>(`/api/back/ai/requests/${id}/retry`, "POST"),
+
+    apply: (id: string, actionId: number): Promise<AiRequest> =>
+        aiRequest<AiRequest>(`/api/back/ai/requests/${id}/actions/${actionId}/apply`, "POST"),
+
+    reject: (id: string, actionId: number): Promise<AiRequest> =>
+        aiRequest<AiRequest>(`/api/back/ai/requests/${id}/actions/${actionId}/reject`, "POST"),
+}
+
+/* ===== 포켓코인 공동구매 =
  * 조회와 신청은 공개다 — 비회원도 쓸 수 있어야 하므로 토큰이 없어도 그냥 보낸다.
  * suppressAlert 를 켜는 이유는 game API 와 같다: 이 화면은 인라인 배너로 안내한다. */
 
