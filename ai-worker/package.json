@@ -1,0 +1,27 @@
+{
+  "name": "woobeee-ai-worker",
+  "version": "0.0.1",
+  "private": true,
+  "description": "AI 요청 워커 — Kafka ai.request.v1 을 한 번에 하나씩 소비해 claude -p(MCP 서버 woobeee)로 상품·일정을 제안한다 (ADR-005)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "test": "tsc --noEmit && vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1163.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "kafkajs": "^2.2.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}
