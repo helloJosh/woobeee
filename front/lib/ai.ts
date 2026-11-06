@@ -32,6 +32,31 @@ export const MAX_IMAGES = 5
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"]
 
+/** 글 입력 한도. 대상 차수 줄(최대 약 100자)이 앞에 붙어도 4000자를 넘지 않게 여유를 둔다. */
+export const MAX_TEXT_LENGTH = 3500
+
+/** 차수 관리 화면에서 열었을 때 붙는 대상. 일정 화면은 없다(AI 가 프로젝트를 직접 읽는다). */
+export interface AiRoundContext {
+    roundId: number
+    title: string
+    currency: string
+}
+
+const CONTEXT_LINE = /^\[대상 차수 #\d+ · [^\n]*\]\n?/
+
+/** 글 맨 위에 대상 차수 줄을 붙인다. 이미지만 보내도 대상은 전해진다. */
+export function withContext(text: string, context: AiRoundContext | null): string {
+    if (!context) return text
+    const line = `[대상 차수 #${context.roundId} · ${context.title.slice(0, 60)} · ${context.currency}]`
+    const body = text.trim()
+    return body ? `${line}\n${text}` : line
+}
+
+/** 화면에 보일 때는 대상 줄을 숨긴다(첫 줄에 있을 때만). */
+export function stripContext(text: string | null | undefined): string {
+    return (text ?? "").replace(CONTEXT_LINE, "")
+}
+
 /** 진행 중 요청을 다시 읽어 오는 간격. */
 export const POLL_INTERVAL_MS = 3000
 

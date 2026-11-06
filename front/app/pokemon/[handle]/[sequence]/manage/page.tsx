@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { AlertTriangle, ArrowLeft, Copy, Plus, RefreshCw, Trash2 } from "lucide-react"
+import { AlertTriangle, ArrowLeft, Copy, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
+import AiRequestDialog from "@/components/ai/ai-request-dialog"
 import { Field } from "@/components/pokemon/pokemon-bits"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
@@ -39,6 +40,7 @@ export default function PokemonRoundManagePage() {
     const [draft, setDraft] = useState<PokemonRoundDraft | null>(null)
     const [productDraft, setProductDraft] = useState({ name: "", price: "", coins: "" })
     const [busy, setBusy] = useState(false)
+    const [aiOpen, setAiOpen] = useState(false)
 
     const load = useCallback(async () => {
         if (!Number.isInteger(sequence)) {
@@ -233,12 +235,17 @@ export default function PokemonRoundManagePage() {
                         <CardTitle className="text-base">
                             이 차수의 상품 {products.length}개 ({round.currency})
                         </CardTitle>
-                        <Button size="sm" variant="outline" disabled={busy}
-                                onClick={() => void run(
-                                    () => pokemonAPI.copyTemplateInto(round.id),
-                                    "가져오지 못했습니다.")}>
-                            <Copy className="mr-1 h-3 w-3" /> 내 상품표에서 가져오기
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => setAiOpen(true)}>
+                                <Sparkles className="mr-1 h-3 w-3" /> AI 에게 요청
+                            </Button>
+                            <Button size="sm" variant="outline" disabled={busy}
+                                    onClick={() => void run(
+                                        () => pokemonAPI.copyTemplateInto(round.id),
+                                        "가져오지 못했습니다.")}>
+                                <Copy className="mr-1 h-3 w-3" /> 내 상품표에서 가져오기
+                            </Button>
+                        </div>
                     </div>
                     <p className="text-xs text-muted-foreground">
                         이 차수에서만 쓰는 목록입니다. 고쳐도 다른 차수와 내 상품표는 그대로입니다.
@@ -317,6 +324,12 @@ export default function PokemonRoundManagePage() {
                     ))}
                 </CardContent>
             </Card>
+            <AiRequestDialog
+                open={aiOpen}
+                onOpenChange={setAiOpen}
+                context={{ roundId: round.id, title: roundTitle(round), currency: round.currency }}
+                onApplied={() => void load()}
+            />
         </main>
     )
 }

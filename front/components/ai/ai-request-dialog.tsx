@@ -1,27 +1,51 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useRouter } from "next/navigation"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { useAuth } from "@/hooks/use-auth"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { aiAPI } from "@/lib/api"
 import {
-    POLL_INTERVAL_MS, canSubmit, describeAction, imageErrorMessage, shouldPoll, statusLabel, validateImages,
-    type AiRequest,
+    MAX_TEXT_LENGTH, POLL_INTERVAL_MS, canSubmit, describeAction, imageErrorMessage, shouldPoll, statusLabel,
+    stripContext, validateImages, withContext,
+    type AiRequest, type AiRoundContext,
 } from "@/lib/ai"
-import { buildAuthHref } from "@/lib/auth-redirect"
 
-const AI_PATH = "/ai"
+interface AiRequestDialogProps {
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    /** 차수 관리 화면에서 열면 대상 차수. 일정 화면은 없다. */
+    context?: AiRoundContext | null
+    /** 제안을 승인해 실제로 등록됐을 때 — 뒤의 화면이 목록을 다시 읽는다. */
+    onApplied?: () => void
+}
 
 /**
- * 화면은 얇게 둔다 — 한도 검사·폴링 여부·제출 가능 여부 같은 판단은 lib/ai.ts 에 있다.
+ * AI 요청하기 모달. 판단(한도·폴링·제출 가능 여부·대상 줄)은 lib/ai.ts 에 있고 여기는 얇게 둔다.
  * 흐름: 글·이미지 제출 → 진행 중이면 3초마다 다시 읽기 → DRAFTED 면 제안별로 승인/거절.
+ * 닫으면 내용을 비우고 폴링을 멈춘다 — 다시 열면 최근 요청을 서버에서 다시 찾는다.
  */
-export default function AiRequestPanel() {
-    const router = useRouter()
-    const { loading, isAuthenticated } = useAuth()
+export default function AiRequestDialog({ open, onOpenChange, context = null, onApplied }: AiRequestDialogProps) {
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>AI 에게 요청하기</DialogTitle>
+                    <DialogDescription>
+                        {context
+                            ? `${context.title} 에 넣을 상품 목록 스크린샷이나 글을 올려 주세요. AI 가 등록할 내용을 제안해요.`
+                            : "일정을 글로 알려 주면 AI 가 등록할 내용을 제안해요."}
+                        {" "}제안은 직접 승인해야 등록됩니다.
+                    </DialogDescription>
+                </DialogHeader>
+                <AiRequestBody context={context} onApplied={onApplied} />
+            </DialogContent>
+        </Dialog>
+    )
+}
+
+function AiRequestBody({ context, onApplied }: { context: AiRoundContext | null; onApplied?: () => void }) {
     const [latest, setLatest] = useState<AiRequest | null>(null)
     const [loaded, setLoaded] = useState(false)
     const [text, setText] = useState("")
@@ -31,22 +55,15 @@ export default function AiRequestPanel() {
     const [error, setError] = useState<string | null>(null)
     const fileInput = useRef<HTMLInputElement>(null)
 
-    useEffect(() => {
-        if (!loading && !isAuthenticated) {
-            router.replace(buildAuthHref("/login", AI_PATH))
-        }
-    }, [loading, isAuthenticated, router])
-
     // 처음 들어오면 내 최근 요청을 찾는다 — 새로고침해도 진행 중인 요청을 놓치지 않는다.
     useEffect(() => {
-        if (loading || !isAuthenticated) return
         let cancelled = false
         aiAPI.latest()
             .then((request) => { if (!cancelled) setLatest(request) })
             .catch((e: Error) => { if (!cancelled) setError(e.message) })
             .finally(() => { if (!cancelled) setLoaded(true) })
         return () => { cancelled = true }
-    }, [loading, isAuthenticated])
+    }, [])
 
     // 진행 중인 동안만 다시 읽는다. 상태가 바뀌거나 화면을 떠나면 타이머를 정리한다.
     const polledId = latest && shouldPoll(latest.status) ? latest.id : null
@@ -65,17 +82,18 @@ export default function AiRequestPanel() {
         return () => urls.forEach((url) => URL.revokeObjectURL(url))
     }, [files])
 
-    const run = useCallback(async (action: () => Promise<AiRequest>) => {
+    const run = useCallback(async (action: () => Promise<AiRequest>, applies = false) => {
         setBusy(true)
         setError(null)
         try {
             setLatest(await action())
+            if (applies) onApplied?.()
         } catch (e) {
             setError(e instanceof Error ? e.message : "요청을 처리하지 못했습니다.")
         } finally {
             setBusy(false)
         }
-    }, [])
+    }, [onApplied])
 
     const submit = async () => {
         const problem = validateImages(files)
@@ -88,7 +106,8 @@ export default function AiRequestPanel() {
             return
         }
         const form = new FormData()
-        if (text.trim()) form.append("text", text)
+        const sent = withContext(text, context)
+        if (sent.trim()) form.append("text", sent)
         files.forEach((file) => form.append("images", file))
         await run(() => aiAPI.create(form))
         setText("")
@@ -96,19 +115,14 @@ export default function AiRequestPanel() {
         if (fileInput.current) fileInput.current.value = ""
     }
 
-    if (loading || !isAuthenticated || !loaded) {
-        return <div className="mx-auto max-w-2xl p-4"><Skeleton className="h-40 w-full" /></div>
+    if (!loaded) {
+        return <Skeleton className="h-40 w-full" />
     }
 
     const submittable = canSubmit(latest)
 
     return (
-        <main className="mx-auto flex max-w-2xl flex-col gap-6 p-4">
-            <h1 className="text-xl font-semibold">AI 요청하기</h1>
-            <p className="text-sm text-muted-foreground">
-                상품 목록 스크린샷이나 일정을 글로 알려 주면 AI 가 등록할 내용을 제안해요. 제안은 직접 승인해야 등록됩니다.
-            </p>
-
+        <div className="flex flex-col gap-4">
             {error ? <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert> : null}
 
             <section aria-label="새 요청" className="flex flex-col gap-3 rounded-lg border p-4">
@@ -117,7 +131,7 @@ export default function AiRequestPanel() {
                     onChange={(e) => setText(e.target.value)}
                     disabled={!submittable || busy}
                     rows={4}
-                    maxLength={4000}
+                    maxLength={MAX_TEXT_LENGTH}
                     placeholder="예) 7차에 이 상품들 넣어줘 / 다음 주 금요일 14:30 치과 예약"
                     className="w-full rounded-md border bg-background p-2 text-sm"
                 />
@@ -147,14 +161,14 @@ export default function AiRequestPanel() {
             </section>
 
             {latest ? <LatestRequest request={latest} busy={busy} run={run} /> : null}
-        </main>
+        </div>
     )
 }
 
 function LatestRequest({ request, busy, run }: {
     request: AiRequest
     busy: boolean
-    run: (action: () => Promise<AiRequest>) => Promise<void>
+    run: (action: () => Promise<AiRequest>, applies?: boolean) => Promise<void>
 }) {
     return (
         <section aria-label="최근 요청" className="flex flex-col gap-3 rounded-lg border p-4">
@@ -162,7 +176,7 @@ function LatestRequest({ request, busy, run }: {
                 <h2 className="font-medium">{statusLabel(request.status)}</h2>
                 <span className="text-xs text-muted-foreground">{new Date(request.createdAt).toLocaleString("ko-KR")}</span>
             </div>
-            {request.text ? <p className="whitespace-pre-wrap text-sm">{request.text}</p> : null}
+            {stripContext(request.text) ? <p className="whitespace-pre-wrap text-sm">{stripContext(request.text)}</p> : null}
             {request.imageUrls.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                     {request.imageUrls.map((url, index) => (
@@ -193,7 +207,7 @@ function LatestRequest({ request, busy, run }: {
                                     <span>{describeAction(action)}</span>
                                     {action.status === "PENDING" ? (
                                         <span className="flex gap-2">
-                                            <Button size="sm" disabled={busy} onClick={() => run(() => aiAPI.apply(request.id, action.id))}>승인</Button>
+                                            <Button size="sm" disabled={busy} onClick={() => run(() => aiAPI.apply(request.id, action.id), true)}>승인</Button>
                                             <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => aiAPI.reject(request.id, action.id))}>거절</Button>
                                         </span>
                                     ) : (

@@ -73,8 +73,8 @@ DB 에서는 남의 데이터 때문에 실패했다).
 
 ```bash
 ./mvnw -pl core,app-mvc -am test   # (339개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다. Redis 도 필요(통합 테스트가 앱 컨텍스트를 올린다)
-cd front && npm test && npm run build          # (318개) npm test = tsc --noEmit → vitest run
-cd ai-worker && npm test && npm run build      # (57개) npm test = tsc --noEmit → vitest run. cmux 같은 환경에서는 `env -u NODE_OPTIONS` 를 앞에 붙인다
+cd front && npm test && npm run build          # (322개) npm test = tsc --noEmit → vitest run
+cd ai-worker && npm test && npm run build      # (58개) npm test = tsc --noEmit → vitest run. cmux 같은 환경에서는 `env -u NODE_OPTIONS` 를 앞에 붙인다
 ```
 
 `front/package.json` 의 `test` 는 **타입 검사를 먼저** 돌리고 통과해야 vitest 로 넘어간다.

@@ -23,6 +23,14 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("첨부한 이미지: 없음");
   });
 
+  it("AI_AC_20 tells the model that a leading [대상 차수 #N …] line names the target round, to be verified", () => {
+    const prompt = buildPrompt({ text: "[대상 차수 #12 · 1차 공동구매 · JPY]\n상품 추가", imageCount: 1 });
+
+    expect(prompt).toContain("[대상 차수 #N");
+    expect(prompt).toContain("list_my_rounds");
+    expect(prompt).toContain("[대상 차수 #12 · 1차 공동구매 · JPY]");
+  });
+
   it("copes with an image-only request", () => {
     expect(buildPrompt({ text: "", imageCount: 1 })).toContain("(글 없음)");
   });

@@ -12,6 +12,7 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품**과 **�
 - 전달은 at-least-once, 소비는 멱등이다. 발행 상태는 DB(`ai_outbox`)가 들고 있다
 - AI 는 제안만 한다. 반영은 승인 시점에 app-mvc 가 **요청자 권한으로 기존 서비스**를 호출해 한다
 - 인증은 구독 로그인 토큰(`CLAUDE_CODE_OAUTH_TOKEN`), 사용자는 본인 1명. 작업은 한 번에 하나(직렬)
+- 화면은 별도 페이지가 아니라 **모달**이다: 차수 관리(`/pokemon/{handle}/{sequence}/manage`, 그 차수가 대상)와 일정(`/schedule`)에서 연다. 진행 중 요청은 어느 화면에서 열어도 같은 것이 보인다
 - 판단 로직은 `front/lib/ai.ts` 에 두고 `lib/ai.test.ts` 가 고정한다
 
 ## 인수 기준 (Acceptance Criteria)
@@ -36,6 +37,7 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품**과 **�
 | AI-AC-16 | 워커 소비 | claim 이 409 이면 작업 없이 건너뛰고 오프셋을 커밋한다. 실패는 `api.fail` 로 보고한다. 오프셋은 **처리 뒤**에 커밋하고, app-mvc 에 닿지 못하면 커밋하지 않고 다시 처리한다. 임시 폴더는 항상 정리한다 |
 | AI-AC-17 | MCP 도구 | 입력은 zod 스키마로 검증하고(빈 목록·음수 가격·51개 등 거절), 서버 오류는 도구 오류로 돌려준다. 노출 도구는 `list_my_rounds`·`get_round_products`·`list_my_projects`·`propose_round_products`·`propose_task` 다섯 개뿐이다. `claude` 에게는 MCP 서버 `woobeee` 외의 도구(`Read`·`Bash` 등)를 주지 않고, 이미지는 파일 경로가 아니라 stdin 의 base64 블록으로 넘긴다(프롬프트 인젝션이 파일·환경변수를 읽지 못하게) |
 | AI-AC-18 | 프런트 화면 로직 | 이미지 사전 검증은 서버와 같은 한도, 폴링은 진행 중 상태에서만, 진행 중이면 제출을 막는다, 제안 0건은 "제안 없음" |
+| AI-AC-20 | 대상 차수 | 차수 관리 모달은 글 맨 위에 `[대상 차수 #id · 이름 · 통화]` 한 줄을 붙여 보내고(이미지만 보내도 붙는다), 화면에는 그 줄을 숨겨 보인다. 워커 프롬프트는 이 줄을 대상 차수로 읽되 `list_my_rounds` 로 내 차수인지 먼저 확인하게 한다 — 등록은 여전히 승인 시 요청자 권한으로 검증된다. 일정 모달은 대상 줄이 없다. 승인으로 등록되면 모달 뒤의 화면이 목록을 다시 읽는다 |
 | AI-AC-19 | 직렬 처리 | 워커는 이벤트를 한 번에 하나씩 끝까지 처리한다(파티션 1·소비자 1·병렬 없음). 긴 처리 중에도 heartbeat 를 보내 리밸런스가 나지 않는다 |
 
 ## 테스트 매핑
@@ -54,7 +56,7 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품**과 **�
 | AI-AC-14·15 | `AiRequesterScopeTest`, `AiToolServiceTest`, `AiRequestServiceTest`(`AI_AC_15_*`) |
 | AI-AC-16·19 | `ai-worker/test/handler.test.ts`, `consumer.test.ts`, `claudeRunner.test.ts`, `internalApi.test.ts` |
 | AI-AC-17 | `ai-worker/test/mcpTools.test.ts`, `mcpConfig.test.ts`, `prompt.test.ts`, `scripts/smoke-mcp.mjs` |
-| AI-AC-18 | `front/lib/ai.test.ts` |
+| AI-AC-18·20 | `front/lib/ai.test.ts` (대상 줄은 `ai-worker/test/prompt.test.ts` 도) |
 
 `AiPipelineIntegrationTest` 는 테스트 트랜잭션으로 감싸지 않고 `market_test` 에 실제로 쓰고 지운다 — 서비스가 던진 예외가
 서비스의 트랜잭션을 되돌리는지가 핵심이라 감싸면 증명이 되지 않는다. 시작 전에 DB 이름이 `market_test` 인지 확인한다.

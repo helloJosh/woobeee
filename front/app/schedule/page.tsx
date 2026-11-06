@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, Plus } from "lucide-react"
+import { Bell, Plus, Sparkles } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import ScheduleTree from "@/components/schedule/schedule-tree"
 import ScheduleCalendar from "@/components/schedule/schedule-calendar"
 import ScheduleItemDialog, { type ItemDraft, type ItemKind } from "@/components/schedule/schedule-item-dialog"
+import AiRequestDialog from "@/components/ai/ai-request-dialog"
 import NotificationDialog from "@/components/schedule/notification-dialog"
 import { useAuth } from "@/hooks/use-auth"
 import { buildAuthHref } from "@/lib/auth-redirect"
@@ -44,6 +45,7 @@ export default function SchedulePage() {
     const [dialogInitial, setDialogInitial] = useState<ItemDraft>(EMPTY_DRAFT)
     const [dialogContext, setDialogContext] = useState<string | null>(null)
     const [notifOpen, setNotifOpen] = useState(false)
+    const [aiOpen, setAiOpen] = useState(false)
     // 할 일 다이얼로그가 "Slack 미등록이면 알림이 발송되지 않는다"를 안내하는 데 쓴다. null = 아직 모름.
     const [slackConfigured, setSlackConfigured] = useState<boolean | null>(null)
     const [calYear, setCalYear] = useState(() => new Date().getFullYear())
@@ -249,6 +251,10 @@ export default function SchedulePage() {
             <div className="flex items-center justify-between gap-2">
                 <h1 className="text-xl font-bold">일정</h1>
                 <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" aria-label="AI 에게 요청" onClick={() => setAiOpen(true)}>
+                        <Sparkles className="h-4 w-4" />
+                        <span className="hidden sm:inline sm:ml-1">AI 요청</span>
+                    </Button>
                     <Button variant="outline" size="sm" aria-label="Slack 알림 설정" onClick={() => setNotifOpen(true)}>
                         <Bell className="h-4 w-4" />
                         <span className="hidden sm:inline sm:ml-1">알림</span>
@@ -333,6 +339,7 @@ export default function SchedulePage() {
                 />
             ) : null}
 
+            <AiRequestDialog open={aiOpen} onOpenChange={setAiOpen} onApplied={() => void fetchTree()} />
             <NotificationDialog open={notifOpen} onClose={() => { setNotifOpen(false); void fetchSlackConfigured() }} />
 
             {dialog ? (

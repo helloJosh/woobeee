@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-    allDecided, canSubmit, describeAction, imageErrorMessage, isTerminal, shouldPoll, statusLabel, validateImages,
+    allDecided, canSubmit, MAX_TEXT_LENGTH, stripContext, withContext, describeAction, imageErrorMessage, isTerminal, shouldPoll, statusLabel, validateImages,
     MAX_IMAGE_BYTES, MAX_IMAGES,
     type AiAction, type AiStatus,
 } from "./ai"
@@ -86,5 +86,31 @@ describe("proposals", () => {
         expect(describeAction(task({ name: "출장", startDate: "2026-11-20", endDate: "2026-11-22" })))
             .toBe("할 일 추가 · 출장 · 2026-11-20 ~ 2026-11-22")
         expect(describeAction(task({ name: "언젠가" }))).toBe("할 일 추가 · 언젠가")
+    })
+})
+
+describe("round context (AI-AC-20)", () => {
+    const ctx = { roundId: 12, title: "1차 공동구매", currency: "JPY" }
+
+    it("AI-AC-20 puts the target round on the first line of the text and strips it again for display", () => {
+        const sent = withContext("이 상품들 넣어줘", ctx)
+        expect(sent).toBe("[대상 차수 #12 · 1차 공동구매 · JPY]\n이 상품들 넣어줘")
+        expect(stripContext(sent)).toBe("이 상품들 넣어줘")
+    })
+
+    it("AI-AC-20 still sends the context when only images are attached", () => {
+        expect(withContext("  ", ctx)).toBe("[대상 차수 #12 · 1차 공동구매 · JPY]")
+        expect(stripContext("[대상 차수 #12 · 1차 공동구매 · JPY]")).toBe("")
+    })
+
+    it("AI-AC-20 leaves text alone without a context, and strips only a leading context line", () => {
+        expect(withContext("다음 주 금요일 치과", null)).toBe("다음 주 금요일 치과")
+        expect(stripContext("본문\n[대상 차수 #1 · a · b]")).toBe("본문\n[대상 차수 #1 · a · b]")
+        expect(stripContext(null)).toBe("")
+    })
+
+    it("AI-AC-20 keeps room for the context line under the server's text limit", () => {
+        const longTitle = { ...ctx, title: "가".repeat(200) }
+        expect(withContext("x".repeat(MAX_TEXT_LENGTH), longTitle).length).toBeLessThanOrEqual(4000)
     })
 })
