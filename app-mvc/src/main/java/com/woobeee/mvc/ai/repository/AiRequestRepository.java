@@ -63,6 +63,15 @@ public interface AiRequestRepository extends JpaRepository<AiRequests, UUID> {
     int markDead(@Param("id") UUID id, @Param("attempt") int attempt,
                  @Param("error") String error, @Param("now") LocalDateTime now);
 
+    /** 수동 재시도: 처리 횟수를 0 으로 되돌려 처음부터 다시 돈다. DEAD 만 된다. */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE ai_requests
+               SET status = 'RECEIVED', attempts = 0, lease_until = NULL, last_error = NULL, updated_at = :now
+             WHERE id = :id AND status = 'DEAD'
+            """, nativeQuery = true)
+    int requeueDead(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
     /** 리스가 끝났는데 아직 PROCESSING 인 요청 — 워커가 죽었거나 보고 없이 멈춘 것이다. */
     @Query(value = "SELECT * FROM ai_requests WHERE status = 'PROCESSING' AND lease_until < :now ORDER BY lease_until",
             nativeQuery = true)

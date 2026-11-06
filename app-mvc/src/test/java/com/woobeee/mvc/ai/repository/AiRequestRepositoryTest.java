@@ -126,6 +126,22 @@ class AiRequestRepositoryTest {
     }
 
     @Test
+    void AI_AC_10_requeueDead_resetsOnlyDeadRequests() {
+        AiRequests r = received(ME);
+        force(r.getId(), "DRAFTED", 1, null);
+        assertThat(requests.requeueDead(r.getId(), now)).isZero();
+
+        force(r.getId(), "DEAD", 3, null);
+        assertThat(requests.requeueDead(r.getId(), now)).isEqualTo(1);
+
+        AiRequests again = reload(r.getId());
+        assertThat(again.getStatus()).isEqualTo(AiRequestStatus.RECEIVED);
+        assertThat(again.getAttempts()).isZero();
+        assertThat(again.getLastError()).isNull();
+        assertThat(requests.requeueDead(r.getId(), now)).isZero();
+    }
+
+    @Test
     void AI_AC_09_findExpiredProcessing_returnsOnlyExpiredProcessing() {
         AiRequests expired = received(ME);
         force(expired.getId(), "PROCESSING", 1, now.minusSeconds(1));

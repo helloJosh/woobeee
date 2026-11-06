@@ -47,6 +47,12 @@ pokemon:
     # 차수를 열 때 고를 수 있는 통화. 늘리려면 여기에 추가한다.
     currencies: ${POKEMON_CURRENCIES:INR,USD,JPY}
 
+ai:
+  # 워커가 내부 API(/internal/ai/**)에 내미는 시크릿. 비어 있으면 내부 API 는 전부 401 이다.
+  worker-secret: ${AI_WORKER_SECRET:}
+  # 남의 DEAD 요청도 다시 돌릴 수 있는 전역 운영자(pokemon 명단과 같은 기본값).
+  manager-member-ids: ${POKEMON_MANAGER_MEMBER_IDS:1}
+
 spring:
   application:
     name: woobeee-app-mvc
