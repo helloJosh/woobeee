@@ -72,8 +72,8 @@ DB 를 쓰는 테스트는 `@ActiveProfiles("test")` 로 **`market_test`** 만 �
 DB 에서는 남의 데이터 때문에 실패했다).
 
 ```bash
-./mvnw -pl core,app-mvc -am test   # (237개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
-cd front && npm test && npm run build          # (305개) npm test = tsc --noEmit → vitest run
+./mvnw -pl core,app-mvc -am test   # (240개) PostgreSQL 이 떠 있어야 하고, market_test 가 있어야 한다
+cd front && npm test && npm run build          # (306개) npm test = tsc --noEmit → vitest run
 ```
 
 `front/package.json` 의 `test` 는 **타입 검사를 먼저** 돌리고 통과해야 vitest 로 넘어간다.

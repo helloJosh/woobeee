@@ -20,7 +20,7 @@ public class PokemonOrders {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 어느 차수의 신청인가. 환율·계좌·통화는 차수가 들고 있다. */
+    /** 어느 차수의 신청인가. 계좌·통화는 차수가 들고 있다. */
     @Column(nullable = false)
     private Long roundId;
 

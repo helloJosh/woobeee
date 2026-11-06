@@ -22,7 +22,7 @@ import java.util.Optional;
  * </ul>
  *
  * <p>폴백은 {@link ExchangeRate#stale()} 로 표시해 화면이 "지난 환율" 임을 드러낼 수 있게 한다.
- * 폴백조차 없으면 {@link PokemonErrorCode#RATE_UNAVAILABLE} — 환율을 모른 채로 신청을 받으면
+ * 폴백조차 없으면 {@link PokemonErrorCode#RATE_UNAVAILABLE} — 환율을 모른 채로 예상 금액을 내면
  * 이체 금액의 근거가 사라지므로 추정값을 만들어 내지 않는다.
  */
 @Service

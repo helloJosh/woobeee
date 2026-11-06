@@ -516,6 +516,16 @@ describe("POKEMON-AC-36 my orders", () => {
         expect(summary).toEqual({ total: 5, inProgress: 3, delivered: 1, cancelled: 1, unpaidKrw: 15_000 })
     })
 
+    it("환율을 몰라 예상 금액이 빈 줄은 입금할 금액에서 빼고 나머지는 센다", () => {
+        const summary = summarizeMyOrders([
+            myOrder({ orderStatus: "ORDERED", estimatedKrw: null }),
+            myOrder({ orderStatus: "ORDERED", estimatedKrw: 4_000 }),
+        ])
+
+        expect(summary.unpaidKrw).toBe(4_000)
+        expect(summary.inProgress).toBe(2)
+    })
+
     it("is all zeros for no orders", () => {
         expect(summarizeMyOrders([])).toEqual({ total: 0, inProgress: 0, delivered: 0, cancelled: 0, unpaidKrw: 0 })
     })

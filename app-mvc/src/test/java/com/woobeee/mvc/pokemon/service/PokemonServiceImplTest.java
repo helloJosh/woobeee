@@ -365,6 +365,28 @@ class PokemonServiceImplTest {
         }
     }
 
+    /* ===== 환율을 모를 때 — 상태 변경은 예상 금액 때문에 실패하면 안 된다 (POKEMON-AC-06·37) ===== */
+
+    @Nested
+    class 환율을모를때 {
+
+        /** AC-37 — 입금확인 클릭이 환율 조회 실패로 503·롤백되면 안 된다. 예상 금액만 비워 돌려준다. */
+        @Test
+        void orderStatusChangeSurvivesAnUnavailableRate() {
+            viewerIs(HOST_LOGIN, HOST_ID);
+            PokemonOrders order = order(APPLICANT_ID, PokemonOrderStatus.ORDERED);
+            givenOrderAndRound(order);
+            when(exchangeRateService.current("INR")).thenThrow(PokemonErrorCode.RATE_UNAVAILABLE.asException());
+
+            var response = pokemonService.changeStatus(HOST_LOGIN, ORDER_ID,
+                    new PatchPokemonOrderStatusRequest(PokemonOrderStatus.DEPOSIT_CONFIRMED));
+
+            assertThat(order.getStatus()).isEqualTo(PokemonOrderStatus.DEPOSIT_CONFIRMED);
+            assertThat(response.estimatedKrw()).isNull();
+            assertThat(response.estimatedItemsKrw()).isNull();
+        }
+    }
+
     /* ===== 댓글 — 지우는 것은 본인·주최자, 고치는 것은 본인만 (POKEMON-AC-13·36) ===== */
 
     @Nested

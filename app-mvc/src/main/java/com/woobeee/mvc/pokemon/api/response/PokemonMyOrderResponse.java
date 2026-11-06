@@ -18,10 +18,11 @@ public record PokemonMyOrderResponse(
         String currency,
         String roundStatus,
         String orderStatus,
-        long estimatedKrw,
+        /** 그 통화의 환율을 모르면 null — 목록 전체가 실패하지 않게 그 줄만 비운다. */
+        Long estimatedKrw,
         LocalDateTime createdAt
 ) {
-    public static PokemonMyOrderResponse of(PokemonMyOrderRow row, long estimatedKrw) {
+    public static PokemonMyOrderResponse of(PokemonMyOrderRow row, Long estimatedKrw) {
         return new PokemonMyOrderResponse(
                 row.getOrderId(),
                 row.getRoundId(),

@@ -112,7 +112,7 @@ ADMIN 전용 엔드포인트는 없다. 소유권 검증은 컨트롤러가 아�
 | POST | `/api/back/pokemon/rounds/{roundId}/orders` | 신청서 제출. **모집중**인 차수에만. 신청자는 회원 닉네임이다 | 로그인 |
 | GET | `/api/back/pokemon/orders/{orderId}` | 신청서 세부 — 신청서(예상 금액) + 그 차수 + 오늘 환율 | 공개 |
 | PUT | `/api/back/pokemon/orders/{orderId}` | 신청서 수정 (전체 교체) | 주최자, 또는 아직 `ORDERED` 인 본인 |
-| PATCH | `/api/back/pokemon/orders/{orderId}/status` | 신청서 상태 | 주최자 |
+| PATCH | `/api/back/pokemon/orders/{orderId}/status` | 신청서 상태. 응답의 예상 금액은 환율을 모르면 `null` 이며 이 때문에 상태 변경이 실패하지는 않는다 | 주최자 |
 | DELETE | `/api/back/pokemon/orders/{orderId}` | 신청서 삭제 | 주최자, 또는 아직 `ORDERED` 인 본인 |
 | POST | `/api/back/pokemon/orders/{orderId}/comments` | 댓글. 작성자는 회원 닉네임이다 | 로그인 |
 | PUT | `/api/back/pokemon/comments/{commentId}` | 댓글 수정 — 내용만. 고치면 `updatedAt` 이 박혀 화면이 "(수정됨)" 을 붙인다 | **본인만** |

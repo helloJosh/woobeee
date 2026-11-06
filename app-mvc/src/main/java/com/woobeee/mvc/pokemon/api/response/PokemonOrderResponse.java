@@ -25,11 +25,11 @@ public record PokemonOrderResponse(
         BigDecimal extraAmount,
         /** 이 신청서로 받는 코인 총합 — 항목의 코인 x 수량 합. */
         long totalCoins,
-        /** round(루피 합계 × 오늘 환율). 기부금을 뺀 예상 상품값. */
-        long estimatedItemsKrw,
+        /** round(루피 합계 × 오늘 환율). 기부금을 뺀 예상 상품값. 환율을 모르면 null. */
+        Long estimatedItemsKrw,
         long donationKrw,
         /** estimatedItemsKrw + donationKrw — 예상 이체 금액. 실제 청구와 다를 수 있다. */
-        long estimatedKrw,
+        Long estimatedKrw,
         String memo,
         LocalDateTime createdAt,
         List<PokemonOrderItemResponse> items,
@@ -41,7 +41,7 @@ public record PokemonOrderResponse(
                                           List<PokemonCommentResponse> comments,
                                           Long viewerMemberId,
                                           BigDecimal rateToKrw) {
-        long estimatedItemsKrw = order.getTotalAmount().multiply(rateToKrw)
+        Long estimatedItemsKrw = rateToKrw == null ? null : order.getTotalAmount().multiply(rateToKrw)
                 .setScale(0, RoundingMode.HALF_UP).longValue();
         return new PokemonOrderResponse(
                 order.getId(),
@@ -56,7 +56,7 @@ public record PokemonOrderResponse(
                 items.stream().mapToLong(item -> (long) item.coins() * item.quantity()).sum(),
                 estimatedItemsKrw,
                 order.getDonationKrw(),
-                estimatedItemsKrw + order.getDonationKrw(),
+                estimatedItemsKrw == null ? null : estimatedItemsKrw + order.getDonationKrw(),
                 order.getMemo(),
                 order.getCreatedAt(),
                 items,

@@ -7,6 +7,7 @@ import com.woobeee.mvc.pokemon.api.request.*;
 import com.woobeee.mvc.pokemon.api.response.*;
 import com.woobeee.mvc.pokemon.entity.*;
 import com.woobeee.mvc.pokemon.exception.PokemonErrorCode;
+import com.woobeee.mvc.pokemon.exception.PokemonException;
 import com.woobeee.mvc.pokemon.rate.ExchangeRate;
 import com.woobeee.mvc.pokemon.rate.ExchangeRateService;
 import com.woobeee.mvc.pokemon.repository.*;
@@ -221,13 +222,13 @@ public class PokemonServiceImpl implements PokemonService {
                 .orElseThrow(PokemonErrorCode.LOGIN_REQUIRED::asException);
         List<PokemonMyOrderRow> rows = orderRepository.findMyOrders(member.getId());
         // 환율은 통화마다 한 번만 읽는다 — 신청서마다 읽으면 Redis 왕복이 N 번이다.
-        Map<String, BigDecimal> rates = new HashMap<>();
+        Map<String, Optional<BigDecimal>> rates = new HashMap<>();
         return rows.stream()
                 .map(row -> {
-                    BigDecimal rate = rates.computeIfAbsent(row.getCurrency(),
-                            currency -> exchangeRateService.current(currency).toKrw());
-                    return PokemonMyOrderResponse.of(row,
-                            toKrw(row.getTotalAmount(), rate) + row.getDonationKrw());
+                    Optional<BigDecimal> rate = rates.computeIfAbsent(row.getCurrency(), this::rateOrEmpty);
+                    return PokemonMyOrderResponse.of(row, rate
+                            .map(r -> toKrw(row.getTotalAmount(), r) + row.getDonationKrw())
+                            .orElse(null));
                 })
                 .toList();
     }
@@ -334,8 +335,9 @@ public class PokemonServiceImpl implements PokemonService {
         requireHostOfRound(loginId, round);
 
         order.changeStatus(request.status());
+        // 예상 금액은 응답의 덤이다 — 환율을 몰라도 상태 변경 자체는 성공해야 한다.
         return toResponse(order, memberResolver.optionalMemberId(loginId),
-                exchangeRateService.current(round.getCurrency()).toKrw());
+                rateOrEmpty(round.getCurrency()).orElse(null));
     }
 
     @Override
@@ -724,6 +726,15 @@ public class PokemonServiceImpl implements PokemonService {
         return found;
     }
 
+
+    /** 환율을 모르면(제공자 장애·통화가 설정에서 빠짐) 비워 돌려준다. 읽기·상태 변경이 이 때문에 죽으면 안 된다. */
+    private Optional<BigDecimal> rateOrEmpty(String currency) {
+        try {
+            return Optional.of(exchangeRateService.current(currency).toKrw());
+        } catch (PokemonException ex) {
+            return Optional.empty();
+        }
+    }
 
     private static long toKrw(BigDecimal amount, BigDecimal rate) {
         return amount.multiply(rate).setScale(0, RoundingMode.HALF_UP).longValue();

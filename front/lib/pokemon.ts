@@ -261,7 +261,7 @@ export function quote(
     return { totalAmount, totalCoins, estimatedItemsKrw, donationKrw: donation, estimatedKrw: estimatedItemsKrw + donation }
 }
 
-/** 외화 -> 원. 서버가 BigDecimal.setScale(0, HALF_UP) 로 하는 것과 같은 반올림이다. */
+/** 외화 -> 원. 서버의 BigDecimal HALF_UP 에 가깝지만 부동소수 때문에 .5 경계에서 1원 어긋날 수 있다 — 미리보기용이다. */
 export function toKrw(amount: number, rate: number): number {
     return Math.round(amount * rate)
 }
@@ -578,8 +578,8 @@ export interface PokemonMyOrder {
     currency: string
     roundStatus: PokemonRoundStatus
     orderStatus: PokemonOrderStatus
-    /** 예상 이체 금액(상품값 환산 + 기부금) — 오늘 환율 기준. */
-    estimatedKrw: number
+    /** 예상 이체 금액(상품값 환산 + 기부금) — 오늘 환율 기준. 그 통화의 환율을 모르면 null. */
+    estimatedKrw: number | null
     createdAt: string
 }
 
@@ -623,7 +623,7 @@ export function summarizeMyOrders(orders: PokemonMyOrder[]): PokemonMyOrderSumma
             summary.inProgress += 1
         }
         if (order.orderStatus === "ORDERED") {
-            summary.unpaidKrw += order.estimatedKrw
+            summary.unpaidKrw += order.estimatedKrw ?? 0
         }
     }
     return summary

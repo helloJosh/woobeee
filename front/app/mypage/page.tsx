@@ -145,7 +145,7 @@ export default function MyPage() {
                                         </Link>
                                         <p className="truncate text-xs text-muted-foreground">
                                             {order.hostHandle} · 차수 {ROUND_STATUS_LABELS[order.roundStatus]} · 예상{" "}
-                                            {formatKrw(order.estimatedKrw)}
+                                            {order.estimatedKrw === null ? "—" : formatKrw(order.estimatedKrw)}
                                         </p>
                                     </div>
                                     <Link
