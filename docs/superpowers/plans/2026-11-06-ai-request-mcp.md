@@ -151,7 +151,7 @@ claim 의 조건: `status='RECEIVED'`, 또는 `status IN ('PROCESSING','FAILED')
 - [ ] **Step 1: 실패하는 테스트를 쓴다** (`KafkaTemplate` 목, `AiOutboxRepository` 목).
   - `AI_AC_03_publishOnce_sendsKeyedByRequestIdAndMarksPublished`: 발행 성공 → 토픽 `ai.request.v1`, 키 `requestId`, 값에 위 필드; `markPublished(eventId)` 호출; 반환 1.
   - `AI_AC_03_publishFailure_schedulesBackoff`: `send` 가 예외 → `scheduleRetry(eventId, 1, now+10초)`, `markPublished` 0회, 다음 행은 계속 처리.
-  - `AI_AC_03_exhaustedAttempts_marksOutboxDeadAndRequestFailed`: `attempts` 가 8 에 닿으면 `markDead(eventId)` 와 요청 `FAILED`(사유 `publish_failed`) 가 호출된다.
+  - `AI_AC_03_exhaustedAttempts_marksOutboxDeadAndTheRequestDead`: `attempts` 가 8 에 닿으면 `markDead(eventId)` 와 `markPublishFailed`(요청 `DEAD`, 사유 `publish_failed` — FAILED 는 진행 중이라 사용자가 막힌다)가 호출된다.
   - `AI_AC_04_publishOnce_usesLockedBatchQuery`: 조회는 `lockDue(now, limit)` 만 쓴다(검증으로 고정); 두 발행기 동시성은 Task 1 의 `lockDue` 쿼리가 `FOR UPDATE SKIP LOCKED` 를 쓰는 것으로 보장하고, 쿼리 문자열을 리포지터리 테스트에서 `SELECT ... FOR UPDATE SKIP LOCKED` 포함 여부로 단언한다.
   - `AI_AC_03_kafkaDown_doesNotFailIntake`: 브로커 장애는 `publishOnce` 안에서만 흡수된다 — 예외가 `tick()` 밖으로 새지 않는다.
 - [ ] **Step 2: 실패 확인.** Run: `./mvnw -pl core,app-mvc -am test -Dtest=AiOutboxPublisherTest` → Expected: FAIL.

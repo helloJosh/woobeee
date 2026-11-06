@@ -27,6 +27,10 @@ spring:
     enabled: true
     # 빈 DB 에서 시작하므로 baseline 이 필요 없다. 마이그레이션이 V1 부터 전부 돈다.
     baseline-on-migrate: false
+  kafka:
+    admin:
+      # 자동화 테스트는 브로커를 쓰지 않는다 — 부팅 때 토픽을 만들러 붙지 않는다.
+      auto-create: false
   data:
     redis:
       host: ${REDIS_HOST:localhost}

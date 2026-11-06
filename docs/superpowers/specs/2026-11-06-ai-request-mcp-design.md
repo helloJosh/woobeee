@@ -101,7 +101,7 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품 항목**�
    이미지를 MinIO 에 올리고, **한 트랜잭션**으로 `ai_requests(RECEIVED)` 와 `ai_outbox(PENDING)` 를 넣는다.
 2. 발행기(`@Scheduled`, 몇 초 간격)가 `FOR UPDATE SKIP LOCKED` 로 `next_attempt_at <= now()` 인 `PENDING` 행을 가져와 발행한다.
    성공하면 `PUBLISHED`. 실패하면 `attempts+1` 과 지수 백오프로 `next_attempt_at` 을 정한다.
-   한도(8회)를 넘으면 outbox 를 `DEAD`, 요청을 `FAILED` 로 표시한다.
+   한도(8회)를 넘으면 outbox 를 `DEAD`, 요청을 `DEAD`(`publish_failed`)로 표시한다 — `FAILED` 는 진행 중이라 사용자가 막히고 재시도도 안 되므로 수동 재시도가 가능한 `DEAD` 로 둔다.
 3. 프로듀서는 `enable.idempotence=true`, `acks=all`. 이벤트는 `{eventId, requestId, type, version}` 만 담는다.
    성공 응답 뒤 `PUBLISHED` 갱신 전에 죽으면 같은 이벤트가 두 번 나갈 수 있고, 5.2 가 받아낸다.
 

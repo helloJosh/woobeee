@@ -9,6 +9,12 @@
 # 주의: 이 프로파일은 **공유 개발 DB(market)** 를 쓴다. 실제 회원·글·일정·신청서가 들어 있고
 # 백업이 없다. 데이터를 지우는 검증이 필요하면 test 프로파일(market_test)로 띄운다.
 spring:
+  kafka:
+    # 호스트에서 붙는 리스너는 SASL 이다(.docker-compose 의 로컬 개발 자격증명).
+    properties:
+      security.protocol: SASL_PLAINTEXT
+      sasl.mechanism: PLAIN
+      sasl.jaas.config: org.apache.kafka.common.security.plain.PlainLoginModule required username="admin" password="admin!23";
   jpa:
     # 쿼리를 눈으로 따라가려고 켠다. 배포에서는 로그가 감당이 안 되므로 꺼 둔다.
     show-sql: true

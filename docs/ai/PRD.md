@@ -20,7 +20,7 @@ Claude Code(`claude -p`)가 MCP 도구로 **공동구매 차수 상품**과 **�
 | --- | --- | --- |
 | AI-AC-01 | 요청 접수 | 로그인 필수(없으면 401 `ai_loginRequired`). 글·이미지 모두 비면 400 `ai_emptyRequest`. 이미지는 ≤ 5장·장당 ≤ 5 MB·png/jpeg/webp 만(위반은 400, 업로드·저장 전에 거절). 요청(`RECEIVED`)과 outbox(`PENDING`)는 **한 트랜잭션**으로 저장된다 |
 | AI-AC-02 | 사용자당 진행 중 요청 1건 | 진행 중(`RECEIVED`·`PROCESSING`·`FAILED`)인 요청이 있으면 새 요청은 409 `ai_requestInProgress`(업로드·저장 전에 거절). 동시에 두 번 제출해도 DB 부분 유니크 인덱스가 하나만 허용하고, `DEAD` 재시도도 같은 제한을 받는다. `DRAFTED`·`APPLIED`·`DEAD` 는 진행 중이 아니다 |
-| AI-AC-03 | 발행(아웃박스) | 발행기가 `PENDING` 행을 `ai.request.v1`(키 = `requestId`)로 보내고 `PUBLISHED` 로 바꾼다. 실패하면 지수 백오프(`min(2^n × 5초, 10분)`)로 다시 시도하고, 8회를 넘으면 outbox `DEAD`·요청 `FAILED`(`publish_failed`). Kafka 가 죽어 있어도 접수는 성공한다 |
+| AI-AC-03 | 발행(아웃박스) | 발행기가 `PENDING` 행을 `ai.request.v1`(키 = `requestId`)로 보내고 `PUBLISHED` 로 바꾼다. 실패하면 지수 백오프(`min(2^n × 5초, 10분)`)로 다시 시도하고, 8회를 넘으면 outbox `DEAD`·요청 `DEAD`(`publish_failed`) — `FAILED` 로 두면 진행 중으로 남아 사용자가 막히고 재시도도 안 되므로, 수동 재시도(AI-AC-10)로 되살릴 수 있게 `DEAD` 로 둔다. Kafka 가 죽어 있어도 접수는 성공한다 |
 | AI-AC-04 | 발행 중복·동시성 | 같은 이벤트가 두 번 나갈 수 있다(소비 측이 받아낸다). 발행기 둘이 떠도 `FOR UPDATE SKIP LOCKED` 로 같은 행을 잡지 않는다 |
 | AI-AC-05 | claim | `RECEIVED`, 또는 리스가 만료된 `PROCESSING`·`FAILED` 만 CAS 로 `PROCESSING` 이 된다(`attempts+1`, 리스 5분). 이미 `DRAFTED`·`APPLIED`·`DEAD` 이거나 리스가 살아 있으면 409 `ai_notClaimable` |
 | AI-AC-06 | attempt 펜싱 | complete·fail·제안·읽기 호출은 claim 응답의 `attempt` 가 현재 `attempts` 와 같을 때만 받는다. 리스 만료 뒤 늦게 온 이전 워커의 보고는 409 `ai_staleAttempt` |

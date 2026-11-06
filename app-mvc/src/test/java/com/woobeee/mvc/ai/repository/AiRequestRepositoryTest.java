@@ -142,6 +142,24 @@ class AiRequestRepositoryTest {
     }
 
     @Test
+    void AI_AC_03_markPublishFailed_onlyForUnclaimedRequestsAndLeavesItRetryable() {
+        AiRequests r = received(ME);
+
+        assertThat(requests.markPublishFailed(r.getId(), "publish_failed", now)).isEqualTo(1);
+        AiRequests dead = reload(r.getId());
+        assertThat(dead.getStatus()).isEqualTo(AiRequestStatus.DEAD);
+        assertThat(dead.getLastError()).isEqualTo("publish_failed");
+        // DEAD 는 진행 중이 아니므로 사용자가 막히지 않고, 수동 재시도로 되살릴 수 있다
+        assertThat(requests.existsByMemberIdAndStatusIn(ME, List.of(AiRequestStatus.RECEIVED,
+                AiRequestStatus.PROCESSING, AiRequestStatus.FAILED))).isFalse();
+        assertThat(requests.requeueDead(r.getId(), now)).isEqualTo(1);
+
+        // 이미 claim 된 요청은 건드리지 않는다
+        force(r.getId(), "PROCESSING", 1, now.plusMinutes(5));
+        assertThat(requests.markPublishFailed(r.getId(), "publish_failed", now)).isZero();
+    }
+
+    @Test
     void AI_AC_09_findExpiredProcessing_returnsOnlyExpiredProcessing() {
         AiRequests expired = received(ME);
         force(expired.getId(), "PROCESSING", 1, now.minusSeconds(1));

@@ -72,6 +72,18 @@ public interface AiRequestRepository extends JpaRepository<AiRequests, UUID> {
             """, nativeQuery = true)
     int requeueDead(@Param("id") UUID id, @Param("now") LocalDateTime now);
 
+    /**
+     * 발행 한도를 넘겨 이벤트가 영영 나가지 못한 요청. FAILED 로 두면 진행 중으로 남아 사용자가 막히고 재시도도
+     * 안 되므로 DEAD 로 둔다 — 그래야 수동 재시도(requeueDead)로 다시 돌릴 수 있다. 아직 claim 되기 전(RECEIVED)만.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE ai_requests
+               SET status = 'DEAD', last_error = :error, lease_until = NULL, updated_at = :now
+             WHERE id = :id AND status = 'RECEIVED'
+            """, nativeQuery = true)
+    int markPublishFailed(@Param("id") UUID id, @Param("error") String error, @Param("now") LocalDateTime now);
+
     /** 리스가 끝났는데 아직 PROCESSING 인 요청 — 워커가 죽었거나 보고 없이 멈춘 것이다. */
     @Query(value = "SELECT * FROM ai_requests WHERE status = 'PROCESSING' AND lease_until < :now ORDER BY lease_until",
             nativeQuery = true)
