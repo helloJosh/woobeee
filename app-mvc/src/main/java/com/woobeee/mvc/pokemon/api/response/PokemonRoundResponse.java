@@ -2,7 +2,6 @@ package com.woobeee.mvc.pokemon.api.response;
 
 import com.woobeee.mvc.pokemon.entity.PokemonRounds;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -20,28 +19,21 @@ public record PokemonRoundResponse(
         int sequence,
         String title,
         String currency,
-        String rateMode,
-        BigDecimal quotedRate,
-        LocalDateTime quotedAt,
         String bankAccount,
         LocalDate deadline,
         String status,
-        BigDecimal settledRate,
-        LocalDateTime settledAt,
         String memo,
         LocalDateTime createdAt,
         boolean canManage,
-        int orderCount,
-        long transferKrwTotal
+        int orderCount
 ) {
 
     public static PokemonRoundResponse of(PokemonRounds round, String hostHandle, String hostName,
-                                          boolean canManage, int orderCount, long transferKrwTotal) {
+                                          boolean canManage, int orderCount) {
         return new PokemonRoundResponse(
                 round.getId(), hostHandle, hostName, round.getSequence(), round.getTitle(),
-                round.getCurrency(), round.getRateMode().name(), round.getQuotedRate(),
-                round.getQuotedAt(), round.getBankAccount(), round.getDeadline(),
-                round.getStatus().name(), round.getSettledRate(), round.getSettledAt(),
-                round.getMemo(), round.getCreatedAt(), canManage, orderCount, transferKrwTotal);
+                round.getCurrency(), round.getBankAccount(), round.getDeadline(),
+                round.getStatus().name(), round.getMemo(), round.getCreatedAt(),
+                canManage, orderCount);
     }
 }

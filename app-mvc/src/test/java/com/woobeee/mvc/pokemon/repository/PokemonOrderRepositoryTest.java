@@ -2,7 +2,6 @@ package com.woobeee.mvc.pokemon.repository;
 
 import com.woobeee.mvc.pokemon.entity.PokemonHosts;
 import com.woobeee.mvc.pokemon.entity.PokemonOrders;
-import com.woobeee.mvc.pokemon.entity.PokemonRateMode;
 import com.woobeee.mvc.pokemon.entity.PokemonRounds;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,14 +42,13 @@ class PokemonOrderRepositoryTest {
 
     private PokemonRounds round(long hostMemberId, int sequence, String currency) {
         return roundRepository.saveAndFlush(PokemonRounds.open(
-                hostMemberId, sequence, sequence + "차", currency, PokemonRateMode.FIXED,
-                new BigDecimal("16.5"), LocalDateTime.now(), "신한 110-000", null, null));
+                hostMemberId, sequence, sequence + "차", currency, "신한 110-000", null, null));
     }
 
-    private PokemonOrders order(long roundId, Long memberId, long transferKrw) {
+    private PokemonOrders order(long roundId, Long memberId, long donationKrw) {
         return orderRepository.saveAndFlush(PokemonOrders.create(
                 roundId, memberId, "신청자", null, new BigDecimal("100"), BigDecimal.ZERO,
-                new BigDecimal("16.5"), LocalDateTime.now(), transferKrw, 0, null));
+                donationKrw, null));
     }
 
     @Test
@@ -78,7 +76,8 @@ class PokemonOrderRepositoryTest {
         assertThat(latest.getCurrency()).isEqualTo("USD");
         assertThat(latest.getRoundStatus()).isEqualTo("OPEN");
         assertThat(latest.getOrderStatus()).isEqualTo("ORDERED");
-        assertThat(latest.getTransferKrw()).isEqualTo(2_000L);
+        assertThat(latest.getTotalAmount()).isEqualByComparingTo("100");
+        assertThat(latest.getDonationKrw()).isEqualTo(2_000L);
         assertThat(latest.getCreatedAt()).isNotNull();
     }
 

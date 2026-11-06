@@ -45,21 +45,9 @@ public class PokemonOrders {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal extraAmount;
 
-    @Column(nullable = false, precision = 14, scale = 6)
-    private BigDecimal quotedRate;
-
-    @Column(nullable = false)
-    private LocalDateTime quotedAt;
-
-    @Column(nullable = false)
-    private long itemsKrw;
-
+    /** 신청자가 직접 적은 기부금(원). 환율과 무관하다. 원화 상품값은 저장하지 않고 매번 계산한다. */
     @Column(nullable = false)
     private long donationKrw;
-
-    @Column(nullable = false)
-    private long transferKrw;
-
 
     @Column(length = 500)
     private String memo;
@@ -74,9 +62,7 @@ public class PokemonOrders {
     @Builder
     private PokemonOrders(Long roundId, Long memberId, String applicantName, String depositorName,
                           PokemonOrderStatus status, BigDecimal totalAmount, BigDecimal extraAmount,
-                          BigDecimal quotedRate,
-                          LocalDateTime quotedAt, long itemsKrw, long donationKrw, long transferKrw,
-                          String memo) {
+                          long donationKrw, String memo) {
         this.roundId = roundId;
         this.memberId = memberId;
         this.applicantName = applicantName;
@@ -84,18 +70,13 @@ public class PokemonOrders {
         this.status = status;
         this.totalAmount = totalAmount;
         this.extraAmount = extraAmount;
-        this.quotedRate = quotedRate;
-        this.quotedAt = quotedAt;
-        this.itemsKrw = itemsKrw;
         this.donationKrw = donationKrw;
-        this.transferKrw = transferKrw;
         this.memo = memo;
     }
 
     public static PokemonOrders create(Long roundId, Long memberId, String applicantName, String depositorName,
                                        BigDecimal totalAmount, BigDecimal extraAmount,
-                                       BigDecimal quotedRate, LocalDateTime quotedAt,
-                                       long itemsKrw, long donationKrw, String memo) {
+                                       long donationKrw, String memo) {
         return PokemonOrders.builder()
                 .roundId(roundId)
                 .memberId(memberId)
@@ -104,37 +85,22 @@ public class PokemonOrders {
                 .status(PokemonOrderStatus.ORDERED)
                 .totalAmount(totalAmount)
                 .extraAmount(extraAmount)
-                .quotedRate(quotedRate)
-                .quotedAt(quotedAt)
-                .itemsKrw(itemsKrw)
                 .donationKrw(donationKrw)
-                .transferKrw(itemsKrw + donationKrw)
                 .memo(memo)
                 .build();
     }
 
-    /**
-     * 수정 — 금액을 통째로 다시 세운다. 주문 내용이 바뀌면 이체할 금액도 바뀌므로 환율
-     * 스냅샷도 함께 갱신한다. 그래야 {@code quotedRate} 가 계속 "이 금액의 근거" 로 남는다.
-     *
-     * <p>환차손익은 차수가 확정하므로(차수의 {@code settledRate}) 여기서는 신경 쓰지 않는다.
-     */
+    /** 수정 — 금액을 통째로 다시 세운다. 원화는 저장하지 않으므로 루피 합계와 기부금만 바뀐다. */
     public void reprice(String applicantName, String depositorName, BigDecimal totalAmount,
-                        BigDecimal extraAmount, BigDecimal quotedRate, LocalDateTime quotedAt,
-                        long itemsKrw, long donationKrw, String memo) {
+                        BigDecimal extraAmount, long donationKrw, String memo) {
         this.applicantName = applicantName;
         this.depositorName = depositorName;
         this.totalAmount = totalAmount;
         this.extraAmount = extraAmount;
-        this.quotedRate = quotedRate;
-        this.quotedAt = quotedAt;
-        this.itemsKrw = itemsKrw;
         this.donationKrw = donationKrw;
-        this.transferKrw = itemsKrw + donationKrw;
         this.memo = memo;
     }
 
-    /** 환율을 박지 않는다 — 결제는 차수 단위라 환차 확정도 차수가 한다. */
     public void changeStatus(PokemonOrderStatus next) {
         this.status = next;
     }

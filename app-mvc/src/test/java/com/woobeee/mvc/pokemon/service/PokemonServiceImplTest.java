@@ -8,10 +8,12 @@ import com.woobeee.mvc.pokemon.api.request.PutPokemonCommentRequest;
 import com.woobeee.mvc.pokemon.api.request.PutPokemonOrderRequest;
 import com.woobeee.mvc.pokemon.api.request.PutPokemonRoundRequest;
 import com.woobeee.mvc.pokemon.api.response.PokemonCommentResponse;
+import com.woobeee.mvc.pokemon.api.response.PokemonOrderDetailResponse;
+import com.woobeee.mvc.pokemon.api.response.PokemonRoundBoardResponse;
 import com.woobeee.mvc.pokemon.entity.PokemonOrderComments;
 import com.woobeee.mvc.pokemon.entity.PokemonOrderStatus;
 import com.woobeee.mvc.pokemon.entity.PokemonOrders;
-import com.woobeee.mvc.pokemon.entity.PokemonRateMode;
+import com.woobeee.mvc.pokemon.entity.PokemonHosts;
 import com.woobeee.mvc.pokemon.entity.PokemonRoundStatus;
 import com.woobeee.mvc.pokemon.entity.PokemonRounds;
 import com.woobeee.mvc.pokemon.exception.PokemonErrorCode;
@@ -44,6 +46,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -162,13 +165,23 @@ class PokemonServiceImplTest {
             viewerIs(HOST_LOGIN, HOST_ID);
             PokemonRounds round = round();
             when(roundRepository.findById(ROUND_ID)).thenReturn(Optional.of(round));
-            when(exchangeRateService.current("INR")).thenReturn(
-                    new ExchangeRate("INR", new BigDecimal("14.13"), LocalDateTime.now(), false));
 
             pokemonService.changeRoundStatus(HOST_LOGIN, ROUND_ID,
                     new PatchPokemonRoundStatusRequest(PokemonRoundStatus.CLOSED));
 
             assertThat(round.getStatus()).isEqualTo(PokemonRoundStatus.CLOSED);
+        }
+
+        /** POKEMON-AC-10 삭제 — 환율 확정이 없으므로 상태를 옮겨도 환율을 읽지 않는다. */
+        @Test
+        void changingTheRoundStatusDoesNotReadTheExchangeRate() {
+            viewerIs(HOST_LOGIN, HOST_ID);
+            when(roundRepository.findById(ROUND_ID)).thenReturn(Optional.of(round()));
+
+            pokemonService.changeRoundStatus(HOST_LOGIN, ROUND_ID,
+                    new PatchPokemonRoundStatusRequest(PokemonRoundStatus.PURCHASED));
+
+            verifyNoInteractions(exchangeRateService);
         }
 
         /** POKEMON-AC-09 — 남이 상태를 옮기면 환율을 묻기도 전에 거절한다. */
@@ -342,6 +355,8 @@ class PokemonServiceImplTest {
             viewerIs(HOST_LOGIN, HOST_ID);
             PokemonOrders order = order(APPLICANT_ID, PokemonOrderStatus.ORDERED);
             givenOrderAndRound(order);
+            when(exchangeRateService.current("INR")).thenReturn(
+                    new ExchangeRate("INR", new BigDecimal("14.13"), LocalDateTime.now(), false));
 
             pokemonService.changeStatus(HOST_LOGIN, ORDER_ID,
                     new PatchPokemonOrderStatusRequest(PokemonOrderStatus.DEPOSIT_CONFIRMED));
@@ -483,6 +498,95 @@ class PokemonServiceImplTest {
         }
     }
 
+    /* ===== 예상 금액 — 원화는 저장하지 않고 오늘 환율로 매번 계산한다 (POKEMON-AC-04·05·39) ===== */
+
+    @Nested
+    class 예상금액 {
+
+        private ExchangeRate rate(String toKrw, boolean stale) {
+            return new ExchangeRate("INR", new BigDecimal(toKrw), LocalDateTime.of(2026, 11, 6, 9, 10), stale);
+        }
+
+        private PokemonOrders orderOf(String totalInr, long donationKrw) {
+            PokemonOrders order = PokemonOrders.create(ROUND_ID, APPLICANT_ID, "신청자", null,
+                    new BigDecimal(totalInr), BigDecimal.ZERO, donationKrw, null);
+            ReflectionTestUtils.setField(order, "id", ORDER_ID);
+            return order;
+        }
+
+        private PokemonOrderDetailResponse detail(PokemonOrders order) {
+            viewerIs(APPLICANT_LOGIN, APPLICANT_ID);
+            givenOrderAndRound(order);
+            return pokemonService.getOrder(APPLICANT_LOGIN, ORDER_ID);
+        }
+
+        /** POKEMON-AC-04 — round(루피합계 × 오늘 환율) + 기부금. */
+        @Test
+        void estimateIsRoundedInrTimesRatePlusDonation() {
+            when(exchangeRateService.current("INR")).thenReturn(rate("14.13", false));
+
+            PokemonOrderDetailResponse result = detail(orderOf("298.00", 5000L));
+
+            assertThat(result.order().estimatedItemsKrw()).isEqualTo(4211L);
+            assertThat(result.order().estimatedKrw()).isEqualTo(9211L);
+        }
+
+        /** POKEMON-AC-04 — 기부금은 원화 입력이라 환율을 곱하지 않는다. */
+        @Test
+        void donationIsNotMultipliedByTheRate() {
+            when(exchangeRateService.current("INR")).thenReturn(rate("9.5", false));
+
+            PokemonOrderDetailResponse result = detail(orderOf("0", 1000L));
+
+            assertThat(result.order().estimatedItemsKrw()).isZero();
+            assertThat(result.order().estimatedKrw()).isEqualTo(1000L);
+        }
+
+        /** POKEMON-AC-05 — 신청 뒤 환율이 움직이면 같은 신청서의 예상 금액도 따라 움직인다. */
+        @Test
+        void estimateFollowsTheRateAfterTheOrderWasPlaced() {
+            when(exchangeRateService.current("INR"))
+                    .thenReturn(rate("14.13", false), rate("15.00", false));
+            PokemonOrders order = orderOf("298.00", 0L);
+
+            long before = detail(order).order().estimatedItemsKrw();
+            long after = pokemonService.getOrder(APPLICANT_LOGIN, ORDER_ID).order().estimatedItemsKrw();
+
+            assertThat(before).isEqualTo(4211L);
+            assertThat(after).isEqualTo(4470L);
+        }
+
+        /** POKEMON-AC-39 — 제공자가 죽어 마지막 값을 쓰는 중이면 stale 이 그대로 실린다. */
+        @Test
+        void staleRateIsExposedWithTheEstimate() {
+            when(exchangeRateService.current("INR")).thenReturn(rate("14.00", true));
+
+            PokemonOrderDetailResponse result = detail(orderOf("100.00", 0L));
+
+            assertThat(result.rate().stale()).isTrue();
+            assertThat(result.order().estimatedKrw()).isEqualTo(1400L);
+        }
+
+        /** POKEMON-AC-16·18 — 보드의 신청서마다 예상 금액이 실리고 환율 기준 시각이 함께 온다. */
+        @Test
+        void boardCarriesEstimatesAndTheRateDate() {
+            when(hostRepository.findByHandle("hs")).thenReturn(Optional.of(PokemonHosts.claim(HOST_ID, "hs")));
+            when(roundRepository.findByHostMemberIdAndSequence(HOST_ID, 1)).thenReturn(Optional.of(round()));
+            when(orderRepository.findAllByRoundIdOrderByCreatedAtDesc(ROUND_ID))
+                    .thenReturn(List.of(orderOf("100.00", 500L)));
+            when(exchangeRateService.current("INR")).thenReturn(rate("14.00", false));
+            when(memberResolver.optionalMemberId(null)).thenReturn(null);
+
+            PokemonRoundBoardResponse board = pokemonService.getRoundBoard(null, "hs", 1);
+
+            assertThat(board.currentRate().fetchedAt()).isEqualTo(LocalDateTime.of(2026, 11, 6, 9, 10));
+            assertThat(board.orders()).singleElement().satisfies(o -> {
+                assertThat(o.estimatedItemsKrw()).isEqualTo(1400L);
+                assertThat(o.estimatedKrw()).isEqualTo(1900L);
+            });
+        }
+    }
+
     /* ===== 거들기 ===== */
 
     private void viewerIs(String loginId, Long memberId) {
@@ -496,16 +600,15 @@ class PokemonServiceImplTest {
     }
 
     private static PokemonRounds round() {
-        PokemonRounds round = PokemonRounds.open(HOST_ID, 1, "1차", "INR", PokemonRateMode.FIXED,
-                new BigDecimal("14.13"), LocalDateTime.now(), "하나은행 111 주최자", null, null);
+        PokemonRounds round = PokemonRounds.open(HOST_ID, 1, "1차", "INR",
+                "하나은행 111 주최자", null, null);
         ReflectionTestUtils.setField(round, "id", ROUND_ID);
         return round;
     }
 
     private static PokemonOrders order(Long memberId, PokemonOrderStatus status) {
         PokemonOrders order = PokemonOrders.create(ROUND_ID, memberId, "신청자", null,
-                new BigDecimal("29.00"), BigDecimal.ZERO, new BigDecimal("14.13"),
-                LocalDateTime.now(), 410L, 0L, null);
+                new BigDecimal("29.00"), BigDecimal.ZERO, 0L, null);
         ReflectionTestUtils.setField(order, "id", ORDER_ID);
         order.changeStatus(status);
         return order;
@@ -519,8 +622,7 @@ class PokemonServiceImplTest {
     }
 
     private static PutPokemonRoundRequest roundEdit() {
-        return new PutPokemonRoundRequest("고친 제목", "FIXED", new BigDecimal("15.00"),
-                "국민은행 222 남", null, null);
+        return new PutPokemonRoundRequest("고친 제목", "국민은행 222 남", null, null);
     }
 
     private static PutPokemonOrderRequest orderEdit() {
