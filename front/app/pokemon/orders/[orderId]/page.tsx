@@ -19,7 +19,7 @@ import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
     ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, canModifyOrder, formatAmount, formatCoins,
-    formatKrw, formatRate, orderCoins, roundTitle,
+    formatKrw, formatRate, orderCoins, rateNote, roundTitle,
     type PokemonOrderDetail, type PokemonOrderStatus,
 } from "@/lib/pokemon"
 
@@ -200,17 +200,17 @@ export default function PokemonOrderDetailPage() {
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                                환산 ({formatRate(order.quotedRate, round.currency)})
+                                환산 ({formatRate(rate.toKrw, round.currency)})
                             </span>
-                            <span>{formatKrw(order.itemsKrw)}</span>
+                            <span>{formatKrw(order.estimatedItemsKrw)}</span>
                         </div>
                         <div className="flex justify-between">
                             <span className="text-muted-foreground">기부금</span>
                             <span>{formatKrw(order.donationKrw)}</span>
                         </div>
                         <div className="flex justify-between border-t pt-2 text-base font-semibold">
-                            <span>이체예상금액</span>
-                            <span>{formatKrw(order.transferKrw)}</span>
+                            <span>예상 금액</span>
+                            <span>{formatKrw(order.estimatedKrw)}</span>
                         </div>
                     </div>
 
@@ -218,8 +218,8 @@ export default function PokemonOrderDetailPage() {
 
                     <RateLine
                         rate={formatRate(rate.toKrw, round.currency)}
-                        fetchedAt={rate.fetchedAt}
                         stale={rate.stale}
+                        note={rateNote(rate)}
                     />
                 </CardContent>
             </Card>

@@ -144,8 +144,8 @@ export default function MyPage() {
                                             {myOrderRoundTitle(order)}
                                         </Link>
                                         <p className="truncate text-xs text-muted-foreground">
-                                            {order.hostHandle} · 차수 {ROUND_STATUS_LABELS[order.roundStatus]} · 이체{" "}
-                                            {formatKrw(order.transferKrw)}
+                                            {order.hostHandle} · 차수 {ROUND_STATUS_LABELS[order.roundStatus]} · 예상{" "}
+                                            {formatKrw(order.estimatedKrw)}
                                         </p>
                                     </div>
                                     <Link

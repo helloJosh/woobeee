@@ -18,10 +18,11 @@ import {
     parseAmount,
     parseDonation,
     quote,
-    rateFor,
+    rateNote,
     selectionLines,
     toKrw,
     validateOrderForm,
+    type PokemonExchangeRate,
     type PokemonProduct,
     type PokemonRound,
     type PokemonSelection,
@@ -55,8 +56,8 @@ export interface OrderFormBody {
 /**
  * 신청서 작성·수정이 함께 쓰는 폼. 두 화면의 차이는 초기값과 저장 동작뿐이라 한 벌만 둔다.
  *
- * <p>금액 미리보기는 <b>현재 환율</b>로 계산한다 — 수정도 저장 시점 환율로 다시 잡히므로
- * 화면에 보인 금액과 저장되는 금액이 어긋나지 않는다.
+ * <p>금액 미리보기는 <b>오늘 환율</b>로 계산한 <b>예상 금액</b>이다(POKEMON-AC-04·39).
+ * 원화는 저장되지 않고 조회할 때마다 그날 환율로 다시 계산된다.
  */
 export default function OrderForm({
     round,
@@ -70,8 +71,8 @@ export default function OrderForm({
 }: {
     round: PokemonRound
     products: PokemonProduct[]
-    /** 지금 환율. 차수가 PER_ORDER 면 이 값이 그대로 쓰인다. */
-    currentRate: number
+    /** 오늘 환율(하루 한 번 갱신). 예상 금액과 "○월 ○일 환율 기준" 문구가 이것으로 만들어진다. */
+    currentRate: PokemonExchangeRate
     initial: OrderFormValues
     memberName: string | null
     submitLabel: string
@@ -89,8 +90,7 @@ export default function OrderForm({
 
     const donationKrw = parseDonation(donation) ?? 0
     const extra = parseAmount(extraAmount) ?? 0
-    // 차수가 정한 방식대로 환율을 고른다 — 서버와 같은 규칙이라 미리보기와 저장 금액이 맞는다.
-    const rate = rateFor(round, currentRate)
+    const rate = currentRate.toKrw
     const lines = useMemo(() => selectionLines(selection, products), [selection, products])
     const preview = useMemo(
         () => quote(selection, products, rate, donationKrw, extra),
@@ -222,16 +222,17 @@ export default function OrderForm({
                     )}
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">환산 ({formatRate(rate, round.currency)})</span>
-                        <span>{formatKrw(preview.itemsKrw)}</span>
+                        <span>{formatKrw(preview.estimatedItemsKrw)}</span>
                     </div>
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">기부금</span>
                         <span>{formatKrw(preview.donationKrw)}</span>
                     </div>
                     <div className="flex justify-between border-t pt-3 text-base font-semibold">
-                        <span>이체예상금액</span>
-                        <span>{formatKrw(preview.transferKrw)}</span>
+                        <span>예상 금액</span>
+                        <span>{formatKrw(preview.estimatedKrw)}</span>
                     </div>
+                    <p className="text-xs text-muted-foreground">{rateNote(currentRate)}</p>
                     <BankAccountLine account={round.bankAccount} />
 
                     {error !== null && (

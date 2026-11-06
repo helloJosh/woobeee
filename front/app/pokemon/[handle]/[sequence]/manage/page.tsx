@@ -9,21 +9,20 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/pokemon/pokemon-bits"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
-    RATE_MODE_LABELS, formatAmount, formatCoins, formatRate, parseAmount, parseCoins,
+    formatAmount, formatCoins, parseAmount, parseCoins,
     roundTitle, validateProductDraft, validateRoundDraft,
-    type PokemonManagedProduct, type PokemonRateMode, type PokemonRoundBoard,
+    type PokemonManagedProduct, type PokemonRoundBoard,
     type PokemonRoundDraft,
 } from "@/lib/pokemon"
 
 /**
- * 차수 관리 — 그 차수의 환율·계좌·마감일과 <b>그 차수의 상품표</b>를 고친다.
+ * 차수 관리 — 그 차수의 계좌·마감일과 <b>그 차수의 상품표</b>를 고친다.
  *
  * <p>상품표가 차수마다 따로이므로 여기가 그 차수의 것을 만지는 유일한 곳이다.
  * `/pokemon/products` 는 다음 차수에 복사될 <b>틀</b>을 다룬다.
@@ -53,8 +52,6 @@ export default function PokemonRoundManagePage() {
             setDraft({
                 title: loaded.round.title ?? "",
                 currency: loaded.round.currency,
-                rateMode: loaded.round.rateMode,
-                quotedRate: String(loaded.round.quotedRate),
                 bankAccount: loaded.round.bankAccount,
                 deadline: loaded.round.deadline ?? "",
                 memo: loaded.round.memo ?? "",
@@ -117,7 +114,7 @@ export default function PokemonRoundManagePage() {
         )
     }
 
-    const { round, currentRate } = board
+    const { round } = board
     const backToRound = `/pokemon/${round.hostHandle}/${round.sequence}`
 
     const header = (
@@ -152,8 +149,6 @@ export default function PokemonRoundManagePage() {
         await run(
             () => pokemonAPI.updateRound(round.id, {
                 title: draft.title.trim() || undefined,
-                rateMode: draft.rateMode,
-                quotedRate: draft.quotedRate.trim() === "" ? undefined : Number(draft.quotedRate.trim()),
                 bankAccount: draft.bankAccount.trim(),
                 deadline: draft.deadline.trim() === "" ? null : draft.deadline,
                 memo: draft.memo.trim() || undefined,
@@ -199,8 +194,7 @@ export default function PokemonRoundManagePage() {
                     <CardTitle className="text-base">차수 설정</CardTitle>
                     <p className="text-xs text-muted-foreground">
                         통화({round.currency})는 바꿀 수 없습니다 — 이미 그 통화 상품으로 채워진
-                        신청서가 있습니다. 환율을 바꾸면 <b>앞으로 들어올 신청서에만</b> 적용되고,
-                        이미 들어온 신청서는 각자의 환율을 유지합니다.
+                        신청서가 있습니다. 원화 금액은 하루 한 번 갱신되는 환율로 계산한 예상 금액입니다.
                     </p>
                 </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -211,22 +205,6 @@ export default function PokemonRoundManagePage() {
                                    placeholder={`${round.sequence}차 공동구매`} />
                         </Field>
                     </div>
-                    <Field label="환율 방식">
-                        <Select value={draft.rateMode}
-                                onValueChange={(v) => setDraft({ ...draft, rateMode: v as PokemonRateMode })}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {(["FIXED", "PER_ORDER"] as const).map((m) => (
-                                    <SelectItem key={m} value={m}>{RATE_MODE_LABELS[m]}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </Field>
-                    <Field label={`환율 (지금 ${formatRate(currentRate.toKrw, round.currency)})`}>
-                        <Input value={draft.quotedRate} inputMode="decimal"
-                               disabled={draft.rateMode === "PER_ORDER"}
-                               onChange={(e) => setDraft({ ...draft, quotedRate: e.target.value })} />
-                    </Field>
                     <div className="sm:col-span-2">
                         <Field label="입금받을 계좌">
                             <Input value={draft.bankAccount} maxLength={200}

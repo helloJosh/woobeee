@@ -14,14 +14,10 @@ import {
     canDeleteComment,
     canEditComment,
     canModifyOrder,
-    effectiveRate,
     formatAmount,
     formatCoins,
     formatKrw,
     formatRate,
-    formatSignedKrw,
-    fxDelta,
-    isRoundSettled,
     orderCoins,
     orderStep,
     paginate,
@@ -32,7 +28,7 @@ import {
     percentOf,
     pricePerCoin,
     quote,
-    rateFor,
+    rateNote,
     roundStep,
     roundTitle,
     selectionLines,
@@ -67,19 +63,13 @@ function round(overrides: Partial<PokemonRound> = {}): PokemonRound {
         sequence: 1,
         title: null,
         currency: "INR",
-        rateMode: "FIXED",
-        quotedRate: RATE,
-        quotedAt: "2026-09-29T09:00:00",
         bankAccount: "하나은행 111 병우",
         deadline: null,
         status: "OPEN",
-        settledRate: null,
-        settledAt: null,
         memo: null,
         createdAt: "2026-09-29T09:00:00",
         canManage: false,
         orderCount: 0,
-        transferKrwTotal: 0,
         ...overrides,
     }
 }
@@ -95,11 +85,9 @@ function order(overrides: Partial<PokemonOrder> = {}): PokemonOrder {
         status: "ORDERED",
         totalAmount: 2899,
         extraAmount: 0,
-        quotedRate: RATE,
-        quotedAt: "2026-09-29T09:00:00",
-        itemsKrw: 40976,
+        estimatedItemsKrw: 40976,
         donationKrw: 0,
-        transferKrw: 40976,
+        estimatedKrw: 40976,
         memo: null,
         createdAt: "2026-09-29T09:00:00",
         items: [{ productId: 3, productName: "14,500 PokéCoins", coins: 14500, unitPrice: 2899, quantity: 1 }],
@@ -139,22 +127,13 @@ describe("두 층의 상태", () => {
     })
 })
 
-/** POKEMON-AC-27 */
-describe("차수 환율", () => {
-    it("FIXED 면 지금 환율이 아니라 차수 환율을 쓴다", () => {
-        expect(rateFor(round({ rateMode: "FIXED", quotedRate: 14.13 }), 99)).toBe(14.13)
-    })
-
-    it("PER_ORDER 면 지금 환율을 쓴다", () => {
-        expect(rateFor(round({ rateMode: "PER_ORDER", quotedRate: 14.13 }), 99)).toBe(99)
-    })
-
-    it("미리보기 금액이 그 환율로 계산된다 — 저장될 금액과 어긋나면 안 된다", () => {
-        const fixed = round({ rateMode: "FIXED", quotedRate: 14.13 })
-        const preview = quote({ 2: 2 }, PRODUCTS, rateFor(fixed, 99), 0)
+/** POKEMON-AC-04 — 미리보기는 오늘 환율 하나로 계산한다(차수 환율·환율 방식은 없다). */
+describe("견적 미리보기", () => {
+    it("오늘 환율로 환산한 예상 금액이 나온다", () => {
+        const preview = quote({ 2: 2 }, PRODUCTS, 14.13, 0)
 
         expect(preview.totalAmount).toBe(298)
-        expect(preview.itemsKrw).toBe(Math.round(298 * 14.13))
+        expect(preview.estimatedItemsKrw).toBe(Math.round(298 * 14.13))
     })
 })
 
@@ -182,12 +161,12 @@ describe("장바구니와 견적", () => {
         expect(selectionLines({ 999: 3 }, PRODUCTS)).toEqual([])
     })
 
-    it("이체 금액은 상품값 환산액에 기부금을 더한 값이다", () => {
+    it("예상 금액은 상품값 환산액에 기부금을 더한 값이다 — 기부금에는 환율을 곱하지 않는다", () => {
         const result = quote({ 3: 1, 1: 1 }, PRODUCTS, RATE, 5000)
 
         expect(result.totalAmount).toBe(2928)
         expect(result.totalCoins).toBe(14600)
-        expect(result.transferKrw).toBe(result.itemsKrw + 5000)
+        expect(result.estimatedKrw).toBe(result.estimatedItemsKrw + 5000)
     })
 
     it("기부금은 음수일 수 없고 소수점은 잘린다", () => {
@@ -218,43 +197,29 @@ describe("자유 입력 금액", () => {
     })
 })
 
-/** POKEMON-AC-11 */
-describe("환차손익", () => {
-    it("환율이 오르면 받아 둔 돈이 모자란다 — 손해", () => {
-        expect(fxDelta(order(), round(), RATE + 1)).toBeLessThan(0)
+/** POKEMON-AC-39 */
+describe("예상 금액 문구", () => {
+    it("기준 환율의 날짜를 보인다", () => {
+        expect(rateNote({ fetchedAt: "2026-11-06T09:10:00", stale: false })).toBe("11월 6일 환율 기준 예상")
     })
 
-    it("환율이 내리면 남는다 — 이득", () => {
-        expect(fxDelta(order(), round(), RATE - 1)).toBeGreaterThan(0)
-    })
-
-    /** POKEMON-AC-10 */
-    it("차수가 결제까지 끝났으면 현재 환율이 움직여도 손익이 확정돼 있다", () => {
-        const settled = round({ status: "PURCHASED", settledRate: RATE - 1, settledAt: "x" })
-
-        expect(isRoundSettled(settled)).toBe(true)
-        expect(effectiveRate(settled, 99)).toBe(RATE - 1)
-        expect(fxDelta(order(), settled, 99)).toBe(fxDelta(order(), settled, 1))
-    })
-
-    it("기부금은 환차에 섞이지 않는다", () => {
-        const donated = order({ donationKrw: 10000, transferKrw: 50976 })
-
-        expect(fxDelta(donated, round(), RATE)).toBe(fxDelta(order(), round(), RATE))
+    it("지난 값이면 마지막으로 확인된 환율이라고 밝힌다", () => {
+        expect(rateNote({ fetchedAt: "2026-11-05T09:10:00", stale: true }))
+            .toBe("마지막으로 확인된 환율 기준 예상 (11월 5일)")
     })
 })
 
 /** POKEMON-AC-16 */
 describe("차수 집계", () => {
     const orders: PokemonOrder[] = [
-        order({ id: 1, status: "ORDERED", applicantName: "가", totalAmount: 29, itemsKrw: 410, transferKrw: 410 }),
-        order({ id: 2, status: "DEPOSIT_CONFIRMED", applicantName: "나", totalAmount: 149, itemsKrw: 2106, donationKrw: 1000, transferKrw: 3106 }),
-        order({ id: 3, status: "DELIVERED", applicantName: "다", totalAmount: 289, itemsKrw: 4085, transferKrw: 4085 }),
-        order({ id: 4, status: "CANCELLED", applicantName: "라", totalAmount: 2899, itemsKrw: 40976, transferKrw: 40976 }),
+        order({ id: 1, status: "ORDERED", applicantName: "가", totalAmount: 29, estimatedItemsKrw: 410, estimatedKrw: 410 }),
+        order({ id: 2, status: "DEPOSIT_CONFIRMED", applicantName: "나", totalAmount: 149, estimatedItemsKrw: 2106, donationKrw: 1000, estimatedKrw: 3106 }),
+        order({ id: 3, status: "DELIVERED", applicantName: "다", totalAmount: 289, estimatedItemsKrw: 4085, estimatedKrw: 4085 }),
+        order({ id: 4, status: "CANCELLED", applicantName: "라", totalAmount: 2899, estimatedItemsKrw: 40976, estimatedKrw: 40976 }),
     ]
 
     it("취소는 금액 집계에서 빠진다", () => {
-        const s = summarizeRound(orders, round(), RATE)
+        const s = summarizeRound(orders)
 
         expect(s.totalAmount).toBe(29 + 149 + 289)
         expect(s.totalTransferKrw).toBe(410 + 3106 + 4085)
@@ -262,24 +227,31 @@ describe("차수 집계", () => {
     })
 
     it("미입금은 주문 단계의 신청서다", () => {
-        const s = summarizeRound(orders, round(), RATE)
+        const s = summarizeRound(orders)
 
         expect(s.awaitingDeposit.map((o) => o.applicantName)).toEqual(["가"])
         expect(s.outstandingKrw).toBe(410)
     })
 
     it("기부금을 뺀 상품값도 따로 낸다 — 주최자가 실제로 써야 할 돈과 섞이면 안 된다", () => {
-        const s = summarizeRound(orders, round(), RATE)
+        const s = summarizeRound(orders)
 
         expect(s.totalItemsKrw).toBe(410 + 2106 + 4085)
         expect(s.totalTransferKrw - s.totalItemsKrw).toBe(1000)
     })
 
+    /** POKEMON-AC-18 — 합계는 신청서별 예상 금액의 합과 정확히 같다(1원 오차 없음). */
+    it("집계는 신청서별 예상 금액을 그대로 더한다", () => {
+        const s = summarizeRound(orders)
+        const perOrder = orders.filter((o) => o.status !== "CANCELLED").map((o) => o.estimatedKrw)
+
+        expect(s.totalTransferKrw).toBe(perOrder.reduce((a, b) => a + b, 0))
+    })
+
     it("신청이 없어도 터지지 않는다", () => {
-        const s = summarizeRound([], round(), RATE)
+        const s = summarizeRound([])
 
         expect(s.totalAmount).toBe(0)
-        expect(s.fxKrw).toBe(0)
         expect(s.awaitingDeposit).toEqual([])
     })
 
@@ -402,7 +374,7 @@ describe("상품 검증", () => {
 /** POKEMON-AC-25 */
 describe("차수 개설 검증", () => {
     const draft = {
-        title: "", currency: "INR", rateMode: "FIXED" as const, quotedRate: "",
+        title: "", currency: "INR",
         bankAccount: "하나은행 111 병우", deadline: "", memo: "",
     }
 
@@ -417,21 +389,6 @@ describe("차수 개설 검증", () => {
         expect(validateRoundDraft({ ...draft, bankAccount: "" }, CURRENCIES, true)).toBeNull()
         expect(validateRoundDraft({ ...draft, bankAccount: "" }, CURRENCIES, false))
             .toContain("입금받을 계좌를 적어 주세요.")
-    })
-
-    it("환율을 비우면 지금 환율을 쓴다 — 통과해야 한다", () => {
-        expect(validateRoundDraft({ ...draft, quotedRate: "" }, CURRENCIES)).toBeNull()
-    })
-
-    it("환율을 적었으면 0보다 커야 한다", () => {
-        expect(validateRoundDraft({ ...draft, quotedRate: "0" }, CURRENCIES))
-            .toBe("환율은 0보다 큰 숫자로 입력해 주세요.")
-        expect(validateRoundDraft({ ...draft, quotedRate: "14.13" }, CURRENCIES)).toBeNull()
-    })
-
-    it("PER_ORDER 면 환율 칸을 보지 않는다", () => {
-        expect(validateRoundDraft({ ...draft, rateMode: "PER_ORDER", quotedRate: "엉터리" }, CURRENCIES))
-            .toBeNull()
     })
 })
 
@@ -461,12 +418,6 @@ describe("표시", () => {
 
     it("모르는 통화는 코드를 그대로 붙인다", () => {
         expect(formatAmount(10, "EUR")).toBe("EUR 10")
-    })
-
-    it("손익은 부호를 항상 붙이고 0은 부호가 없다", () => {
-        expect(formatSignedKrw(1240)).toBe("+1,240원")
-        expect(formatSignedKrw(-1240)).toBe("−1,240원")
-        expect(formatSignedKrw(0)).toBe("0원")
     })
 
     it("원화·환율·코인 표기", () => {
@@ -528,7 +479,7 @@ function myOrder(overrides: Partial<PokemonMyOrder> = {}): PokemonMyOrder {
         currency: "INR",
         roundStatus: "OPEN",
         orderStatus: "ORDERED",
-        transferKrw: 10_000,
+        estimatedKrw: 10_000,
         createdAt: "2026-10-01T12:00:00",
         ...overrides,
     }
@@ -556,11 +507,11 @@ describe("POKEMON-AC-36 my orders", () => {
 
     it("summarizes counts and only unpaid money, leaving cancelled out of both", () => {
         const summary = summarizeMyOrders([
-            myOrder({ orderStatus: "ORDERED", transferKrw: 10_000 }),
-            myOrder({ orderStatus: "ORDERED", transferKrw: 5_000 }),
-            myOrder({ orderStatus: "DEPOSIT_CONFIRMED", transferKrw: 7_000 }),
-            myOrder({ orderStatus: "DELIVERED", transferKrw: 3_000 }),
-            myOrder({ orderStatus: "CANCELLED", transferKrw: 99_999 }),
+            myOrder({ orderStatus: "ORDERED", estimatedKrw: 10_000 }),
+            myOrder({ orderStatus: "ORDERED", estimatedKrw: 5_000 }),
+            myOrder({ orderStatus: "DEPOSIT_CONFIRMED", estimatedKrw: 7_000 }),
+            myOrder({ orderStatus: "DELIVERED", estimatedKrw: 3_000 }),
+            myOrder({ orderStatus: "CANCELLED", estimatedKrw: 99_999 }),
         ])
         expect(summary).toEqual({ total: 5, inProgress: 3, delivered: 1, cancelled: 1, unpaidKrw: 15_000 })
     })
