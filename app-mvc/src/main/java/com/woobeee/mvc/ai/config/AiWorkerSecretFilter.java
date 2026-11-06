@@ -1,0 +1,57 @@
+package com.woobeee.mvc.ai.config;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+
+/**
+ * {@code /internal/ai/**} 는 워커만 부른다. 헤더 {@code X-Ai-Worker-Secret} 이 서버 시크릿과 일치해야 열린다(AI-AC-13).
+ * 서버 시크릿이 비어 있으면 <b>모두 거절한다</b> — 설정을 빠뜨린 배포가 빈 헤더로 열리면 안 된다.
+ * 접근 로그 필터({@code HIGHEST_PRECEDENCE}) 바로 안쪽에 둬서 거절된 요청도 로그에 남는다.
+ */
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+@RequiredArgsConstructor
+public class AiWorkerSecretFilter extends OncePerRequestFilter {
+    public static final String HEADER = "X-Ai-Worker-Secret";
+    private static final String PATH_PREFIX = "/internal/ai/";
+    // ApiResponse 실패 봉투와 같은 모양. 필터는 MessageConverter 밖에서 응답하므로 직접 직렬화한다.
+    private static final String UNAUTHORIZED_BODY =
+            "{\"header\":{\"isSuccessful\":false,\"message\":\"ai_workerUnauthorized\",\"resultCode\":401}}";
+
+    private final AiProperties properties;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return !request.getRequestURI().startsWith(PATH_PREFIX);
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+        String secret = properties.workerSecret();
+        String given = request.getHeader(HEADER);
+        // 길이가 달라도 같은 시간이 걸리게 MessageDigest.isEqual 로 비교한다.
+        boolean ok = !secret.isEmpty() && given != null
+                && MessageDigest.isEqual(secret.getBytes(StandardCharsets.UTF_8), given.getBytes(StandardCharsets.UTF_8));
+        if (!ok) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.getWriter().write(UNAUTHORIZED_BODY);
+            return;
+        }
+        chain.doFilter(request, response);
+    }
+}
