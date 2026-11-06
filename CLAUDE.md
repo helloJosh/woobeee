@@ -5,9 +5,9 @@
 ## 프로젝트 개요
 
 - **구조**: Maven 멀티모듈 (`core` / `app-mvc` / `front`), Java 25, Spring Boot 4.0.5
-- **백엔드**: `auth`·`blog`·`schedule`·`pokemon` = Spring MVC + JPA (`app-mvc` :8000) 단일 앱. 전에 있던 `game`(WebFlux/R2DBC/WebSocket, `app-webflux`)은 제거했다(`V26__drop_game.sql`)
+- **백엔드**: `auth`·`blog`·`schedule`·`pokemon`·`ai` = Spring MVC + JPA (`app-mvc` :8000) 단일 앱. 전에 있던 `game`(WebFlux/R2DBC/WebSocket, `app-webflux`)은 제거했다(`V26__drop_game.sql`)
 - **프론트엔드**: `front/` Next.js 14 + React 18 + TypeScript + Tailwind (shadcn/ui, Radix) + vitest. rewrites로 백엔드(app-mvc)를 단일 오리진화
-- **데이터/인프라**: PostgreSQL :9432(공유), Redis :9379(공유 토큰), MinIO :9000, Kafka :8010/8011 + UI :8090(코드 미연동), Google OAuth
+- **데이터/인프라**: PostgreSQL :9432(공유), Redis :9379(공유 토큰), MinIO :9000, Kafka :8010/8011 + UI :8090(`ai` 요청 전달 전용, ADR-005), Google OAuth
 - **전신**: `art-market-place` 단일 모듈 모놀리스. product/cart 도메인은 폐기했다.
 
 ### 모듈 경계
@@ -15,7 +15,7 @@
 | 모듈 | 넣어도 되는 것 | 넣으면 안 되는 것 |
 | --- | --- | --- |
 | `core` | 앱이 공유하는 계약: `ApiResponse`, 토큰 계약, `RedisTokenStore` | `spring-boot-starter-webmvc` / `-webflux` 의존, 도메인 로직 |
-| `app-mvc` | auth, blog, schedule, pokemon, 블로킹 I/O, JPA 엔티티, Flyway 마이그레이션 | — |
+| `app-mvc` | auth, blog, schedule, pokemon, ai, 블로킹 I/O, JPA 엔티티, Flyway 마이그레이션 | — |
 
 `core`는 웹 스타터 무의존을 유지한다(과거 두 앱이 공유하던 계약이라 생긴 규칙이며, 앱이 하나인 지금도 유지한다). 다음으로 검증한다:
 
@@ -28,13 +28,13 @@
 1. `docs/superpowers/specs/2026-07-31-multimodule-game-blog-restructure-design.md` — 현 구조의 설계 근거
 2. `docs/ARCHITECTURE.md` — 모듈 구조와 도메인별 흐름
 3. `docs/_global/PRD.md`, `docs/_global/adr/` — 전체 목표, 인프라 ADR
-4. 작업 도메인의 `docs/<domain>/PRD.md` 와 `docs/<domain>/adr/` (`auth`, `blog`, `front`, `schedule`, `pokemon`)
+4. 작업 도메인의 `docs/<domain>/PRD.md` 와 `docs/<domain>/adr/` (`auth`, `blog`, `front`, `schedule`, `pokemon`, `ai`)
 5. `docs/FRONTEND.md`, `docs/DESIGN.md`
 6. 관련 코드와 테스트
 
 ## 핵심 규칙
 
-- **도메인 패키지 경계를 유지**한다: `com.woobeee.mvc.{_common,auth,blog,schedule,pokemon}`, `com.woobeee.core`. 도메인 간 직접 의존을 늘리지 않는다.
+- **도메인 패키지 경계를 유지**한다: `com.woobeee.mvc.{_common,auth,blog,schedule,pokemon,ai}`, `com.woobeee.core`. 도메인 간 직접 의존을 늘리지 않는다.
 - **`core`는 웹 *스타터* 무의존**을 유지한다. `spring-web` 자체는 들어 있다 — `ApiResponse` 가
   `HttpStatus` 를 쓴다(`core/pom.xml`). 금지 대상은 서블릿·리액티브 런타임을 끌고 오는
   `spring-boot-starter-webmvc` / `-webflux` 이고, 아래 grep 게이트가 그것을 본다. 공통 코드가
@@ -61,8 +61,8 @@
 docker compose -f .docker-compose/docker-compose.yml up -d   # postgres 9432 · redis 9379 · minio 9000 · kafka 8010/8011 · kafka-ui 8090
 ```
 
-Kafka는 인프라로만 떠 있고 **어떤 앱도 연동하지 않는다**(ADR-003). 쓰려면 먼저
-ADR을 갱신한다. 백엔드 개발에 Kafka가 필요 없으면 `up -d postgres-management redis minio` 로
+Kafka는 `ai` 도메인의 요청 전달(`ai.request.v1`)에만 쓴다(ADR-005). 그 밖의 도메인에서 쓰려면 먼저
+ADR을 쓴다. 백엔드 개발에 Kafka가 필요 없으면 `up -d postgres-management redis minio` 로
 필요한 것만 띄워도 된다.
 
 ### 기본 검증 명령
@@ -147,6 +147,7 @@ docker build -t woobeee/front:latest front/                      # 컨텍스트 
 미설정 시 `application.yaml` 기본값을 쓴다.
 
 - app-mvc: `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
+- ai (선택): app-mvc·`ai-worker` 의 `AI_WORKER_SECRET`, app-mvc 의 `KAFKA_BOOTSTRAP_SERVERS`(기본 `localhost:8011`), `ai-worker` 의 `CLAUDE_CODE_OAUTH_TOKEN`(구독 로그인 — `claude setup-token` 으로 만든다. 대안 `ANTHROPIC_API_KEY`). 값은 `.docker-compose/.env`(git 제외)에만 둔다
 - app-mvc (pokemon, 선택): `POKEMON_MANAGER_MEMBER_IDS`(기본 `1`), `POKEMON_RATE_URL_TEMPLATE`, `POKEMON_RATE_CACHE_TTL`, `POKEMON_CURRENCIES`(기본 `INR,USD,JPY`)
 - front: `MVC_ORIGIN`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID` (`front/.env.local.example` 참조)
 
@@ -224,5 +225,5 @@ docker exec woobeee-db psql -U root -d market -c \
 | 이관 문서 잔여 언급 | `docs/ARCHITECTURE.md` 에 product/cart 절이 크게 남아 있고, 존재하지 않는 `docs/cart/` 로 가는 ADR 링크 두 개와 존재하지 않는 `.codex/settings.json` 참조, 그리고 클래스명과 다른 blog 엔티티 이름(`Post` vs `Posts`)이 있다. `docs/<domain>/adr/` 은 `auth`·`blog` 에만 있다 |
 | 자잘한 미고정 | `auth-redirect.ts` 의 `startsWith("//")` 는 정규화 검사에 가려져 지워도 통과한다(중복일 뿐, 정규화 검사를 지워도 된다는 뜻이 아니다). `getBrowserLocale` 을 아무도 import 하지 않아 `en` 메시지 블록 전체가 런타임에 도달 불가다. `ErrorPayload.status` 는 채워지지만 읽는 곳이 없다. |
 | 5B 잔여 (표시상) | `Header` 가 클라이언트 전용 `mounted` 로 렌더를 막아 서버 HTML 에는 없다 — 이제 전 라우트에서 하이드레이션 후 튀어나온다. `/blog` 로 클라이언트 이동할 때 한 프레임 동안 사이드바 토글 없이 그려진다. 죽은 `/products`·`/cart` 가 자체 sticky 헤더를 그려 전역 헤더 뒤로 숨는다. 인증 화면 넷이 `min-h-screen` 이라 64px 헤더 아래에서 살짝 어긋난다 |
-| Kafka 미연동 | 로컬 compose에만 있고 코드 연동은 없다(ADR-003). 실제로 쓰려면 토픽 설계부터 |
+| Kafka 연동 범위 | `ai` 요청 전달 전용(ADR-005). 다른 도메인은 연동하지 않는다 — 쓰려면 토픽 설계와 새 ADR 부터 |
 | 하네스 재설계 | `art-market-place`의 `amp-backend-feature` 하네스는 art-marketplace 도메인 전제여서 이관하지 않았다. 필요 시 blog/pokemon 기준으로 새로 구성 |
