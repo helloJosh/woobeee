@@ -88,8 +88,8 @@ export function shouldPoll(status: AiStatus): boolean {
 }
 
 /** 진행 중인 요청이 있으면 새 요청을 못 낸다(AI-AC-02). 서버도 409 로 막지만 화면이 먼저 막는다. */
-export function canSubmit(latest: { status: AiStatus } | null): boolean {
-    return latest === null || !shouldPoll(latest.status)
+export function canSubmit(latest: { status: AiStatus } | null | undefined): boolean {
+    return latest == null || !shouldPoll(latest.status)
 }
 
 /** 제안이 모두 결정됐는가. 제안이 하나도 없으면 결정할 것이 없으니 true("제안 없음"). */

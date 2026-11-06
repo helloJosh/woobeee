@@ -47,6 +47,8 @@ describe("request status", () => {
 
     it("AI-AC-18 blocks submitting while a request is in flight, and only then", () => {
         expect(canSubmit(null)).toBe(true)
+        // 서버가 요청이 없을 때 data 를 null 이 아니라 빼 버려도(undefined) 화면이 죽으면 안 된다.
+        expect(canSubmit(undefined)).toBe(true)
         expect(STATUSES.filter((status) => canSubmit({ status }))).toEqual(["DRAFTED", "APPLIED", "DEAD"])
     })
 

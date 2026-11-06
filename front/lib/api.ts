@@ -741,7 +741,8 @@ async function aiRequest<T>(endpoint: string, method: string, body?: FormData): 
 
 export const aiAPI = {
     /** 내 가장 최근 요청. 없으면 null — 새로고침해도 진행 중인 요청을 다시 찾는다. */
-    latest: (): Promise<AiRequest | null> => aiRequest<AiRequest | null>("/api/back/ai/requests/latest", "GET"),
+    latest: async (): Promise<AiRequest | null> =>
+        (await aiRequest<AiRequest | null | undefined>("/api/back/ai/requests/latest", "GET")) ?? null,
 
     get: (id: string): Promise<AiRequest> => aiRequest<AiRequest>(`/api/back/ai/requests/${id}`, "GET"),
 
@@ -756,7 +757,7 @@ export const aiAPI = {
         aiRequest<AiRequest>(`/api/back/ai/requests/${id}/actions/${actionId}/reject`, "POST"),
 }
 
-/* ===== 포켓코인 공동구매 =
+/* ===== 포켓코인 공동구매 =====
  * 조회와 신청은 공개다 — 비회원도 쓸 수 있어야 하므로 토큰이 없어도 그냥 보낸다.
  * suppressAlert 를 켜는 이유는 game API 와 같다: 이 화면은 인라인 배너로 안내한다. */
 
