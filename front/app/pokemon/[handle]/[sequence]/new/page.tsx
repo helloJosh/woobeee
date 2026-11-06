@@ -14,7 +14,7 @@ import { buildAuthHref } from "@/lib/auth-redirect"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
-    RATE_MODE_LABELS, acceptsOrders, formatRate, rateFor, roundTitle,
+    acceptsOrders, formatRate, rateNote, roundTitle,
     type PokemonRoundBoard,
 } from "@/lib/pokemon"
 
@@ -98,10 +98,9 @@ export default function PokemonNewOrderPage() {
             </Button>
             <h1 className="text-2xl font-bold">신청서 작성</h1>
             <RateLine
-                rate={formatRate(rateFor(round, currentRate.toKrw), round.currency)}
-                fetchedAt={round.quotedAt}
+                rate={formatRate(currentRate.toKrw, round.currency)}
                 stale={currentRate.stale}
-                note={RATE_MODE_LABELS[round.rateMode]}
+                note={rateNote(currentRate)}
             />
         </header>
     )
@@ -127,7 +126,7 @@ export default function PokemonNewOrderPage() {
             <OrderForm
                 round={round}
                 products={products}
-                currentRate={currentRate.toKrw}
+                currentRate={currentRate}
                 initial={EMPTY_ORDER_FORM}
                 memberName={user?.name ?? null}
                 submitLabel="신청서 저장"

@@ -22,7 +22,7 @@ import java.util.Optional;
  * </ul>
  *
  * <p>폴백은 {@link ExchangeRate#stale()} 로 표시해 화면이 "지난 환율" 임을 드러낼 수 있게 한다.
- * 폴백조차 없으면 {@link PokemonErrorCode#RATE_UNAVAILABLE} — 환율을 모른 채로 신청을 받으면
+ * 폴백조차 없으면 {@link PokemonErrorCode#RATE_UNAVAILABLE} — 환율을 모른 채로 예상 금액을 내면
  * 이체 금액의 근거가 사라지므로 추정값을 만들어 내지 않는다.
  */
 @Service
@@ -59,6 +59,22 @@ public class ExchangeRateService {
         return read(lastKey(currency), currency)
                 .map(ExchangeRate::asStale)
                 .orElseThrow(PokemonErrorCode.RATE_UNAVAILABLE::asException);
+    }
+
+    /**
+     * 하루 한 번 도는 갱신({@link ExchangeRateRefresher}). 신선값이 살아 있어도 무시하고 다시 받는다.
+     * 제공자가 죽어도 예외를 던지지 않는다 — 다음 조회({@link #current})가 지연 조회로 보충한다.
+     */
+    public void refreshAll() {
+        for (String currency : properties.currencies()) {
+            try {
+                client.fetchToKrw(currency).ifPresentOrElse(
+                        this::cache,
+                        () -> log.warn("exchange rate refresh returned nothing for {}", currency));
+            } catch (Exception ex) {
+                log.warn("exchange rate refresh failed for {}: {}", currency, ex.toString());
+            }
+        }
     }
 
     private static String freshKey(String currency) {

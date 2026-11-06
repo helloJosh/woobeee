@@ -752,9 +752,6 @@ export interface PokemonOrderBody {
 export interface PokemonRoundBody {
     title?: string
     currency: string
-    rateMode: "FIXED" | "PER_ORDER"
-    /** 비우면 서버가 지금 환율을 쓴다. */
-    quotedRate?: number
     /** 비우면 주최자 기본 계좌를 쓴다. */
     bankAccount?: string
     deadline?: string | null

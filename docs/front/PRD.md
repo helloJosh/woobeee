@@ -46,7 +46,7 @@ HOME(`/`) / RESUME(이력서 모달, 라우트 없음) / 일정(`/schedule`, 로
 ### 마이페이지 (`/mypage`)
 - 회원 전용이다. 비로그인이면 여기로 돌아오는 `next`를 달아 로그인으로 보낸다.
 - 프로필(닉네임·이메일·프로필 이미지)을 표시한다. 게임 결과·기보·게임머니는 game 도메인과 함께 제거돼 더는 없다.
-- 「내가 참가한 공동구매」 목록을 보인다(`GET /api/back/pokemon/orders/me`, POKEMON-AC-36). 차수 제목은 `/pokemon/{handle}?round=N`, 신청서 상태 배지는 `/pokemon/orders/{id}` 로 잇는다. 요약 줄은 진행 중·전달완료·취소 건수와 **입금할 금액**(`ORDERED` 신청서의 `transferKrw` 합)이다 — 취소는 진행 중·입금할 금액에서 뺀다.
+- 「내가 참가한 공동구매」 목록을 보인다(`GET /api/back/pokemon/orders/me`, POKEMON-AC-36). 차수 제목은 `/pokemon/{handle}?round=N`, 신청서 상태 배지는 `/pokemon/orders/{id}` 로 잇는다. 요약 줄은 진행 중·전달완료·취소 건수와 **입금할 금액**(`ORDERED` 신청서의 `estimatedKrw` 합(환율을 모르는 줄은 제외))이다 — 취소는 진행 중·입금할 금액에서 뺀다.
 
 ### 블로그
 - `/blog` 목록, `/blog/[postId]` 상세를 제공한다.

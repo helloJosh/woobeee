@@ -13,7 +13,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
-    RATE_MODE_LABELS, canModifyOrder, formatRate, rateFor, roundTitle,
+    canModifyOrder, formatRate, rateNote, roundTitle,
     type PokemonOrderDetail, type PokemonRoundBoard, type PokemonSelection,
 } from "@/lib/pokemon"
 
@@ -122,10 +122,9 @@ export default function PokemonEditOrderPage() {
             <h1 className="text-2xl font-bold">신청서 수정</h1>
             <p className="text-xs text-muted-foreground">{roundTitle(round)}</p>
             <RateLine
-                rate={formatRate(rateFor(round, rate.toKrw), round.currency)}
-                fetchedAt={round.quotedAt}
+                rate={formatRate(rate.toKrw, round.currency)}
                 stale={rate.stale}
-                note={RATE_MODE_LABELS[round.rateMode]}
+                note={rateNote(rate)}
             />
         </header>
     )
@@ -152,7 +151,7 @@ export default function PokemonEditOrderPage() {
             <OrderForm
                 round={round}
                 products={products}
-                currentRate={rate.toKrw}
+                currentRate={rate}
                 initial={initial}
                 memberName={user?.name ?? order.applicantName}
                 submitLabel="수정 저장"

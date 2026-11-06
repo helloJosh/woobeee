@@ -2,7 +2,8 @@
 // 컴포넌트에는 판단을 두지 않는다 (vitest 가 node 환경이라 컴포넌트는 검증 밖이다).
 //
 // 구조: 주최자가 차수(1차·2차·3차)를 열고 친구들이 거기에 신청한다.
-// 통화·환율·계좌는 차수가 들고, 개인별로 다른 것(입금)은 신청서가 든다.
+// 통화·계좌는 차수가 들고, 개인별로 다른 것(입금)은 신청서가 든다.
+// 원화는 저장하지 않는다 — 하루 한 번 갱신되는 오늘 환율로 매번 계산한 "예상 금액"이다.
 
 /* ===== 서버 계약 (app-mvc pokemon 도메인과 1:1) ===== */
 
@@ -11,9 +12,6 @@ export type PokemonRoundStatus = "OPEN" | "CLOSED" | "PURCHASED" | "DELIVERED" |
 
 /** 신청서의 진행 단계. 개인별로 다른 것만 여기 있다. */
 export type PokemonOrderStatus = "ORDERED" | "DEPOSIT_CONFIRMED" | "DELIVERED" | "CANCELLED"
-
-/** 환율을 어떻게 잡을지. 주최자가 차수를 열 때 고른다. */
-export type PokemonRateMode = "FIXED" | "PER_ORDER"
 
 export interface PokemonRound {
     id: number
@@ -24,22 +22,14 @@ export interface PokemonRound {
     title: string | null
     /** ISO 4217. 이 차수의 상품·금액이 모두 이 통화다. */
     currency: string
-    rateMode: PokemonRateMode
-    /** 1 currency = N KRW. FIXED 일 때 쓰는 값. */
-    quotedRate: number
-    quotedAt: string
     bankAccount: string
     deadline: string | null
     status: PokemonRoundStatus
-    /** 실제 결제 시점의 환율. 채워져 있으면 환차손익이 확정된 차수다. */
-    settledRate: number | null
-    settledAt: string | null
     memo: string | null
     createdAt: string
     /** 이 화면을 보는 사람이 이 차수를 주무를 수 있는가. 서버가 판단한다. */
     canManage: boolean
     orderCount: number
-    transferKrwTotal: number
 }
 
 export interface PokemonProduct {
@@ -96,13 +86,11 @@ export interface PokemonOrder {
     totalAmount: number
     /** 상품표에 없는 것을 위한 자유 입력 금액. 없으면 0. */
     extraAmount: number
-    /** 이 신청서에 적용된 환율. 차수 방식에 따라 차수 환율이거나 신청 시점 환율이다. */
-    quotedRate: number
-    quotedAt: string
-    itemsKrw: number
+    /** round(루피 합계 × 오늘 환율). 기부금을 뺀 예상 상품값. */
+    estimatedItemsKrw: number
     donationKrw: number
-    /** itemsKrw + donationKrw — 신청자가 실제로 이체해야 하는 금액. */
-    transferKrw: number
+    /** estimatedItemsKrw + donationKrw — 예상 이체 금액. 실제 청구와 다를 수 있다. */
+    estimatedKrw: number
     memo: string | null
     createdAt: string
     items: PokemonOrderItem[]
@@ -175,11 +163,6 @@ export const ORDER_STATUS_LABELS: Record<PokemonOrderStatus, string> = {
 /** 목록에서 운영자가 고를 수 있는 신청서 상태 — 진행 경로 전부와 취소. 서버가 전이 순서를 강제하지 않는다. */
 export const ORDER_STATUS_OPTIONS: PokemonOrderStatus[] = [...ORDER_STATUS_FLOW, "CANCELLED"]
 
-export const RATE_MODE_LABELS: Record<PokemonRateMode, string> = {
-    FIXED: "차수 환율로 고정",
-    PER_ORDER: "신청 시점 환율",
-}
-
 /**
  * 몇 단계 중 몇 번째까지 왔는가. 첫 단계도 1로 센다 — 갓 시작한 것이 0% 로 비어 보이면 안 된다.
  * 취소는 진행 경로 밖이라 null 이다. 0 이 아니다.
@@ -212,11 +195,6 @@ export function isOrderActive(order: PokemonOrder): boolean {
 /** 모집중일 때만 신청을 받는다. */
 export function acceptsOrders(round: PokemonRound): boolean {
     return round.status === "OPEN"
-}
-
-/** 결제까지 끝났으면 환율이 박혀 있고, 그때부터 환차손익은 움직이지 않는다. */
-export function isRoundSettled(round: PokemonRound): boolean {
-    return round.settledRate !== null && round.settledRate > 0
 }
 
 /* ===== 상품 ===== */
@@ -257,14 +235,14 @@ export interface PokemonQuote {
     totalAmount: number
     totalCoins: number
     /** round(totalAmount × rate) — 서버의 HALF_UP 과 같은 결과를 낸다. */
-    itemsKrw: number
+    estimatedItemsKrw: number
     donationKrw: number
-    transferKrw: number
+    estimatedKrw: number
 }
 
 /**
- * 신청 화면의 미리보기. {@link rateFor} 가 고른 환율을 넘겨야 저장될 금액과 어긋나지 않는다.
- * 저장된 신청서는 서버가 박아 둔 금액을 그대로 쓴다.
+ * 신청 화면의 미리보기. 오늘 환율(`currentRate.toKrw`)을 넘긴다.
+ * 저장된 신청서의 예상 금액은 서버가 응답마다 새로 계산해 준다.
  */
 export function quote(
     selection: PokemonSelection,
@@ -277,43 +255,15 @@ export function quote(
     const extra = Math.max(0, round2(extraAmount))
     const totalAmount = round2(lines.reduce((sum, line) => sum + line.lineAmount, extra))
     const totalCoins = lines.reduce((sum, line) => sum + line.lineCoins, 0)
-    const itemsKrw = toKrw(totalAmount, rate)
+    const estimatedItemsKrw = toKrw(totalAmount, rate)
     const donation = Math.max(0, Math.trunc(donationKrw))
 
-    return { totalAmount, totalCoins, itemsKrw, donationKrw: donation, transferKrw: itemsKrw + donation }
+    return { totalAmount, totalCoins, estimatedItemsKrw, donationKrw: donation, estimatedKrw: estimatedItemsKrw + donation }
 }
 
-/** 외화 -> 원. 서버가 BigDecimal.setScale(0, HALF_UP) 로 하는 것과 같은 반올림이다. */
+/** 외화 -> 원. 서버의 BigDecimal HALF_UP 에 가깝지만 부동소수 때문에 .5 경계에서 1원 어긋날 수 있다 — 미리보기용이다. */
 export function toKrw(amount: number, rate: number): number {
     return Math.round(amount * rate)
-}
-
-/**
- * 이 차수에서 지금 신청하면 쓸 환율. FIXED 면 차수 환율, PER_ORDER 면 현재 환율이다 —
- * 서버의 PokemonRounds.rateFor 와 같은 규칙이라 미리보기와 저장 금액이 어긋나지 않는다.
- */
-export function rateFor(round: PokemonRound, currentRate: number): number {
-    return round.rateMode === "PER_ORDER" ? currentRate : round.quotedRate
-}
-
-/* ===== 환차손익 ===== */
-
-/**
- * 손익을 재는 기준 환율. 차수가 결제까지 끝났으면 그때 박힌 환율로 확정되고,
- * 아직이면 현재 환율로 평가한다.
- */
-export function effectiveRate(round: PokemonRound, currentRate: number): number {
-    return isRoundSettled(round) ? (round.settledRate as number) : currentRate
-}
-
-/**
- * 신청서 한 건의 환차손익(원). 받아 둔 상품값에서 기준 환율로 실제로 드는 돈을 뺀 값이다.
- * 양수면 남고(이득), 음수면 모자란다.
- *
- * <p>기부금은 빼고 본다 — 환율과 무관한 순수 이득이라 섞으면 환차가 안 보인다.
- */
-export function fxDelta(order: PokemonOrder, round: PokemonRound, currentRate: number): number {
-    return order.itemsKrw - toKrw(order.totalAmount, effectiveRate(round, currentRate))
 }
 
 /* ===== 집계 ===== */
@@ -324,22 +274,16 @@ export interface PokemonRoundSummary {
     totalCoins: number
     /** 차수 통화 기준 총액 — 주최자가 스토어에서 실제로 써야 할 돈. */
     totalAmount: number
-    /** 받아야 할 이체 금액 총합. */
+    /** 예상 이체 금액 총합 — 신청서별 예상 금액을 그대로 더한다(1원 오차 없음). */
     totalTransferKrw: number
-    /** 기부금을 뺀 상품값 합계. */
+    /** 기부금을 뺀 예상 상품값 합계. */
     totalItemsKrw: number
     /** 아직 입금이 확인되지 않은 금액과 그 사람들. */
     outstandingKrw: number
     awaitingDeposit: PokemonOrder[]
-    /** 차수 전체의 환차손익. */
-    fxKrw: number
 }
 
-export function summarizeRound(
-    orders: PokemonOrder[],
-    round: PokemonRound,
-    currentRate: number,
-): PokemonRoundSummary {
+export function summarizeRound(orders: PokemonOrder[]): PokemonRoundSummary {
     const statusCounts: Record<PokemonOrderStatus, number> = {
         ORDERED: 0, DEPOSIT_CONFIRMED: 0, DELIVERED: 0, CANCELLED: 0,
     }
@@ -354,11 +298,10 @@ export function summarizeRound(
         statusCounts,
         totalCoins: active.reduce((sum, order) => sum + orderCoins(order), 0),
         totalAmount: round2(active.reduce((sum, order) => sum + order.totalAmount, 0)),
-        totalTransferKrw: active.reduce((sum, order) => sum + order.transferKrw, 0),
-        totalItemsKrw: active.reduce((sum, order) => sum + order.itemsKrw, 0),
-        outstandingKrw: awaitingDeposit.reduce((sum, order) => sum + order.transferKrw, 0),
+        totalTransferKrw: active.reduce((sum, order) => sum + order.estimatedKrw, 0),
+        totalItemsKrw: active.reduce((sum, order) => sum + order.estimatedItemsKrw, 0),
+        outstandingKrw: awaitingDeposit.reduce((sum, order) => sum + order.estimatedKrw, 0),
         awaitingDeposit,
-        fxKrw: active.reduce((sum, order) => sum + fxDelta(order, round, currentRate), 0),
     }
 }
 
@@ -530,9 +473,6 @@ export function validateProductDraft(draft: PokemonProductDraft, currencies: str
 export interface PokemonRoundDraft {
     title: string
     currency: string
-    rateMode: PokemonRateMode
-    /** 비우면 지금 환율을 그대로 쓴다. */
-    quotedRate: string
     bankAccount: string
     deadline: string
     memo: string
@@ -557,12 +497,6 @@ export function validateRoundDraft(
     }
     if (draft.title.trim().length > 100) {
         return "제목은 100자까지 입력할 수 있습니다."
-    }
-    if (draft.rateMode === "FIXED" && draft.quotedRate.trim() !== "") {
-        const rate = Number(draft.quotedRate.trim())
-        if (!Number.isFinite(rate) || rate <= 0) {
-            return "환율은 0보다 큰 숫자로 입력해 주세요."
-        }
     }
     return null
 }
@@ -602,15 +536,21 @@ export function formatKrw(value: number): string {
     return `${Math.round(value).toLocaleString("ko-KR")}원`
 }
 
-/** 부호를 항상 붙인다 — 손익은 방향이 값보다 중요하다. 0 은 부호 없이. */
-export function formatSignedKrw(value: number): string {
-    const rounded = Math.round(value)
-    if (rounded === 0) return "0원"
-    return `${rounded > 0 ? "+" : "−"}${Math.abs(rounded).toLocaleString("ko-KR")}원`
-}
-
 export function formatRate(rate: number, currency: string): string {
     return `${currencySymbol(currency)}1 = ${rate.toFixed(4)}원`
+}
+
+/**
+ * "오늘 환율 기준 예상" 문구(POKEMON-AC-39). 날짜는 문자열에서 그대로 읽는다 —
+ * Date 로 바꾸면 브라우저 시간대에 따라 날짜가 하루 밀릴 수 있다.
+ */
+export function rateNote(rate: { fetchedAt: string; stale: boolean }): string {
+    const match = /^\d{4}-(\d{2})-(\d{2})/.exec(rate.fetchedAt)
+    const when = match ? `${Number(match[1])}월 ${Number(match[2])}일` : ""
+    if (rate.stale) {
+        return when ? `마지막으로 확인된 환율 기준 예상 (${when})` : "마지막으로 확인된 환율 기준 예상"
+    }
+    return when ? `${when} 환율 기준 예상` : "오늘 환율 기준 예상"
 }
 
 export function formatCoins(coins: number): string {
@@ -638,8 +578,8 @@ export interface PokemonMyOrder {
     currency: string
     roundStatus: PokemonRoundStatus
     orderStatus: PokemonOrderStatus
-    /** 신청자가 실제로 이체해야 하는 금액(상품값 + 기부금). */
-    transferKrw: number
+    /** 예상 이체 금액(상품값 환산 + 기부금) — 오늘 환율 기준. 그 통화의 환율을 모르면 null. */
+    estimatedKrw: number | null
     createdAt: string
 }
 
@@ -664,13 +604,13 @@ export interface PokemonMyOrderSummary {
     inProgress: number
     delivered: number
     cancelled: number
-    /** 입금확인 전(`ORDERED`) 신청서의 이체 금액 합 — 내가 아직 보내야 할 돈. */
+    /** 입금확인 전(`ORDERED`) 신청서의 예상 금액 합 — 내가 아직 보내야 할 돈. */
     unpaidKrw: number
 }
 
 /**
  * 내 신청서의 현황. 취소는 진행 경로 밖이라 진행 중에도 미입금에도 세지 않는다
- * (POKEMON-AC-17 과 같은 이유). 통화가 달라도 이체액은 원화라 그대로 더한다.
+ * (POKEMON-AC-17 과 같은 이유). 통화가 달라도 예상 금액은 원화라 그대로 더한다.
  */
 export function summarizeMyOrders(orders: PokemonMyOrder[]): PokemonMyOrderSummary {
     const summary: PokemonMyOrderSummary = { total: orders.length, inProgress: 0, delivered: 0, cancelled: 0, unpaidKrw: 0 }
@@ -683,7 +623,7 @@ export function summarizeMyOrders(orders: PokemonMyOrder[]): PokemonMyOrderSumma
             summary.inProgress += 1
         }
         if (order.orderStatus === "ORDERED") {
-            summary.unpaidKrw += order.transferKrw
+            summary.unpaidKrw += order.estimatedKrw ?? 0
         }
     }
     return summary

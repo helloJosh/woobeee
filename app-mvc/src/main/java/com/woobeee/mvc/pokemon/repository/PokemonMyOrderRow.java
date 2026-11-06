@@ -1,5 +1,6 @@
 package com.woobeee.mvc.pokemon.repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -23,7 +24,9 @@ public interface PokemonMyOrderRow {
 
     String getOrderStatus();
 
-    Long getTransferKrw();
+    BigDecimal getTotalAmount();
+
+    Long getDonationKrw();
 
     LocalDateTime getCreatedAt();
 }

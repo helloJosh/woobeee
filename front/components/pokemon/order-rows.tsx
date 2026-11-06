@@ -7,7 +7,7 @@ import { OrderProgressBar } from "@/components/pokemon/progress-steps"
 import { OrderStatusBadge } from "@/components/pokemon/pokemon-bits"
 import {
     ORDER_STATUS_LABELS, ORDER_STATUS_OPTIONS,
-    formatAmount, formatCoins, formatKrw, formatSignedKrw, fxDelta, orderCoins,
+    formatAmount, formatCoins, formatKrw, orderCoins,
     type PokemonOrder, type PokemonOrderStatus, type PokemonRound,
 } from "@/lib/pokemon"
 
@@ -15,18 +15,19 @@ import {
 export default function OrderRows({
     orders,
     round,
-    currentRate,
+    note,
     onChangeStatus,
 }: {
     orders: PokemonOrder[]
     round: PokemonRound
-    /** 그 차수 통화의 현재 환율 — 환차손익을 내는 데 쓴다. */
-    currentRate: number
+    /** "○월 ○일 환율 기준 예상" — 목록의 원화가 모두 예상 금액임을 밝힌다(POKEMON-AC-39). */
+    note: string
     /** 넘기면(=운영자) 행마다 상태를 바로 바꾸는 선택창을 그린다. 없으면 배지만 보인다. */
     onChangeStatus?: (order: PokemonOrder, next: PokemonOrderStatus) => void
 }) {
     return (
         <>
+            <p className="text-xs text-muted-foreground">{note}</p>
             {orders.map((order) => {
                 return (
                     <Link
@@ -86,7 +87,7 @@ export default function OrderRows({
                             <OrderProgressBar status={order.status} />
                         </div>
 
-                        <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                        <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
                             <div>
                                 <dt className="text-xs text-muted-foreground">받는 포켓코인</dt>
                                 <dd className="font-semibold">{formatCoins(orderCoins(order))}</dd>
@@ -96,14 +97,8 @@ export default function OrderRows({
                                 <dd>{formatAmount(order.totalAmount, round.currency)}</dd>
                             </div>
                             <div>
-                                <dt className="text-xs text-muted-foreground">이체할 금액</dt>
-                                <dd className="font-semibold">{formatKrw(order.transferKrw)}</dd>
-                            </div>
-                            <div>
-                                <dt className="text-xs text-muted-foreground">환차손익</dt>
-                                <dd className="text-sm">
-                                    {formatSignedKrw(fxDelta(order, round, currentRate))}
-                                </dd>
+                                <dt className="text-xs text-muted-foreground">예상 금액</dt>
+                                <dd className="font-semibold">{formatKrw(order.estimatedKrw)}</dd>
                             </div>
                         </dl>
                     </Link>

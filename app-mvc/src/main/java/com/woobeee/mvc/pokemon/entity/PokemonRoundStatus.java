@@ -11,7 +11,7 @@ public enum PokemonRoundStatus {
     OPEN,
     /** 마감. 더 받지 않고 입금을 모은다. */
     CLOSED,
-    /** 주최자가 스토어에서 결제했다 — 환차손익이 여기서 확정된다. */
+    /** 주최자가 스토어에서 결제했다. */
     PURCHASED,
     /** 참가자에게 전부 전달했다. */
     DELIVERED,

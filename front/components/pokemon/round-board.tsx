@@ -12,9 +12,9 @@ import Pager from "@/components/pokemon/pager"
 import { RoundProgressSteps } from "@/components/pokemon/progress-steps"
 import { BankAccountLine, RateLine, Stat } from "@/components/pokemon/pokemon-bits"
 import {
-    ORDER_STATUS_LABELS, RATE_MODE_LABELS, ROUND_STATUS_FLOW, ROUND_STATUS_LABELS,
-    acceptsOrders, formatAmount, formatCoins, formatKrw, formatRate,
-    paginate, rateFor, summarizeRound,
+    ORDER_STATUS_LABELS, ROUND_STATUS_FLOW, ROUND_STATUS_LABELS,
+    acceptsOrders, formatAmount, formatCoins, formatKrw, formatRate, rateNote,
+    paginate, summarizeRound,
     type PokemonOrder, type PokemonOrderStatus, type PokemonRoundBoard, type PokemonRoundStatus,
 } from "@/lib/pokemon"
 
@@ -36,11 +36,7 @@ export default function RoundBoard({
 }) {
     const [page, setPage] = useState(1)
     const { round, currentRate, orders } = board
-    const summary = useMemo(
-        () => summarizeRound(orders, round, currentRate.toKrw),
-        [orders, round, currentRate],
-    )
-    const applyRate = rateFor(round, currentRate.toKrw)
+    const summary = useMemo(() => summarizeRound(orders), [orders])
     const paged = paginate(orders, page)
 
     return (
@@ -87,10 +83,9 @@ export default function RoundBoard({
                 <CardContent className="space-y-3">
                     <RoundProgressSteps status={round.status} />
                     <RateLine
-                        rate={formatRate(applyRate, round.currency)}
-                        fetchedAt={round.quotedAt}
+                        rate={formatRate(currentRate.toKrw, round.currency)}
                         stale={currentRate.stale}
-                        note={RATE_MODE_LABELS[round.rateMode]}
+                        note={rateNote(currentRate)}
                     />
                     <BankAccountLine account={round.bankAccount} />
                     {round.deadline !== null && (
@@ -113,8 +108,8 @@ export default function RoundBoard({
                         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-5">
                             <Stat label={`${round.currency} 합계`}
                                   value={formatAmount(summary.totalAmount, round.currency)} />
-                            <Stat label="기부금 뺀 금액" value={formatKrw(summary.totalItemsKrw)} />
-                            <Stat label="이체 합계 (기부금 포함)" value={formatKrw(summary.totalTransferKrw)} />
+                            <Stat label="기부금 뺀 예상 금액" value={formatKrw(summary.totalItemsKrw)} />
+                            <Stat label="예상 이체 합계 (기부금 포함)" value={formatKrw(summary.totalTransferKrw)} />
                             <Stat label={`미입금 ${summary.awaitingDeposit.length}건`}
                                   value={formatKrw(summary.outstandingKrw)} />
                             <Stat label="총 포켓코인" value={formatCoins(summary.totalCoins)} />
@@ -157,7 +152,7 @@ export default function RoundBoard({
                         </div>
                     ) : (
                         <>
-                            <OrderRows orders={paged.items} round={round} currentRate={currentRate.toKrw}
+                            <OrderRows orders={paged.items} round={round} note={rateNote(currentRate)}
                                        onChangeStatus={round.canManage ? onChangeOrderStatus : undefined} />
                             <Pager page={paged.page} totalPages={paged.totalPages}
                                    total={orders.length} onChange={setPage} />

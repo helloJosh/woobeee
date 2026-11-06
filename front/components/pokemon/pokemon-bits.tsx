@@ -44,22 +44,20 @@ export function BankAccountLine({ account }: { account: string }) {
     return <p className="text-xs text-muted-foreground">입금 계좌 · {account}</p>
 }
 
+/** 오늘 환율과 "○월 ○일 환율 기준 예상" 문구(`rateNote`). 지난 값이면 갱신 실패 배지를 더한다. */
 export function RateLine({
     rate,
-    fetchedAt,
     stale,
     note,
 }: {
     rate: string
-    fetchedAt: string
     stale: boolean
-    note?: string
+    note: string
 }) {
     return (
         <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="secondary">{rate}</Badge>
-            {note !== undefined && <span>{note}</span>}
-            <span>기준 {new Date(fetchedAt).toLocaleString("ko-KR")}</span>
+            <span>{note}</span>
             {stale && <Badge variant="destructive">환율 갱신 실패 — 지난 값</Badge>}
         </div>
     )

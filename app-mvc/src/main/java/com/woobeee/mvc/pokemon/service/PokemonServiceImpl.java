@@ -7,6 +7,7 @@ import com.woobeee.mvc.pokemon.api.request.*;
 import com.woobeee.mvc.pokemon.api.response.*;
 import com.woobeee.mvc.pokemon.entity.*;
 import com.woobeee.mvc.pokemon.exception.PokemonErrorCode;
+import com.woobeee.mvc.pokemon.exception.PokemonException;
 import com.woobeee.mvc.pokemon.rate.ExchangeRate;
 import com.woobeee.mvc.pokemon.rate.ExchangeRateService;
 import com.woobeee.mvc.pokemon.repository.*;
@@ -122,10 +123,9 @@ public class PokemonServiceImpl implements PokemonService {
                 .orElseThrow(PokemonErrorCode.HOST_REQUIRED::asException);
 
         String currency = request.currency().toUpperCase(Locale.ROOT);
-        ExchangeRate live = exchangeRateService.current(currency);
-        PokemonRateMode rateMode = rateMode(request.rateMode());
-        // 환율을 적어 내지 않으면 지금 환율을 그대로 쓴다.
-        BigDecimal quotedRate = request.quotedRate() == null ? live.toKrw() : request.quotedRate();
+        if (!exchangeRateService.supportedCurrencies().contains(currency)) {
+            throw PokemonErrorCode.UNSUPPORTED_CURRENCY.asException();
+        }
 
         int nextSequence = roundRepository.findFirstByHostMemberIdOrderBySequenceDesc(member.getId())
                 .map(PokemonRounds::getSequence).orElse(0) + 1;
@@ -141,15 +141,14 @@ public class PokemonServiceImpl implements PokemonService {
 
         PokemonRounds saved = roundRepository.save(PokemonRounds.open(
                 member.getId(), nextSequence, trimmedOrNull(request.title()), currency,
-                rateMode, quotedRate, live.fetchedAt(), bankAccount,
-                request.deadline(), trimmedOrNull(request.memo())));
+                bankAccount, request.deadline(), trimmedOrNull(request.memo())));
 
         // 내 상품표(틀)를 이 차수로 복사한다. 이 뒤로 둘은 서로 영향을 주지 않으므로,
         // 다음 달 패스로 틀을 고쳐도 이미 연 차수의 목록은 그대로다.
         LocalDateTime now = LocalDateTime.now();
         itemTemplateCopy(member.getId(), currency, saved.getId(), now);
 
-        return PokemonRoundResponse.of(saved, host.getHandle(), member.getNickname(), true, 0, 0);
+        return PokemonRoundResponse.of(saved, host.getHandle(), member.getNickname(), true, 0);
     }
 
     @Override
@@ -162,6 +161,7 @@ public class PokemonServiceImpl implements PokemonService {
                 .orElseThrow(PokemonErrorCode.ROUND_NOT_FOUND::asException);
 
         Long viewerId = memberResolver.optionalMemberId(loginId);
+        ExchangeRate rate = exchangeRateService.current(round.getCurrency());
         List<PokemonOrders> orders = orderRepository.findAllByRoundIdOrderByCreatedAtDesc(round.getId());
         List<Long> orderIds = orders.stream().map(PokemonOrders::getId).toList();
         Map<Long, List<PokemonOrderItemResponse>> itemsByOrder = loadItems(orderIds);
@@ -169,8 +169,8 @@ public class PokemonServiceImpl implements PokemonService {
 
         return new PokemonRoundBoardResponse(
                 PokemonRoundResponse.of(round, host.getHandle(), memberName(host.getMemberId()),
-                        canManage(round, viewerId), activeCount(orders), transferTotal(orders)),
-                ExchangeRateResponse.from(exchangeRateService.current(round.getCurrency())),
+                        canManage(round, viewerId), activeCount(orders)),
+                ExchangeRateResponse.from(rate),
                 productRepository.findAllByRoundIdAndActiveTrueOrderBySortOrderAsc(round.getId())
                         .stream().map(PokemonProductResponse::from).toList(),
                 orders.stream()
@@ -178,7 +178,8 @@ public class PokemonServiceImpl implements PokemonService {
                                 order,
                                 itemsByOrder.getOrDefault(order.getId(), List.of()),
                                 commentsByOrder.getOrDefault(order.getId(), List.of()),
-                                viewerId))
+                                viewerId,
+                                rate.toKrw()))
                         .toList());
     }
 
@@ -187,12 +188,8 @@ public class PokemonServiceImpl implements PokemonService {
     public PokemonRoundResponse updateRound(String loginId, Long roundId, PutPokemonRoundRequest request) {
         PokemonRounds round = requireManagedRound(loginId, roundId);
 
-        BigDecimal quotedRate = request.quotedRate() == null ? round.getQuotedRate() : request.quotedRate();
-        LocalDateTime quotedAt = quotedRate.compareTo(round.getQuotedRate()) == 0
-                ? round.getQuotedAt() : LocalDateTime.now();
-
         round.update(trimmedOrNull(request.title()), request.bankAccount().trim(), request.deadline(),
-                trimmedOrNull(request.memo()), rateMode(request.rateMode()), quotedRate, quotedAt);
+                trimmedOrNull(request.memo()));
         return describe(round, memberResolver.optionalMemberId(loginId));
     }
 
@@ -201,9 +198,7 @@ public class PokemonServiceImpl implements PokemonService {
     public PokemonRoundResponse changeRoundStatus(String loginId, Long roundId,
                                                   PatchPokemonRoundStatusRequest request) {
         PokemonRounds round = requireManagedRound(loginId, roundId);
-        // 결제 완료로 넘길 때 그 순간의 환율이 필요하다 — 다른 전이에서는 쓰이지 않는다.
-        ExchangeRate live = exchangeRateService.current(round.getCurrency());
-        round.changeStatus(request.status(), live.toKrw(), LocalDateTime.now());
+        round.changeStatus(request.status());
         return describe(round, memberResolver.optionalMemberId(loginId));
     }
 
@@ -225,8 +220,16 @@ public class PokemonServiceImpl implements PokemonService {
     public List<PokemonMyOrderResponse> getMyOrders(String loginId) {
         Member member = memberResolver.optionalMember(loginId)
                 .orElseThrow(PokemonErrorCode.LOGIN_REQUIRED::asException);
-        return orderRepository.findMyOrders(member.getId()).stream()
-                .map(PokemonMyOrderResponse::of)
+        List<PokemonMyOrderRow> rows = orderRepository.findMyOrders(member.getId());
+        // 환율은 통화마다 한 번만 읽는다 — 신청서마다 읽으면 Redis 왕복이 N 번이다.
+        Map<String, Optional<BigDecimal>> rates = new HashMap<>();
+        return rows.stream()
+                .map(row -> {
+                    Optional<BigDecimal> rate = rates.computeIfAbsent(row.getCurrency(), this::rateOrEmpty);
+                    return PokemonMyOrderResponse.of(row, rate
+                            .map(r -> toKrw(row.getTotalAmount(), r) + row.getDonationKrw())
+                            .orElse(null));
+                })
                 .toList();
     }
 
@@ -238,10 +241,11 @@ public class PokemonServiceImpl implements PokemonService {
         PokemonRounds round = requireRound(order.getRoundId());
         Long viewerId = memberResolver.optionalMemberId(loginId);
 
+        ExchangeRate rate = exchangeRateService.current(round.getCurrency());
         return new PokemonOrderDetailResponse(
-                ExchangeRateResponse.from(exchangeRateService.current(round.getCurrency())),
+                ExchangeRateResponse.from(rate),
                 describe(round, viewerId),
-                toResponse(order, viewerId),
+                toResponse(order, viewerId, rate.toKrw()),
                 canManage(round, viewerId));
     }
 
@@ -266,11 +270,6 @@ public class PokemonServiceImpl implements PokemonService {
                         .multiply(BigDecimal.valueOf(item.quantity())))
                 .reduce(extraAmount, BigDecimal::add);
 
-        // 차수가 정한 방식대로 환율을 고른다 — FIXED 면 차수 환율, PER_ORDER 면 지금 환율.
-        ExchangeRate live = exchangeRateService.current(round.getCurrency());
-        BigDecimal rate = round.rateFor(live.toKrw());
-        long itemsKrw = toKrw(totalAmount, rate);
-
         PokemonOrders saved = orderRepository.save(PokemonOrders.create(
                 round.getId(),
                 member.getId(),
@@ -278,9 +277,6 @@ public class PokemonServiceImpl implements PokemonService {
                 trimmedOrNull(request.depositorName()),
                 totalAmount,
                 extraAmount,
-                rate,
-                live.fetchedAt(),
-                itemsKrw,
                 request.donationKrw(),
                 trimmedOrNull(request.memo())));
 
@@ -293,7 +289,8 @@ public class PokemonServiceImpl implements PokemonService {
                 saved,
                 savedItems.stream().map(PokemonOrderItemResponse::from).toList(),
                 List.of(),
-                member.getId());
+                member.getId(),
+                exchangeRateService.current(round.getCurrency()).toKrw());
     }
 
     @Override
@@ -313,12 +310,8 @@ public class PokemonServiceImpl implements PokemonService {
                         .multiply(BigDecimal.valueOf(item.quantity())))
                 .reduce(extraAmount, BigDecimal::add);
 
-        ExchangeRate live = exchangeRateService.current(round.getCurrency());
-        BigDecimal rate = round.rateFor(live.toKrw());
-
         order.reprice(order.getApplicantName(), trimmedOrNull(request.depositorName()), totalAmount, extraAmount,
-                rate, live.fetchedAt(), toKrw(totalAmount, rate), request.donationKrw(),
-                trimmedOrNull(request.memo()));
+                request.donationKrw(), trimmedOrNull(request.memo()));
 
         // 항목은 전체 교체다. 수량만 바뀐 줄을 가려내는 것보다 지우고 다시 넣는 편이 단순하다.
         itemRepository.deleteAllByOrderId(orderId);
@@ -328,7 +321,8 @@ public class PokemonServiceImpl implements PokemonService {
                         item.quantity()))
                 .toList());
 
-        return toResponse(order, memberResolver.optionalMemberId(loginId));
+        return toResponse(order, memberResolver.optionalMemberId(loginId),
+                exchangeRateService.current(round.getCurrency()).toKrw());
     }
 
     @Override
@@ -337,10 +331,13 @@ public class PokemonServiceImpl implements PokemonService {
                                              PatchPokemonOrderStatusRequest request) {
         PokemonOrders order = orderRepository.findById(orderId)
                 .orElseThrow(PokemonErrorCode.ORDER_NOT_FOUND::asException);
-        requireHostOfRound(loginId, requireRound(order.getRoundId()));
+        PokemonRounds round = requireRound(order.getRoundId());
+        requireHostOfRound(loginId, round);
 
         order.changeStatus(request.status());
-        return toResponse(order, memberResolver.optionalMemberId(loginId));
+        // 예상 금액은 응답의 덤이다 — 환율을 몰라도 상태 변경 자체는 성공해야 한다.
+        return toResponse(order, memberResolver.optionalMemberId(loginId),
+                rateOrEmpty(round.getCurrency()).orElse(null));
     }
 
     @Override
@@ -622,7 +619,7 @@ public class PokemonServiceImpl implements PokemonService {
         List<PokemonOrders> orders = orderRepository.findAllByRoundIdOrderByCreatedAtDesc(round.getId());
         return PokemonRoundResponse.of(round, handleOf(round.getHostMemberId()),
                 memberName(round.getHostMemberId()), canManage(round, viewerId),
-                activeCount(orders), transferTotal(orders));
+                activeCount(orders));
     }
 
     /** 차수 목록에 주최자·건수·금액을 붙인다 — 차수마다 조회하면 N+1 이라 한 번에 모아 온다. */
@@ -644,18 +641,13 @@ public class PokemonServiceImpl implements PokemonService {
                     List<PokemonOrders> orders = ordersByRound.getOrDefault(round.getId(), List.of());
                     return PokemonRoundResponse.of(round, handles.get(round.getHostMemberId()),
                             names.get(round.getHostMemberId()), canManage(round, viewerId),
-                            activeCount(orders), transferTotal(orders));
+                            activeCount(orders));
                 })
                 .toList();
     }
 
     private static int activeCount(List<PokemonOrders> orders) {
         return (int) orders.stream().filter(o -> o.getStatus().countsTowardTotals()).count();
-    }
-
-    private static long transferTotal(List<PokemonOrders> orders) {
-        return orders.stream().filter(o -> o.getStatus().countsTowardTotals())
-                .mapToLong(PokemonOrders::getTransferKrw).sum();
     }
 
     private String handleOf(Long memberId) {
@@ -666,7 +658,7 @@ public class PokemonServiceImpl implements PokemonService {
         return memberRepository.findById(memberId).map(Member::getNickname).orElse("알 수 없음");
     }
 
-    private PokemonOrderResponse toResponse(PokemonOrders order, Long viewerMemberId) {
+    private PokemonOrderResponse toResponse(PokemonOrders order, Long viewerMemberId, BigDecimal rateToKrw) {
         List<Long> ids = List.of(order.getId());
         return PokemonOrderResponse.of(
                 order,
@@ -674,7 +666,8 @@ public class PokemonServiceImpl implements PokemonService {
                         .map(PokemonOrderItemResponse::from).toList(),
                 commentRepository.findAllByOrderIdInOrderByCreatedAtAsc(ids).stream()
                         .map(comment -> PokemonCommentResponse.of(comment, viewerMemberId)).toList(),
-                viewerMemberId);
+                viewerMemberId,
+                rateToKrw);
     }
 
     private Map<Long, List<PokemonOrderItemResponse>> loadItems(List<Long> orderIds) {
@@ -734,16 +727,17 @@ public class PokemonServiceImpl implements PokemonService {
     }
 
 
-    private static long toKrw(BigDecimal amount, BigDecimal rate) {
-        return amount.multiply(rate).setScale(0, RoundingMode.HALF_UP).longValue();
+    /** 환율을 모르면(제공자 장애·통화가 설정에서 빠짐) 비워 돌려준다. 읽기·상태 변경이 이 때문에 죽으면 안 된다. */
+    private Optional<BigDecimal> rateOrEmpty(String currency) {
+        try {
+            return Optional.of(exchangeRateService.current(currency).toKrw());
+        } catch (PokemonException ex) {
+            return Optional.empty();
+        }
     }
 
-    private static PokemonRateMode rateMode(String raw) {
-        try {
-            return PokemonRateMode.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException ex) {
-            throw PokemonErrorCode.BAD_REQUEST.asException();
-        }
+    private static long toKrw(BigDecimal amount, BigDecimal rate) {
+        return amount.multiply(rate).setScale(0, RoundingMode.HALF_UP).longValue();
     }
 
     private String requireCurrency(String raw) {

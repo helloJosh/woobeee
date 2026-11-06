@@ -68,7 +68,7 @@ public class PokemonController {
     @PostMapping("/rounds")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "차수 개설",
-            description = "통화와 환율 방식(FIXED/PER_ORDER)을 정한다. 차수 번호는 주최자 안에서 자동으로 매겨진다.")
+            description = "통화를 정한다. 차수 번호는 주최자 안에서 자동으로 매겨진다.")
     public ApiResponse<PokemonRoundResponse> openRound(
             @RequestHeader(name = "loginId", required = false) String loginId,
             @Valid @RequestBody PostPokemonRoundRequest request) {
@@ -76,7 +76,7 @@ public class PokemonController {
     }
 
     @GetMapping("/hosts/{handle}/rounds/{sequence}")
-    @Operation(summary = "차수 화면", description = "차수·상품표·신청서 전체·현재 환율을 한 번에 가져옵니다.")
+    @Operation(summary = "차수 화면", description = "차수·상품표·신청서 전체(예상 금액 포함)·오늘 환율을 한 번에 가져옵니다.")
     public ApiResponse<PokemonRoundBoardResponse> getRoundBoard(
             @RequestHeader(name = "loginId", required = false) String loginId,
             @PathVariable String handle,
@@ -87,7 +87,7 @@ public class PokemonController {
 
     @PutMapping("/rounds/{roundId}")
     @Operation(summary = "차수 수정",
-            description = "통화는 바꿀 수 없다. 환율을 바꾸면 앞으로 들어올 신청서에만 적용된다.")
+            description = "통화는 바꿀 수 없다. 제목·계좌·마감일·메모를 고친다.")
     public ApiResponse<PokemonRoundResponse> updateRound(
             @RequestHeader(name = "loginId", required = false) String loginId,
             @PathVariable Long roundId,
@@ -97,7 +97,7 @@ public class PokemonController {
 
     @PatchMapping("/rounds/{roundId}/status")
     @Operation(summary = "차수 진행 상태 변경",
-            description = "PURCHASED 로 처음 넘어갈 때 그 순간의 환율이 박혀 환차손익이 확정된다.")
+            description = "차수 상태를 옮긴다. 환율을 읽지 않는다(환율 확정·환차손익 없음).")
     public ApiResponse<PokemonRoundResponse> changeRoundStatus(
             @RequestHeader(name = "loginId", required = false) String loginId,
             @PathVariable Long roundId,
@@ -165,7 +165,7 @@ public class PokemonController {
     }
 
     @GetMapping("/orders/{orderId}")
-    @Operation(summary = "신청서 세부 조회", description = "신청서 한 건 + 그 차수 + 현재 환율.")
+    @Operation(summary = "신청서 세부 조회", description = "신청서 한 건(예상 금액) + 그 차수 + 오늘 환율.")
     public ApiResponse<PokemonOrderDetailResponse> getOrder(
             @RequestHeader(name = "loginId", required = false) String loginId,
             @PathVariable Long orderId) {

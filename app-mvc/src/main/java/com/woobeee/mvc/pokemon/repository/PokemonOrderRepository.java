@@ -29,7 +29,8 @@ public interface PokemonOrderRepository extends JpaRepository<PokemonOrders, Lon
                    r.currency      AS "currency",
                    r.status        AS "roundStatus",
                    o.status        AS "orderStatus",
-                   o.transfer_krw  AS "transferKrw",
+                   o.total_amount  AS "totalAmount",
+                   o.donation_krw  AS "donationKrw",
                    o.created_at    AS "createdAt"
               FROM pokemon_orders o
               JOIN pokemon_rounds r ON r.id = o.round_id

@@ -15,16 +15,14 @@ import { Field } from "@/components/pokemon/pokemon-bits"
 import { pokemonAPI } from "@/lib/api"
 import { describeGameApiError } from "@/lib/game-errors"
 import {
-    RATE_MODE_LABELS,
     validateHandle,
     validateRoundDraft,
     type PokemonHome,
-    type PokemonRateMode,
     type PokemonRoundDraft,
 } from "@/lib/pokemon"
 
 const EMPTY: PokemonRoundDraft = {
-    title: "", currency: "INR", rateMode: "FIXED", quotedRate: "",
+    title: "", currency: "INR",
     bankAccount: "", deadline: "", memo: "",
 }
 
@@ -92,8 +90,6 @@ export default function PokemonNewRoundPage() {
             const created = await pokemonAPI.openRound({
                 title: draft.title.trim() || undefined,
                 currency: draft.currency,
-                rateMode: draft.rateMode,
-                quotedRate: draft.quotedRate.trim() === "" ? undefined : Number(draft.quotedRate.trim()),
                 bankAccount: draft.bankAccount.trim() || undefined,
                 deadline: draft.deadline.trim() === "" ? null : draft.deadline,
                 memo: draft.memo.trim() || undefined,
@@ -230,38 +226,6 @@ export default function PokemonNewRoundPage() {
                             </SelectContent>
                         </Select>
                     </Field>
-
-                    <Field label="환율 방식">
-                        <Select
-                            value={draft.rateMode}
-                            onValueChange={(v) => setDraft({ ...draft, rateMode: v as PokemonRateMode })}
-                        >
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                                {(["FIXED", "PER_ORDER"] as const).map((m) => (
-                                    <SelectItem key={m} value={m}>{RATE_MODE_LABELS[m]}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </Field>
-
-                    {draft.rateMode === "FIXED" && (
-                        <div className="sm:col-span-2">
-                            <Field label="환율 (비우면 지금 환율)">
-                                <Input
-                                    value={draft.quotedRate}
-                                    onChange={(e) => setDraft({ ...draft, quotedRate: e.target.value })}
-                                    inputMode="decimal"
-                                    placeholder="예) 14.13"
-                                />
-                            </Field>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                                이 차수의 모든 신청서가 이 환율로 계산됩니다. 나중에 고칠 수 있지만
-                                <b> 이미 들어온 신청서는 각자의 환율을 유지합니다</b> — 알려 준 이체
-                                금액이 나중에 달라지면 안 되니까요.
-                            </p>
-                        </div>
-                    )}
 
                     <div className="sm:col-span-2">
                         <Field label="입금받을 계좌">
