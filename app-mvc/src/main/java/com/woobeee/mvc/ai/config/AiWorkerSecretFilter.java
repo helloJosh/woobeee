@@ -5,10 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -19,9 +16,10 @@ import java.security.MessageDigest;
  * {@code /internal/ai/**} 는 워커만 부른다. 헤더 {@code X-Ai-Worker-Secret} 이 서버 시크릿과 일치해야 열린다(AI-AC-13).
  * 서버 시크릿이 비어 있으면 <b>모두 거절한다</b> — 설정을 빠뜨린 배포가 빈 헤더로 열리면 안 된다.
  * 접근 로그 필터({@code HIGHEST_PRECEDENCE}) 바로 안쪽에 둬서 거절된 요청도 로그에 남는다.
+ *
+ * <p>{@code @Component} 가 아니라 {@link AiFilterConfig} 가 등록한다 — {@code @WebMvcTest} 슬라이스는 Filter 빈을 끌어오는데
+ * 그 안에는 {@link AiProperties} 가 없어서, 컴포넌트로 두면 무관한 컨트롤러 테스트의 컨텍스트가 깨진다.
  */
-@Component
-@Order(Ordered.HIGHEST_PRECEDENCE + 10)
 @RequiredArgsConstructor
 public class AiWorkerSecretFilter extends OncePerRequestFilter {
     public static final String HEADER = "X-Ai-Worker-Secret";
